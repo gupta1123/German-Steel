@@ -1,0 +1,14 @@
+
+@media (min-width: 1024px) {
+    .container-salesPerformanceReport {
+        width: 80%;
+        position: relative;
+    }
+}
+
+@media (min-width: 1400px) {
+    .container-salesPerformanceReport {
+        width: 80%;
+        position: relative;
+    }
+}

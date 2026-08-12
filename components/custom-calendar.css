@@ -1,0 +1,229 @@
+:root {
+    --calendar-bg: #ffffff;
+    --calendar-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    --calendar-header-bg: linear-gradient(135deg, #eef2ff, #e0e7ff);
+    --calendar-header-text: #1e1b4b;
+    --calendar-day-text: #1f2937;
+    --calendar-day-border: #e5e7eb;
+    --calendar-day-bg: #f9fafb;
+    --calendar-future-bg: #f3f4f6;
+    --calendar-future-border: #e5e7eb;
+    --calendar-future-text: #94a3b8;
+    --calendar-full-bg: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    --calendar-full-border: rgba(16, 185, 129, 0.4);
+    --calendar-full-text: #065f46;
+    --calendar-half-bg: linear-gradient(135deg, #fef3c7, #fde68a);
+    --calendar-half-border: rgba(251, 191, 36, 0.7);
+    --calendar-half-text: #92400e;
+    --calendar-absent-bg: linear-gradient(135deg, #fee2e2, #fecaca);
+    --calendar-absent-border: rgba(239, 68, 68, 0.45);
+    --calendar-absent-text: #991b1b;
+    --calendar-present-bg: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    --calendar-present-border: rgba(59, 130, 246, 0.4);
+    --calendar-present-text: #1d4ed8;
+    --calendar-paid-bg: linear-gradient(135deg, #f3e8ff, #ede9fe);
+    --calendar-paid-border: rgba(139, 92, 246, 0.35);
+    --calendar-paid-text: #5b21b6;
+    --calendar-sunday-bg: linear-gradient(135deg, #ecfeff, #dbeafe);
+    --calendar-sunday-border: rgba(125, 211, 252, 0.4);
+    --calendar-sunday-text: #0f172a;
+}
+
+.dark {
+    --calendar-bg: #1f2937;
+    --calendar-shadow: 0 8px 25px rgba(0, 0, 0, 0.55);
+    --calendar-header-bg: #111827;
+    --calendar-header-text: #e5e7eb;
+    --calendar-day-text: #e5e7eb;
+    --calendar-day-border: #374151;
+    --calendar-day-bg: rgba(255, 255, 255, 0.02);
+    --calendar-future-bg: #1f2937;
+    --calendar-future-border: #374151;
+    --calendar-future-text: #9ca3af;
+    --calendar-full-bg: linear-gradient(135deg, #064e3b, #047857);
+    --calendar-full-border: rgba(16, 185, 129, 0.35);
+    --calendar-full-text: #d1fae5;
+    --calendar-half-bg: linear-gradient(135deg, #78350f, #92400e);
+    --calendar-half-border: rgba(251, 191, 36, 0.3);
+    --calendar-half-text: #fef3c7;
+    --calendar-absent-bg: linear-gradient(135deg, #7f1d1d, #991b1b);
+    --calendar-absent-border: rgba(248, 113, 113, 0.3);
+    --calendar-absent-text: #fee2e2;
+    --calendar-present-bg: linear-gradient(135deg, #1e3a8a, #1d4ed8);
+    --calendar-present-border: rgba(96, 165, 250, 0.35);
+    --calendar-present-text: #dbeafe;
+    --calendar-paid-bg: linear-gradient(135deg, #4c1d95, #6d28d9);
+    --calendar-paid-border: rgba(196, 181, 253, 0.35);
+    --calendar-paid-text: #ede9fe;
+    --calendar-sunday-bg: linear-gradient(135deg, #0f172a, #1e293b);
+    --calendar-sunday-border: rgba(148, 163, 184, 0.3);
+    --calendar-sunday-text: #cbd5f5;
+}
+
+/* Container */
+.custom-calendar {
+    border: 1px solid rgba(15, 23, 42, 0.04);
+    border-radius: 20px;
+    background-color: var(--calendar-bg);
+    box-shadow: var(--calendar-shadow);
+    overflow: hidden;
+    width: 100%;
+    max-width: 300px;
+    position: relative;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Header (S M T W T F S) */
+.calendar-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    padding: 12px 10px;
+    background: var(--calendar-header-bg);
+    color: var(--calendar-header-text);
+    text-transform: uppercase;
+    font-size: 0.8em;
+    letter-spacing: 1px;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+}
+
+/* Grid Container */
+.calendar-dates {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    padding: 10px;
+    position: relative;
+    gap: 4px; /* Used gap instead of margin for better alignment */
+}
+
+/* Day Cell - Base Styles */
+.calendar-dates div {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 8px 0;
+    cursor: pointer;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    font-weight: 600;
+    font-size: 0.9em;
+    color: var(--calendar-day-text);
+    background: var(--calendar-day-bg);
+    border: 1px solid var(--calendar-day-border);
+}
+
+/* --- Status Colors --- */
+
+.calendar-dates div.full-day {
+    background: var(--calendar-full-bg);
+    color: var(--calendar-full-text);
+    border-color: var(--calendar-full-border);
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.25);
+}
+
+.calendar-dates div.half-day {
+    background: var(--calendar-half-bg);
+    color: var(--calendar-half-text);
+    border-color: var(--calendar-half-border);
+    box-shadow: 0 6px 18px rgba(251, 191, 36, 0.25);
+}
+
+.calendar-dates div.absent {
+    background: var(--calendar-absent-bg);
+    color: var(--calendar-absent-text);
+    border-color: var(--calendar-absent-border);
+    box-shadow: 0 6px 18px rgba(248, 113, 113, 0.25);
+}
+
+.calendar-dates div.present {
+    background: var(--calendar-present-bg);
+    color: var(--calendar-present-text);
+    border-color: var(--calendar-present-border);
+    box-shadow: 0 6px 18px rgba(59, 130, 246, 0.25);
+}
+
+.calendar-dates div.paid {
+    background: var(--calendar-paid-bg);
+    color: var(--calendar-paid-text);
+    border-color: var(--calendar-paid-border);
+    box-shadow: 0 6px 18px rgba(167, 139, 250, 0.2);
+}
+
+.calendar-dates div.sunday {
+    background: var(--calendar-sunday-bg);
+    color: var(--calendar-sunday-text);
+    border-color: var(--calendar-sunday-border);
+    font-weight: 700;
+}
+
+.calendar-dates div.future {
+    background-color: var(--calendar-future-bg);
+    color: var(--calendar-future-text);
+    border: 1px dashed var(--calendar-future-border);
+    cursor: default;
+    box-shadow: none;
+}
+
+.calendar-dates div.empty {
+    cursor: default;
+    background: transparent;
+    border-color: transparent;
+    pointer-events: none;
+}
+
+.calendar-dates div:not(.full-day):not(.half-day):not(.absent):not(.present):not(.paid):not(.sunday):not(.future):not(.empty) {
+    background: var(--calendar-day-bg);
+    border-color: var(--calendar-day-border);
+}
+
+/* --- Hover Effects --- */
+.calendar-dates div:not(.empty):not(.future):hover {
+    transform: scale(1.08);
+    z-index: 2;
+    filter: brightness(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* --- Tooltip Styles --- */
+.calendar-tooltip {
+    visibility: hidden;
+    width: auto;
+    background-color: rgba(17, 24, 39, 0.95);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 6px 10px;
+    position: absolute;
+    z-index: 20;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(var(--tooltip-translate-x, -50%));
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    white-space: nowrap;
+    font-size: 11px;
+    pointer-events: none;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.calendar-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: var(--tooltip-arrow-left, 50%);
+    transform: translateX(-50%);
+    border-width: 5px;
+    border-style: solid;
+    border-color: rgba(17, 24, 39, 0.95) transparent transparent transparent;
+}
+
+.calendar-dates div:hover .calendar-tooltip {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(var(--tooltip-translate-x, -50%)) translateY(-2px);
+}
+
+.dark .calendar-dates div:not(.empty):hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
