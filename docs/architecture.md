@@ -10,7 +10,7 @@ German Steels is the web administration and operations client for a field-sales 
 - Tailwind CSS and Radix UI components
 - Recharts/Chart.js for reporting
 - Leaflet for live locations and employee journeys
-- Spring Boot backend configured through `API_PROXY_TARGET`
+- Spring Boot backend fixed in the server-only `lib/backend-origin.ts` module
 
 ## Request flow
 
@@ -23,7 +23,7 @@ flowchart LR
   L[authToken localStorage] --> B
 ```
 
-The browser never needs the EC2 origin hardcoded in individual screens. `app/api/proxy/[...path]/route.ts` reads the server-only `API_PROXY_TARGET`, forwards the request body and authorization header, and disables response caching for authenticated API data.
+The browser never needs the EC2 origin hardcoded in individual screens. `app/api/proxy/[...path]/route.ts` reads the fixed server-only origin from `lib/backend-origin.ts`, forwards the request body and authorization header, and disables response caching for authenticated API data. This keeps local and deployed builds on the same German Steels backend.
 
 `app/api/image-proxy/route.ts` proxies authenticated attachments. It validates the exact configured backend origin before fetching to prevent server-side request forgery.
 

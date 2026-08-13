@@ -1,11 +1,11 @@
 New ec2 Address:
-http://ec2-13-48-72-129.eu-north-1.compute.amazonaws.com:8081
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
 
-https://api.gajkesaristeels.in
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
 USER LOGIN
 Register New User
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/register
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/register
 PayLoad:
 {
     "username":"SalesAdmin",
@@ -23,7 +23,7 @@ ADMIN eyJhbGciOiJIUzUxMiJ9.eyJ1c2VybmFtZSI6IlNhbGVzQWRtaW4iLCJyb2xlcyI6IkFETUlOI
 
 Login
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/token
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/token
 
 PayLoad:
 {
@@ -34,30 +34,30 @@ Response:
 ADMIN eyJhbGciOiJIUzUxMiJ9.eyJ1c2VybmFtZSI6IlNhbGVzQWRtaW4iLCJyb2xlcyI6IkFETUlOIiwiaWF0IjoxNzEwNDU2NDc2LCJleHAiOjE3MTA0Njg0NzZ9.6Qlt3Go2N7eaZhPc5ZMaeZQTv1p9ajbD4Bye8z6Fs9Z2Xx1M6l2WVH0daSWRlspBkHtDUqdvhZka8FiqW0BB7A
 Logout
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/logout
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/logout
 Success Response:
 Successfully logged out
 
 TASK CONFIG
 Create task type
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task-type/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task-type/create
 Response:
 1
 Edit task type
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task-type/edit?id=1&type=birthdays
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task-type/edit?id=1&type=birthdays
 PayLoad:
 Response:
 
 Delete task type
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task-type/delete?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task-type/delete?id=1
 Response:
 Object Deletd!
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task-type/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task-type/getAll
 Response:
 [
     {
@@ -68,7 +68,7 @@ Response:
 
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task-type/getById?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task-type/getById?id=2
 Response:
 {
     "id": 2,
@@ -81,7 +81,7 @@ Error Fetching Task type: Type Not Found!
 TASK
 Create task For Store
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create
 PayLoad:
 {
     "taskDesciption":"call",
@@ -97,7 +97,7 @@ Response:
 1
 Create Task For A Visit
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create
 Payload:
 {
     "taskDesciption":"call",
@@ -116,7 +116,7 @@ Payload:
 
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getById?id=1
 Response:
 {
     "id": 1,
@@ -137,7 +137,7 @@ Response:
     "attachmentResponse": [
         {
             "fileName": "Code.JPG",
-            "fileDownloadUri": "http://localhost:8081/downloadFile/Code.JPG",
+            "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Code.JPG",
             "fileType": "image/jpeg",
             "tag": "check-in",
             "size": 0
@@ -150,7 +150,7 @@ Response:
 }
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getAll
 Response:
 [
      {
@@ -181,7 +181,7 @@ Response:
 ]
 Get By Assigned To And Date Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByAssignedToAndDate?id=2&start=2024-02-01&end=2024-06-11
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByAssignedToAndDate?id=2&start=2024-02-01&end=2024-06-11
 Response:
 [
     {
@@ -207,7 +207,7 @@ Response:
 ]
 Get By Assigned To
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByAssignedTo?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByAssignedTo?id=2
 Response:
 [
     {
@@ -233,7 +233,7 @@ Response:
 ]
 Get By Assigned By
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByAssignedBy?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByAssignedBy?id=1
 Response:
 [
     {
@@ -279,7 +279,7 @@ Response:
 ]
 Get By Due Date
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByDueDate?dueDate=2024-03-11
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByDueDate?dueDate=2024-03-11
 Response:
 [
     {
@@ -305,10 +305,10 @@ Response:
 ]
 Get By Due Date and priority
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByPriorityAndDue?dueDate=2024-03-11&priority=high
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByPriorityAndDue?dueDate=2024-03-11&priority=high
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/deleteById?taskId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/deleteById?taskId=1
 
 Response:
 Task deleted!
@@ -316,20 +316,20 @@ Error Response:
 Error Deleting Task: Task Not Found!
 Add Attachment
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/uploadFile?id=1&tag=check-in
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/uploadFile?id=1&tag=check-in
 PayLoad:
 File
 Response:
 {
     "fileName": "Code.JPG",
-    "fileDownloadUri": "http://localhost:8081/downloadFile/Code.JPG",
+    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Code.JPG",
     "fileType": "image/jpeg",
     "tag": "check-in",
     "size": 68773
 }
 Remove Attachment
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/removeFile?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/removeFile?id=1
 PayLoad:
 {
     "ids":[
@@ -340,12 +340,12 @@ Response:
 Attachments deleted successfully from the task.
 
 Download Attachment
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/downloadFile/1/check-in/Code.JPG
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/downloadFile/1/check-in/Code.JPG
 
 
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/updateTask?taskId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/updateTask?taskId=1
 PayLoad:
 {
     "status":"Work In Progress",
@@ -371,7 +371,7 @@ Response:
 
 Get By Visit
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByVisit?type=requirement&visitId=2057
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByVisit?type=requirement&visitId=2057
 Response:
 [
     {
@@ -401,7 +401,7 @@ Response:
 ]
 Get By Date Range
 Get Call
-http://localhost:8081/task/getByDate?start=2024-04-01&end=2024-07-10
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByDate?start=2024-04-01&end=2024-07-10
 Response:
 [
     {
@@ -431,11 +431,11 @@ Response:
 ]
 Get By Date Range For Team
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByTeamAndDate?start=2024-03-01&end=2024-07-10&id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByTeamAndDate?start=2024-03-01&end=2024-07-10&id=1
 
 Get For a Store And Date range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByStoreAndDate?storeId=17&start=2024-06-01&end=2024-06-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByStoreAndDate?storeId=17&start=2024-06-01&end=2024-06-30
 Response:
 [
     {
@@ -513,7 +513,7 @@ Response:
 ]
 Get By Team
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/task/getByTeam?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByTeam?id=1
 Response:
 [
     {
@@ -541,7 +541,7 @@ Response:
 Sites
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/add
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/add
 PayLoad:
 {
     "siteName":"Site 1",
@@ -563,7 +563,7 @@ Response:
 
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/edit?id=1
 PayLoad:
 {
     "siteName":"Site 1",
@@ -586,7 +586,7 @@ Response:
 
 Add Brands In Use
 Put Call
-http:/ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/addBrands?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/addBrands?id=2
 PayLoad:
 {
     "brands":["A", "B", "C"]
@@ -596,7 +596,7 @@ Brands updated!
 
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/getAll
 Response:
 [
     {
@@ -629,7 +629,7 @@ Response:
 
 Remove Brands
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/removeBrands?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/removeBrands?id=2
 PayLoad:
 {
     "brands":["B"]
@@ -639,19 +639,19 @@ Brands removed!
 
 Mark Completion Status
 Put Call
-http://localhost:8081/site/markCompletionStatus?id=2&status=true
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/markCompletionStatus?id=2&status=true
 Response:
 Status Updated!
 
 
  Delete
 Delete call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/delete?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/delete?id=1
 Response:
 Deleted successfully!
 Get By Store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/site/getByStore?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/site/getByStore?id=1
 Response:
 [
     {
@@ -858,7 +858,7 @@ Response:
 Store Professional(Architect, Engineer, Builder)
 Add For Store
 Post Call
-http://localhost:8081/professionals/addForStore
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/professionals/addForStore
 PayLoad:
 {
     "name":"name",
@@ -870,7 +870,7 @@ Response:
 1
 Edit
 Put Call
-http://localhost:8081/professionals/edit?professionalId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/professionals/edit?professionalId=1
 PayLoad:
 {
     "name":"abc",
@@ -882,13 +882,13 @@ Response:
 1
 Delete
 Delete Call
-http://localhost:8081/professionals/delete?professionalId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/professionals/delete?professionalId=1
 Response:
 Professional deleted successfully
 
 Get By Store
 Get Call
-http://localhost:8081/professionals/getByStore?storeId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/professionals/getByStore?storeId=1
 Response:
 [
     {
@@ -904,7 +904,7 @@ Response:
 BRANDS(Daily Pricing)
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/create
 PayLoad:
 {
     "brandName":"Brand 1",
@@ -921,7 +921,7 @@ Response:
 1
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/edit?id=1
 PayLoad:
 {
     "brandName":"Brand 1",
@@ -938,7 +938,7 @@ Response:
 1
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getAll
 Response:
 [
     {
@@ -994,7 +994,7 @@ Response:
 ]
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getById?id=1
 Response:
 {
     "id": 1,
@@ -1047,7 +1047,7 @@ Response:
 }
 Get By Team And Date Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/getByTeamAndDate?id=51&start=2024-06-01&end=2024-07-05
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByTeamAndDate?id=51&start=2024-06-01&end=2024-07-05
 Response:
 [
     {
@@ -1108,7 +1108,7 @@ Response:
 
 Get By Date Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/getByDateRange?start=2024-06-11&end=2024-06-12
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=2024-06-11&end=2024-06-12
 Response:
 [
     {
@@ -1163,7 +1163,7 @@ Response:
 ]
 Get By Date Range And Employee
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/getByDateRangeForEmployee?start=2024-06-11&end=2024-06-12&id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRangeForEmployee?start=2024-06-11&end=2024-06-12&id=1
 Response:
 [
     {
@@ -1218,13 +1218,13 @@ Response:
 ]
 Delete
 Delete call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/brand/delete?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/delete?id=1
 Response:
 Object Deletd!
 VISIT
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getAll
 Response:
 [
     {
@@ -1294,7 +1294,7 @@ Response with attachment and Intent Log:
         "attachmentResponse": [
             {
                 "fileName": "Second.png",
-                "fileDownloadUri": "http://localhost:8081/downloadFile/Second.png",
+                "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Second.png",
                 "fileType": "image/png",
                 "tag": "check-in",
                 "size": 0
@@ -1366,7 +1366,7 @@ Response with attachment and Intent Log:
 
 Get By Store Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByStore?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByStore?id=1
 Response:
 [
     {
@@ -1401,13 +1401,13 @@ Response:
 ]
 Get Visits For a Date Range(Without Images)
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByDateRange1?start=2024-03-10&end=2024-03-15
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateRange1?start=2024-03-10&end=2024-03-15
 Response:
 Get Visits For Date Range(Sorted Without images)
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByDateSorted?purpose=Follow%20Up&startDate=2024-05-01&endDate=2024-05-15&page=0&size=10&sort=id,desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateSorted?purpose=Follow%20Up&startDate=2024-05-01&endDate=2024-05-15&page=0&size=10&sort=id,desc
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByDateSorted?startDate=2024-07-01&endDate=2024-07-01&page=0&size=10&sort=visitDate,desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateSorted?startDate=2024-07-01&endDate=2024-07-01&page=0&size=10&sort=visitDate,desc
 
 Response:
 [
@@ -1456,7 +1456,7 @@ Response:
 ]
 Get Visits For a Date Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByDateRange?start=2024-03-10&end=2024-03-15
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateRange?start=2024-03-10&end=2024-03-15
 Response:
 [
     {
@@ -1491,7 +1491,7 @@ Response:
 ]
 Get By Employee Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByEmployee?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByEmployee?id=1
 Response:
 [
     {
@@ -1528,7 +1528,7 @@ Response:
 
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getById?id=1
 Response:
 {
     "id": 2057,
@@ -1672,7 +1672,7 @@ With Attachemnts:
 }
 Get My Visits
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getMyVisit
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getMyVisit
 Response:
 [
     {
@@ -1706,7 +1706,7 @@ Response:
         "attachmentResponse": [
             {
                 "fileName": "Second.png",
-                "fileDownloadUri": "http://localhost:8081/downloadFile/Second.png",
+                "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Second.png",
                 "fileType": "image/png",
                 "tag": "check-in",
                 "size": 0
@@ -1776,7 +1776,7 @@ Response:
 ]
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/edit?id=1
 PayLoad:
 {    
     "visit_date":"2024-03-10"
@@ -1785,12 +1785,12 @@ Response:
 Visit Updated Successfully!
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/delete?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/delete?id=3
 Response:
 Visit Deleted Successfully!
 Create
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/create
 PayLoad:
 {    
     "storeId":2,
@@ -1812,7 +1812,7 @@ Response:
 1
 Check In For Visit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/checkin?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/checkin?id=1
 PayLoad:
 {
     "checkinLatitude":20,
@@ -1824,7 +1824,7 @@ Error Message:
 Error Checking in: Already Checked In!
 Check Out For Visit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/checkout?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/checkout?id=1
 PayLoad:
 {
     "checkoutLatitude":25,
@@ -1839,14 +1839,14 @@ Error Checking out: Already Checked Out!
 Add Attachment
 Tag value(check-in/ check-out)
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/uploadFile?id=1&tag=check-in
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/uploadFile?id=1&tag=check-in
 PayLoad:
 File
 Response(Visit Id):
 1
 Delete Attachment
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/removeFile?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/removeFile?id=1
 PayLoad:
 {
     "ids":[
@@ -1857,18 +1857,18 @@ Response:
 Attachments deleted successfully from the visit.
 Get Attachment
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getFiles?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getFiles?id=1
 Response:
 [
     "/visit/images/1/0"
 ]
 Image Link
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/images/1/0
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/images/1/0
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/downloadFile/32/check-in/0FF92EA8-967B-4FF2-847A-A96EDDBE46D5.jpg
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/downloadFile/32/check-in/0FF92EA8-967B-4FF2-847A-A96EDDBE46D5.jpg
 Add/Edit Brands and Pro Cons To Visit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/addProCons?visitId=2057
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/addProCons?visitId=2057
 PayLoad:
 [
     {
@@ -1885,7 +1885,7 @@ PayLoad:
 
 Delete Pro Cons
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/deleteProCons?visitId=2057
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/deleteProCons?visitId=2057
 PayLoad:
 [
     {
@@ -1899,7 +1899,7 @@ Success Response:
 Pros Cons Deleted Successfully!
 Get Brands Pro Cons For a Visit
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getProCons?visitId=2057
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getProCons?visitId=2057
 Response:
 [
     {
@@ -1931,12 +1931,12 @@ Response:
 
 Edit monthly Sale
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/editMonthlySale?visitId=2057&monthlySale=2000
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/editMonthlySale?visitId=2057&monthlySale=2000
 Response:
 Monthly Sale Updated For Visit
 Get Monthly Sale For a Visit
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/monthly-sale/getByVisit?visitId=2057
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/monthly-sale/getByVisit?visitId=2057
 New Response:
 [
     {
@@ -1972,7 +1972,7 @@ Response:
 
 Intent Audit Get By Visit
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/intent-audit/getByVisit?id=2057
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/intent-audit/getByVisit?id=2057
 Response:
 [
     {
@@ -2029,7 +2029,7 @@ Response:
 
 GET By Employee And Date Range with TA, DA, And Visit Count
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByDateRangeAndEmployeeStats?id=1&start=2024-03-01&end=2024-03-31
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateRangeAndEmployeeStats?id=1&start=2024-03-01&end=2024-03-31
 Response:
 {
     "statsDto": {
@@ -2089,7 +2089,7 @@ Response:
 }
 Get For Team
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getForTeam?teamId=1&startDate=2024-03-01&endDate=2024-05-31&purpose=Follow%20Up&priority=High&storeName=Store&page=0&size=10&sort=visitDate,desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getForTeam?teamId=1&startDate=2024-03-01&endDate=2024-05-31&purpose=Follow%20Up&priority=High&storeName=Store&page=0&size=10&sort=visitDate,desc
 Response:
 {
     "content": [
@@ -2233,7 +2233,7 @@ Response:
             "attachmentResponse": [
                 {
                     "fileName": "Test case.JPG",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Test%20case.JPG",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Test%20case.JPG",
                     "fileType": "image/jpeg",
                     "tag": "check-in",
                     "size": 0
@@ -2304,7 +2304,7 @@ Response:
 Attendance Request
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/request/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/create
 Response:
 {
     "employeeId":2,
@@ -2315,7 +2315,7 @@ Response:
 
 Get all
 Get Call
-http://localhost:8081/request/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/getAll
 Response:
 [
     {
@@ -2339,7 +2339,7 @@ Response:
 ]
 Get By Status
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/request/getByStatus?status=pending
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/getByStatus?status=pending
 Response:
 [
     {
@@ -2363,16 +2363,16 @@ Response:
 ]
 Get By Date
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/request/getByDateRange?start=2024-08-20&end=2024-09-03
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/getByDateRange?start=2024-08-20&end=2024-09-03
 Update Status
 Put Call(id in header is request id)
-http://localhost:8081/request/updateStatus?id=1&status=approved&attendance=half%20day
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/updateStatus?id=1&status=approved&attendance=half%20day
 
 
 VISIT PURPOSE
 Add Purpose
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/purpose/add
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/purpose/add
 PayLoad:
 {
     "purpose":"Return"
@@ -2381,7 +2381,7 @@ Response:
 Purpose added successfully
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/purpose/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/purpose/getAll
 Response:
 [
     {
@@ -2396,13 +2396,13 @@ Response:
 ]
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/purpose?purpose=Payment
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/purpose?purpose=Payment
 
 
 CUSTOMER (STORE/ CLIENT)
 Create
 POST Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/create
 {
         "storeName":"store2",
         "clientFirstName":"abcd",
@@ -2441,7 +2441,7 @@ Success Response:
 Store Saved Successfully
 Get By Page Sorted
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByPageSorted?pageNumber=1&pageSize=4
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByPageSorted?pageNumber=1&pageSize=4
 PayLoad:
 {
     "sortBy": ["storeName","city"],
@@ -2492,7 +2492,7 @@ Response:
 ]
 Get State wise Data
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getStateWise
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getStateWise
 Response:
 [
     {
@@ -2504,7 +2504,7 @@ Response:
 ]
 Get By Page
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByPage?pageNumber=4&pageSize=10
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByPage?pageNumber=4&pageSize=10
 Response:
 [
     {
@@ -2590,7 +2590,7 @@ Response:
 ]
 Get Store By Name
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByName?name=store1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByName?name=store1
 Response:
 [
     {
@@ -2624,7 +2624,7 @@ Response:
 ]
 Get Store By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getById?id=1
 Response:
 {
     "managers": [],
@@ -2680,7 +2680,7 @@ Response:
 
 Get By Phone
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByPhone?phone=456
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByPhone?phone=456
 Response:
 {
     "landmark": null,
@@ -2724,7 +2724,7 @@ Response:
 }
 Get By Filters
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByAllFilter
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByAllFilter
 PayLoad:
 {
     "sortBy": ["storeName", "city"],
@@ -2735,7 +2735,7 @@ PayLoad:
 }
 Get All Stores
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getAll
 Response:
 [
     {
@@ -2783,7 +2783,7 @@ Response:
 
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/edit?id=1
 
 PayLoad:
 {
@@ -2812,19 +2812,19 @@ Success Response:
 Store Updated Successfully
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081:8081/store/deleteById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/deleteById?id=1
 Success Response:
 Store Data Deleted!
 Add brands
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/edit?id=1
 PayLoad:
 {
   "brandsInUse": ["Brand A", "Brand B", "Brand C"],
 }
 Edit pros cons
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/editProCons?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/editProCons?id=1
 
 PayLoad:
 
@@ -2843,7 +2843,7 @@ PayLoad:
   ]
 Delete Pros Cons
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/deleteProCons?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/deleteProCons?id=3
 PayLoad:
 [
     {
@@ -2857,7 +2857,7 @@ Success Response:
 Pros Cons Deleted Successfully!
 Delete Likes
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/deleteLikes?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/deleteLikes?id=2
 PayLoad:
 [
     {
@@ -2868,14 +2868,14 @@ Success Response:
 Likes Deleted Successfully!
 Add Client Type
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/clientType/add
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/clientType/add
 PayLoad:
 {    
     "type":"B2B"
 }
 Get All Client Type
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/clientType/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/clientType/getAll
 Response:
 [
     {
@@ -2891,12 +2891,12 @@ Response:
 
 Delete Client Type
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/clientType/delete?type=Project
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/clientType/delete?type=Project
 Response:
 Client type deleted successfully
 Intent Audit Log
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/intent-audit/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/intent-audit/getAll
 Response:
 [
     {
@@ -2924,7 +2924,7 @@ Response:
 ]
 Get Intent Log By Store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/intent-audit/getByStore?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/intent-audit/getByStore?id=2
 Response:
 [
     {
@@ -2952,7 +2952,7 @@ Response:
 ]
 Get By Date Range & employee Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByDateRangeAndEmployee?id=1&start=2024-04-01&end=2024-05-15
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateRangeAndEmployee?id=1&start=2024-04-01&end=2024-05-15
 Response:
 [
     {
@@ -2986,7 +2986,7 @@ Response:
         "attachmentResponse": [
             {
                 "fileName": "Second.png",
-                "fileDownloadUri": "http://localhost:8081/downloadFile/Second.png",
+                "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Second.png",
                 "fileType": "image/png",
                 "tag": "check-in",
                 "size": 0
@@ -3062,19 +3062,19 @@ Response:
 ]
 Get By Filters
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/filteredValues?storeName=Best%20Electronics&primaryContact=1234567890&ownerName=John%20Doe&city=San%20Francisco&state=California&monthlySale=50000.00&clientType=Retailer&page=0&size=10&sort=monthlySale,desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/filteredValues?storeName=Best%20Electronics&primaryContact=1234567890&ownerName=John%20Doe&city=San%20Francisco&state=California&monthlySale=50000.00&clientType=Retailer&page=0&size=10&sort=monthlySale,desc
 
 
 ClientType Filter:
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/filteredValues?clientType=shop&page=0&size=10&sort=id,desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/filteredValues?clientType=shop&page=0&size=10&sort=id,desc
 
 
 Sorting using owner First name:
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/:8081/store/filteredValues?page=0&size=10&sort=ownerFirstName,asc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/:8081/store/filteredValues?page=0&size=10&sort=ownerFirstName,asc
 
 
-http://localhost:8081/store/filteredValues?page=0&size=10&sortBy=lastVisitDate&sortOrder=desc
-http://localhost:8081/store/filteredValues?page=0&size=10&sortBy=visitCount&sortOrder=asc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/filteredValues?page=0&size=10&sortBy=lastVisitDate&sortOrder=desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/filteredValues?page=0&size=10&sortBy=visitCount&sortOrder=asc
 
 
 Response:
@@ -3163,13 +3163,13 @@ Response:
 Get All Store Names For An Employee
 Get Call
 (With pagination)
-http://localhost:8081/store/getStoreNamesByEmployee?employeeId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getStoreNamesByEmployee?employeeId=1
 
 (With Search term)
-http://localhost:8081/store/getStoreNamesByEmployee?employeeId=1&searchTerm=e
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getStoreNamesByEmployee?employeeId=1&searchTerm=e
 
 (With search and sort)
-https://api.gajkesaristeels.in/store/getStoreNamesByEmployee?employeeId=1&searchTerm=2&page=0&size=20&sortBy=storeName&sortOrder=desc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getStoreNamesByEmployee?employeeId=1&searchTerm=2&page=0&size=20&sortBy=storeName&sortOrder=desc
 
 {
     "content": [
@@ -3211,7 +3211,7 @@ https://api.gajkesaristeels.in/store/getStoreNamesByEmployee?employeeId=1&search
 
 Get All Store Names
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/names
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/names
 Response:
 [
     {
@@ -3269,7 +3269,7 @@ Response:
 ]
 Get Monthly Sale For Store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/monthly-sale/getByStore?storeId=17
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/monthly-sale/getByStore?storeId=17
 Response:
 [
     {
@@ -3288,11 +3288,11 @@ Response:
  ]
 Get By Employee(Pagination And Filter)
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByEmployeeNew?id=1&page=1&size=10
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByEmployeeNew?id=1&page=1&size=10
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByEmployeeNew?id=1&page=0&size=10&storeName=ExampleStore&primaryContact=1234567890&ownerName=JohnDoe&city=ExampleCity&state=ExampleState&monthlySale=1000&clientType=Retail
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByEmployeeNew?id=1&page=0&size=10&storeName=ExampleStore&primaryContact=1234567890&ownerName=JohnDoe&city=ExampleCity&state=ExampleState&monthlySale=1000&clientType=Retail
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByEmployeeWithSort?id=1&storeName=Example%20Store&sortBy=storeName&sortOrder=asc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByEmployeeWithSort?id=1&storeName=Example%20Store&sortBy=storeName&sortOrder=asc
 
 Response:
 {
@@ -3367,7 +3367,7 @@ Response:
 
 Get By Employee
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getByEmployee?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getByEmployee?id=1
 Response:
 [
     {
@@ -3413,7 +3413,7 @@ Response:
 ]
 Get For Team
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getForTeam?teamId=6&page=1&size=10
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getForTeam?teamId=6&page=1&size=10
 Response:
 {
     "content": [
@@ -3486,7 +3486,7 @@ Response:
 }
 Get Phone Number for stores of an employee
 Get Call
-http://localhost:8081/store/getStorePhoneByEmployee?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getStorePhoneByEmployee?id=1
 Response:
 [
     {
@@ -3499,7 +3499,7 @@ Response:
 Sales
 Create
 Post Call
-http://localhost:8081/sales/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/create
 PayLoad:
 {
     "employeeId":1,
@@ -3513,7 +3513,7 @@ Response:
 
 Get All
 Get Call
-http://localhost:8081/sales/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/getAll
 Response:
 [
     {
@@ -3538,21 +3538,21 @@ Response:
 
 Get By Store
 Get Call
-http://localhost:8081/sales/getByStore?storeId=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/getByStore?storeId=3
 
 
 Get By Employee
 Get Call
-http://localhost:8081/sales/getByEmployee?employeeId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/getByEmployee?employeeId=1
 Get By Store and Date Range
 Get Call
-http://localhost:8081/sales/storeAndDateRange?storeId=1&startDate=2025-04-22&endDate=2025-04-23
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/storeAndDateRange?storeId=1&startDate=2025-04-22&endDate=2025-04-23
 Get By Employee and Date Range
 Get Call
-http://localhost:8081/sales/employeeAndDateRange?employeeId=1&startDate=2025-04-22&endDate=2025-04-23
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/employeeAndDateRange?employeeId=1&startDate=2025-04-22&endDate=2025-04-23
 Get Total Tons By Store
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/sales/totalTonsByStore?storeId=17&startDate=2025-04-22&endDate=2025-04-23
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/totalTonsByStore?storeId=17&startDate=2025-04-22&endDate=2025-04-23
 Response:
 {
     "employeeId": 33,
@@ -3563,7 +3563,7 @@ Response:
 }
 Get Total Tons with Pagination
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/sales/totalTons?startDate=2025-04-01&endDate=2025-04-30&page=0&size=10&storeId=17
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/totalTons?startDate=2025-04-01&endDate=2025-04-30&page=0&size=10&storeId=17
 Response:
 {
     "content": [
@@ -3605,7 +3605,7 @@ Response:
 }
 Get All Paginated WIth Filters
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/sales/getFilteredSales?city=Jalna&storeId=17&employeeId=1&storeName=AAA&state=Maharashtra&size=0&page=0
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/sales/getFilteredSales?city=Jalna&storeId=17&employeeId=1&storeName=AAA&state=Maharashtra&size=0&page=0
 Response:
 {
     "content": [
@@ -3656,7 +3656,7 @@ Response:
 NOTES
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/edit?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/edit?id=2
 {
   "content": "Next Sample note content here.",
   "employeeId": 1,
@@ -3666,12 +3666,12 @@ Response:
 Notes updated Successfully!
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/delete?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/delete?id=3
 Success Response:
 Notes Deleted Successfully!
 Create Note For Store
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/create
 PayLoad:
 {
   "id": 1,
@@ -3687,7 +3687,7 @@ Error Response:
 Error Creating Note: Employee NOt Found!
 Create Note For a Visit
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/create
 PayLoad:
 {
   "content": "Sample note content here. 2",
@@ -3703,7 +3703,7 @@ Error Response:
 Error Creating Note: Employee NOt Found!
 Get All Notes
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/getAll
 Response:
 [
     {
@@ -3734,7 +3734,7 @@ Response with attachment:
         "attachmentResponse": [
             {
                 "fileName": "Code.JPG",
-                "fileDownloadUri": "http://localhost:8081/downloadFile/Code.JPG",
+                "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Code.JPG",
                 "fileType": "image/jpeg",
                 "tag": "check-in",
                 "size": 0
@@ -3750,7 +3750,7 @@ Response with attachment:
 
 Get All For a store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/getByStore?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/getByStore?id=2
 Response:
 [
     {
@@ -3770,7 +3770,7 @@ Response:
 Add Attachment
 Tag value(check-in/ check-out)
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/uploadFile?id=1&tag=check-in
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/uploadFile?id=1&tag=check-in
 Response:
 PayLoad:
 File
@@ -3778,7 +3778,7 @@ Response(Notes Id):
 1
 Delete Attachment
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/removeFile?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/removeFile?id=1
 PayLoad:
 {
     "ids":[
@@ -3789,14 +3789,14 @@ Response:
 Attachments deleted successfully from the notes.
 Get Attachment
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/getFiles?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/getFiles?id=1
 Response:
 [
     "/notes/images/1/0"
 ]
 Get By Visit
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/getByVisit?id=893
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/getByVisit?id=893
 Response:
 [
     {
@@ -3831,12 +3831,12 @@ Response:
     }
 ]
 Image Link
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/images/1/0
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/images/1/0
 
 EMPLOYEE
 Create
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/add
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/add
 PayLoad:
 {
     "firstName":"Shilpa",
@@ -3861,7 +3861,7 @@ Error Response:
 Error Creating Employee: Department Not Found!
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/edit?empId=E102
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/edit?empId=E102
 PayLoad(Pass the new values for fields):
 {
     "role":"Field Manager"
@@ -3871,7 +3871,7 @@ Success Response:
 Employee updated!
 Edit House Location
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/edit?empId=E102
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/edit?empId=E102
 PayLoad:
 {
     "houseLatitude":10.8,
@@ -3880,12 +3880,12 @@ PayLoad:
 
 Delete
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/delete?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/delete?id=2
 Response:
 Employee Deleted Successfully!
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getById?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getById?id=2
 
 Response:
 {
@@ -3927,7 +3927,7 @@ Response:
 
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getAll
 Response:
 [
     {
@@ -4006,7 +4006,7 @@ Response:
 ]
 Designation add
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/designation/add
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/designation/add
 PayLoad:
 {
     "designation":"Manager"
@@ -4016,7 +4016,7 @@ Designation Stored Successfully!
 
 Designation edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/designation/edit
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/designation/edit
 PayLoad:
 {
     "oldDesignation":"Manager",
@@ -4027,12 +4027,12 @@ Designation updated!
 
 Designation delete
 Delete
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/designation/delete?name=Managers
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/designation/delete?name=Managers
 Response:
 Designation Deleted!
 Designation get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/designation/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/designation/getAll
 Response:
 [
     {
@@ -4050,7 +4050,7 @@ Response:
 ]
 Get By Role
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getByRole?role=Office%20Manager
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getByRole?role=Office%20Manager
 Response:
 [
     {
@@ -4090,7 +4090,7 @@ Response:
 
 Get All Office Managers
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getOfficeManager
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getOfficeManager
 Response:
 [
     {
@@ -4128,7 +4128,7 @@ Response:
 
 Get All Field Officers
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getFieldOfficer
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getFieldOfficer
 Response:
 [
     {
@@ -4182,7 +4182,7 @@ Response:
 ]
 Get Unique Cities
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getCities
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getCities
 Response:
 [
     "Jalna",
@@ -4190,17 +4190,17 @@ Response:
 ]
 Set Inactive
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/setInactive?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/setInactive?id=3
 Response:
 Employee Status changed!
 Set Active
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/setActive?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/setActive?id=3
 Response:
 Employee Status changed!
 Get All Inactive Employee(Archived)
 Get Call
-http://localhost:8081/employee/getAllInactive
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getAllInactive
 Response:
 [
     {
@@ -4248,23 +4248,23 @@ Response:
 ]
 Remove Assigned City
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/removeAssignedCity?employeeId=7&city=Jalna
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/removeAssignedCity?employeeId=7&city=Jalna
 Response:
 Jalna removed from Employee Id: 7 and associated team updated/deleted.
 
 Get Traveled Distance
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getTravelledDistance?id=1&date=2024-03-22
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getTravelledDistance?id=1&date=2024-03-22
 Response:
 6838.31564087652
 Update Live Location
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/updateLiveLocation?id=1&latitude=12.2&longitude=13.9
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/updateLiveLocation?id=1&latitude=12.2&longitude=13.9
 Response:
 Location Updated!
 Get Live Location
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getLiveLocation?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getLiveLocation?id=1
 Response:
 {
     "id": 1,
@@ -4277,7 +4277,7 @@ Response:
 }
 Set employee Salary
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/setSalary
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/setSalary
 PayLoad:
 {
     "travelAllowance":100,
@@ -4289,19 +4289,19 @@ Response:
 Salary Updated!
 Edit Username
 Put Call
-http://ec2-13-48-72-129.eu-north-1.compute.amazonaws.com:8081/employee/editUsername?id=1&username=newUsername
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/editUsername?id=1&username=newUsername
 Response:
 Username Updated!
 
 Create Attendance Log For Employee
 Post Call
-http://ec2-13-48-72-129.eu-north-1.compute.amazonaws.com:8081/attendance-log/createAttendanceLog?employeeId=255
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/createAttendanceLog?employeeId=255
 Response:
 Attendance log created successfully for Bhushan  Kharat for today.
 Attendance Rule
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-rule/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/getAll
 Response:
 [
     {
@@ -4319,7 +4319,7 @@ Response:
 ]
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-rule/getById?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/getById?id=2
 Response:
 {
     "id": 2,
@@ -4329,7 +4329,7 @@ Response:
 }
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-rule/edit?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/edit?id=2
 PayLoad:
 {
     "fullDayCount":5,
@@ -4339,7 +4339,7 @@ Response:
 Rule Updated Successfully!
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-rule/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/create
 PayLoad:
 {
     "rule":"unknown",
@@ -4350,7 +4350,7 @@ Response:
 3
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-rule/delete?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/delete?id=3
 Response:
 Rule Deleted!
 Error Response:
@@ -4358,12 +4358,12 @@ Error Deleting Rule: Rule Not Found!
 Attendance Log
 Create
 Post Call
-http://ec2-13-48-72-129.eu-north-1.compute.amazonaws.com:8081/attendance-log/createAttendanceLog?employeeId=229
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/createAttendanceLog?employeeId=229
 Response:
 Attendance log created successfully for Yokesh Bhatt for today.
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getAll
 Response:
 [
     [
@@ -4388,7 +4388,7 @@ Response:
     }
 ]
 Get All By Date Range
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getForRange1?start=2024-03-01&end=2024-05-31
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange1?start=2024-03-01&end=2024-05-31
 Response:
 [
     {
@@ -4425,7 +4425,7 @@ Response:
 
 
 Get By Date
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getByDate?date=2024-03-22
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getByDate?date=2024-03-22
 Response:
 [
     {
@@ -4442,7 +4442,7 @@ Response:
     }
 ]
 Get By Date Range for employee(Weekly)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/weeklyVisits?date=2024-05-01&employeeId=85
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/weeklyVisits?date=2024-05-01&employeeId=85
 
 Response:
 {
@@ -4461,7 +4461,7 @@ Response:
     }
 }
 Get By Date Range for employee(Monthly)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/monthlyVisits?date=2024-05-01&employeeId=85
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/monthlyVisits?date=2024-05-01&employeeId=85
 Response:
 {
     "weeklyCount": null,
@@ -4481,7 +4481,7 @@ Response:
 
 
 Get By Date Range for employee(Yearly)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/yearlyVisits?date=2024-05-01&employeeId=85
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/yearlyVisits?date=2024-05-01&employeeId=85
 Response:
 {
     "weeklyCount": null,
@@ -4503,11 +4503,11 @@ Response:
 
 Get By Date Range For all employee
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/dateRangeCount?start=2024-04-01&end=2024-05-25
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/dateRangeCount?start=2024-04-01&end=2024-05-25
 
 Get By Date Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getForRange?start=2024-03-21&end=2024-03-22
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange?start=2024-03-21&end=2024-03-22
 Response:
 [
  {
@@ -4534,14 +4534,14 @@ Response:
 ]
 Delete Duplicate Records for an employee
 Delete Call
-http://localhost:8081/attendance-log/deleteLog?employeeId=1&date=2024-11-27
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/deleteLog?employeeId=1&date=2024-11-27
 Response:
 Log Deleted!
 
 
 Delete duplicate logs for a date range
 Post Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/attendance-log/cleanup?startDate=2025-02-11&endDate=2025-02-11
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/cleanup?startDate=2025-02-11&endDate=2025-02-11
 
 
 
@@ -4549,7 +4549,7 @@ http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/attendance-log/cleanup?start
 EXPENSE TYPE
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense-type/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense-type/create
 PayLoad:
 {
     "type":"travel",
@@ -4563,7 +4563,7 @@ PayLoad:
 }
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense-type/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense-type/getAll
 Response:
 [
     {
@@ -4592,7 +4592,7 @@ Response:
 ]
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense-type/getById?id=2
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense-type/getById?id=2
 Response:
 {
     "id": 2,
@@ -4604,13 +4604,13 @@ Response:
 }
 Remove SubType
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense-type/removeSubType?id=2&type=Car
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense-type/removeSubType?id=2&type=Car
 Response:
 SubType removed Successfully!
 EXPENSE
 Get For Date Range For All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/getByDateRange?start=2024-03-01&end=2024-03-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getByDateRange?start=2024-03-01&end=2024-03-30
 Response:
 [
     {
@@ -4637,7 +4637,7 @@ Response:
 ]
 Date Range For An Employee
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/getByEmployeeAndDate?start=2024-03-01&end=2024-03-30&id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getByEmployeeAndDate?start=2024-03-01&end=2024-03-30&id=1
 Response:
 [
     {
@@ -4664,7 +4664,7 @@ Response:
 ]
 Reject Multiple For An Employee
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/rejectMultiple
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/rejectMultiple
 PayLoad:
 [
     {
@@ -4686,7 +4686,7 @@ Response:
 Rejected!
 Accept Multiple for an employee
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/approveMultiple
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/approveMultiple
 PayLoad:
 [
     {
@@ -4712,7 +4712,7 @@ Response:
 Approved!
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/create
 PayLoad:
 {
     "type":"travel",
@@ -4729,7 +4729,7 @@ Response:
 
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getAll
 Response:
 [
     {
@@ -4776,14 +4776,14 @@ Response with Attachment:
         "attachmentResponse": [
             {
                 "fileName": "Exception-Handling-768.png",
-                "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                 "fileType": "image/png",
                 "tag": "check-in",
                 "size": 0
             },
             {
                 "fileName": "Exception-Handling-768.png",
-                "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                 "fileType": "image/png",
                 "tag": "check-out",
                 "size": 0
@@ -4814,7 +4814,7 @@ Response with Attachment:
 ]
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/edit?id=1
 PayLoad:
 {
     "amount":300,
@@ -4825,7 +4825,7 @@ Response:
 Expense Saved Successfully!
 Approve
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/updateApproval?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/updateApproval?id=1
 PayLoad:
 
 {
@@ -4841,7 +4841,7 @@ Response:
 Approved!
 Reject
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/reject?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/reject?id=1
 PayLoad:
 {
 
@@ -4854,7 +4854,7 @@ Response:
 Rejected!
 Get by Employee
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getById?id=1
 Response:
 [
     {
@@ -4899,13 +4899,13 @@ Response:
 
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/delete?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/delete?id=1
 Response:
 Expense Deleted!
 Add Attachment
 Tag value(check-in/ check-out)
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/uploadFile?id=1&tag=check-in
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/uploadFile?id=1&tag=check-in
 Response:
 PayLoad:
 File
@@ -4913,7 +4913,7 @@ Response(Expense Id):
 1
 Delete Attachment
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/removeFile?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/removeFile?id=1
 PayLoad:
 {
     "ids":[
@@ -4924,17 +4924,17 @@ Response:
 Attachments deleted successfully from the expense.
 Get Attachment
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/getFiles?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getFiles?id=1
 Response:
 [
     "/expense/images/1/0"
 ]
 Image Link
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/images/1/0
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/images/1/0
 EMPLOYEE LOGIN
 Create(Nested)
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee-user/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee-user/create
 PayLoad:
 {
   "user": {
@@ -4964,7 +4964,7 @@ User Created! 3
 
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/manage/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/create
 PayLoad:
 {
     "username":"Shilpa",
@@ -4977,7 +4977,7 @@ Response:
 Shilpa FIELD OFFICERSaved!
 Update
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/manage/update
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/update
 PayLoad:
 {
     "username":"Prisha",
@@ -4985,12 +4985,12 @@ PayLoad:
 }
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/manage/delete?username=Shilpa
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/delete?username=Shilpa
 Response:
 Shilpadeleted!
 Get
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/manage/get?username=Shilpa
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/get?username=Shilpa
 Response:
 {
     "username": "Shilpa",
@@ -5002,7 +5002,7 @@ Response:
 }
 Current User
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/manage/current-user
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/current-user
 Response:
 {
     "password": "$2a$10$AUTUHmCXqJ1FVpPCnKccveBcG9PDWdp7Mj0ROPtXZwJSfB0kJO4x.",
@@ -5034,7 +5034,7 @@ Response:
 TEAM
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/create
 PayLoad:
 {
     "officeManager":2,
@@ -5044,12 +5044,12 @@ Response:
 1
 Delete Team
 Delete Call
-http:/ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/delete?id=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/delete?id=3
 Response:
 Team Deleted Successfully!
 Edit Office Manager
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/editOfficeManager?id=6
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/editOfficeManager?id=6
 PayLoad:
 {
     "officeManager":6
@@ -5058,7 +5058,7 @@ Response:
 Office Manager Added Successfully!
 Delete Field Officer From Team
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/deleteFieldOfficer?id=6
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/deleteFieldOfficer?id=6
 PayLoad:
 {
     "fieldOfficers": [6]
@@ -5069,7 +5069,7 @@ Response:
 Field Officer Removed From Team Successfully!
 Add Field Officer to the Team
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/addFieldOfficer?id=6
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/addFieldOfficer?id=6
 PayLoad:
 {
     "fieldOfficers": [1]
@@ -5077,7 +5077,7 @@ PayLoad:
 Response:
 Field Officer Added Successfully!
 Get All
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getAll
 Get Call
 Response:[
     {
@@ -5171,7 +5171,7 @@ Response:[
 ]
 Get By Office Manager
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/getbyEmployee?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getbyEmployee?id=1
 Response:
 [
     {
@@ -5212,7 +5212,7 @@ Response:
 ]
 
 Get By Id
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getById?id=1
 Get Mapping
 
 [
@@ -5290,7 +5290,7 @@ Get Mapping
 ]
 Get Expense For a Team
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/getForTeam?id=6
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getForTeam?id=6
 Response:
 [
     {
@@ -5323,7 +5323,7 @@ Get Tasks For A Team
 COMPANY
 Create
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/company/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/company/create
 PayLoad:
 {
   "companyName": "Gajkesari",
@@ -5346,7 +5346,7 @@ Response:
 1
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/company/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/company/getAll
 Response:
 [
     {
@@ -5380,7 +5380,7 @@ Response:
 ]
 New Subscription
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/company/newSubscription?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/company/newSubscription?id=1
 
 PayLoad:
 {
@@ -5389,7 +5389,7 @@ PayLoad:
 }
 Renew Subscription
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/company/newSubscription?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/company/newSubscription?id=1
 PayLoad:
 {
     "currentSubscriptionType":"Annually",
@@ -5398,14 +5398,14 @@ PayLoad:
 
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/company/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/company/edit?id=1
 Delete
 Delete Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/company/delete?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/company/delete?id=1
 
 Subscription Type
 Create
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/subscriptionType/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/subscriptionType/create
 
 Post Call
 {
@@ -5418,7 +5418,7 @@ Response:
 1
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/subscriptionType/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/subscriptionType/getAll
 Response:
 [
     {
@@ -5440,7 +5440,7 @@ Response:
 
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/subscriptionType/edit?type=Annually
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/subscriptionType/edit?type=Annually
 Response:
 {
     "type":"Annually",
@@ -5452,40 +5452,40 @@ Response:
 Delete
 IMAGE API
 Download image(Expense)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/downloadFile/1/check-in/Exception-Handling-768.png
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/downloadFile/1/check-in/Exception-Handling-768.png
 Get Call
 Response: Image
 Upload File(Expense)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/expense/uploadFile
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/uploadFile
 Put Call
 {
     "fileName": "Exception-Handling-768.png",
-    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
     "fileType": "image/png",
     "tag": "check-out",
     "size": 71145
 }
 Download image(Notes)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/downloadFile/1/check-in/Exception-Handling-768.png
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/downloadFile/1/check-in/Exception-Handling-768.png
 Get Call
 Response: Image
 Upload File(Notes)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/notes/uploadFile
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/uploadFile
 Put Call
 {
     "fileName": "Exception-Handling-768.png",
-    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
     "fileType": "image/png",
     "tag": "check-out",
     "size": 71145
 }
 Upload File
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/uploadFile
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/uploadFile
 Response:
 {
     "fileName": "Second.png",
-    "fileDownloadUri": "http://localhost:8081/downloadFile/Second.png",
+    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Second.png",
     "fileType": "image/png",
     "tag": "check-in",
     "size": 58155
@@ -5495,7 +5495,7 @@ Response:
 Target
 Initialize target for a month
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/initialize
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/initialize
 PayLoad:
 {
     "month":"June",
@@ -5506,7 +5506,7 @@ Response:
 City targets initialized
 Get All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/getAll
 Response:
 [
     {
@@ -5526,7 +5526,7 @@ Response:
 ]
 Get By City
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/getByCity?city=Jalna
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/getByCity?city=Jalna
 Response:
 [
     {
@@ -5539,7 +5539,7 @@ Response:
 ]
 Get By Month And Year
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/getByMonthYear?month=June&year=2024
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/getByMonthYear?month=June&year=2024
 Response:
 [
     {
@@ -5561,7 +5561,7 @@ Response:
 ]
 Get By City And Month And Year
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/getByCityMonthYear?city=Jalna&month=June&year=2024
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/getByCityMonthYear?city=Jalna&month=June&year=2024
 Response:
 {
     "id": 2,
@@ -5572,7 +5572,7 @@ Response:
 }
 Get Employees By Target Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/employees?cityTargetId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/employees?cityTargetId=1
 Response:
 [
     {
@@ -5590,12 +5590,12 @@ Response:
 ]
 Update employee Achievement
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/updateAchievement?employeeTargetId=1&achievedValue=20
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/updateAchievement?employeeTargetId=1&achievedValue=20
 Response:
 Employee achievement updated
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/target/edit
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/target/edit
 PayLoad:
 {
     "id":2,
@@ -5606,7 +5606,7 @@ City target edited
 Travel Rate For Employee
 Add Travel Rates for the employee
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/travel-rates/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/create
 PayLoad:
 {
     "employeeId":1,
@@ -5627,7 +5627,7 @@ Response:
 }
 Edit
 Put Call
-http://localhost:8081/travel-rates/edit?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/edit?id=1
 {
     "bikeRatePerKm":75,
     "carRatePerKm": 100.0,
@@ -5636,7 +5636,7 @@ http://localhost:8081/travel-rates/edit?id=1
 }
 Get All
 Get Call
-http://localhost:8081/travel-rates/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/getAll
 Response:
 [
     {
@@ -5653,7 +5653,7 @@ Response:
 ]
 Get By Employee
 Get Call
-http://localhost:8081/travel-rates/getByEmployee?employeeId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/getByEmployee?employeeId=1
 Response:
 {
     "id": 1,
@@ -5669,12 +5669,12 @@ Response:
 Travel Allowance
 Edit Vehicle
 Put Call
-http://localhost:8081/attendance-log/editVehicle?id=1&date=2024-03-22&vehicleType=Car
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/editVehicle?id=1&date=2024-03-22&vehicleType=Car
 Response:
 Vehicle type updated successfully for Shilpa K on 2024-03-22
 Get Visit List For Employee For Date Range
 Get Call
-http://localhost:8081/travel-allowance/getForEmployeeAndDate?employeeId=1&start=2024-03-22&end=2024-03-25
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-allowance/getForEmployeeAndDate?employeeId=1&start=2024-03-22&end=2024-03-25
 Response:
 {
     "employeeId": 1,
@@ -5697,7 +5697,7 @@ Response:
 }
 Create
 Post Call
-http://localhost:8081/travel-allowance/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-allowance/create
 PayLoad:
 {
 
@@ -5713,7 +5713,7 @@ Response:
 1
 Get For A Date Range
 Get Call
-http://localhost:8081/travel-allowance/getByRange?startDate=2024-03-20&endDate=2024-03-29
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-allowance/getByRange?startDate=2024-03-20&endDate=2024-03-29
 Response:
 [
     {
@@ -5733,7 +5733,7 @@ Response:
 
 Get Salary Summary
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/salary-calculation/summary-range?startDate=2025-07-01&endDate=2025-07-31
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/salary-calculation/summary-range?startDate=2025-07-01&endDate=2025-07-31
 Response:
 [
     {
@@ -5781,7 +5781,7 @@ Response:
 Export
 Export Store Details
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/export
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/export
 Response:
 "Store Id","Store Name","Owner First Name","Owner Last Name","Primary Contact","City","State","Monthly Sale","Client Type","Intent","Total Visit Count","Visit This Month","Last Visit Date","Outcome Last Visit"
 "1","Bunty Traders","Bunty","Kannad","9452365875","Ch.Sambhajinagar","Maharashtra","100.0","Shop","5","4","0","2024-04-25","done"
@@ -5796,7 +5796,7 @@ Reports
 Get Reports
 Get new store count and visit count for all the new stores
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getForEmployee?startDate=2024-05-01&endDate=2024-07-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getForEmployee?startDate=2024-05-01&endDate=2024-07-30
 Response:
 [
     {
@@ -5859,7 +5859,7 @@ Response:
 ]
 Get Visit Counts
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getCounts?startDate=2024-05-01&endDate=2024-07-16
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getCounts?startDate=2024-05-01&endDate=2024-07-16
 Response:
 [
     {
@@ -5890,7 +5890,7 @@ Response:
 ]
 Get Monthly Sale Change History For All
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getMonthlySaleChangeForAll?startDate=2024-03-01&endDate=2024-07-16
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getMonthlySaleChangeForAll?startDate=2024-03-01&endDate=2024-07-16
 Response:
 {
     "3": [
@@ -5911,7 +5911,7 @@ Response:
 }
 Get Monthly Sale change for a store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getMonthlySaleChangeForStore?storeId=585&startDate=2024-05-01&endDate=2024-06-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getMonthlySaleChangeForStore?storeId=585&startDate=2024-05-01&endDate=2024-06-30
 Response:
 [
     {
@@ -5930,7 +5930,7 @@ Response:
 ]
 Get Monthly Sale change for a store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getMonthlySaleChangeForStore?storeId=3
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getMonthlySaleChangeForStore?storeId=3
 Response:
 [
     {
@@ -5949,7 +5949,7 @@ Response:
 ]
 Get Intent Change History For All Stores
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getIntentChangeForAll?startDate=2024-03-01&endDate=2024-07-16
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getIntentChangeForAll?startDate=2024-03-01&endDate=2024-07-16
 Response:
 {
     "1": [
@@ -5970,11 +5970,11 @@ Response:
 
 Get Intent Change History For Store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getIntentChangeForStore?storeId=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getIntentChangeForStore?storeId=1
 Response:
 Get Intent Change History For STore And Date Raneg
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getIntentChangeForStore?storeId=1&startDate=2024-05-01&endDate=2024-06-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getIntentChangeForStore?storeId=1&startDate=2024-05-01&endDate=2024-06-30
 Response:
 [
     {
@@ -5993,7 +5993,7 @@ Response:
  
 Get Avg Monthly Sale And Avg Intent For Date Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getAvgValues?startDate=2024-06-01&endDate=2024-06-30&storeId=22
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getAvgValues?startDate=2024-06-01&endDate=2024-06-30&storeId=22
 Response:
 {
     "storeId": 3,
@@ -6019,7 +6019,7 @@ Response:
     "intentLogs": []
 }
 Get By Client Type For An Employee
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getByStoreType?employeeId=33&startDate=2024-05-01&endDate=2024-06-25
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getByStoreType?employeeId=33&startDate=2024-05-01&endDate=2024-06-25
 
 Response:
 {
@@ -6030,7 +6030,7 @@ Response:
 Get Store Data
 Fetch total visits, current intent level and current monthly sales for all the store
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/report/getStoreStats?employeeId=33&startDate=2024-05-01&endDate=2024-06-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getStoreStats?employeeId=33&startDate=2024-05-01&endDate=2024-06-30
 Response:
 [
     {
@@ -6094,7 +6094,7 @@ report/getStoreStats?employeeId=1 WE NEED DATERANGE & Average of monthly sales a
 Versions
 Create/ update
 Put Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/version/update?versionName=2.1&url=null
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/version/update?versionName=2.1&url=null
 Response:
 {
     "id": 1,
@@ -6103,7 +6103,7 @@ Response:
 }
 Get Current
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/version/current
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/version/current
 Response:
 {
     "id": 1,
@@ -6112,7 +6112,7 @@ Response:
 }
 Edit
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/version/edit?url=http://abc.com&versionName=1.0.1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/version/edit?url=http://abc.com&versionName=1.0.1
 Response:
 {
     "id": 1,
@@ -6122,13 +6122,13 @@ Response:
 Enquiry(Excel File Related Calls)
 Upload
 Post Call
-http://localhost:8081/enquiry/upload
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/upload
 Payload:(file)
 Response:
 File processed successfully
 
 Get All
-http://localhost:8081/enquiry/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/getAll
 Response:
 [
     {
@@ -6147,7 +6147,7 @@ Response:
     }
 
 Get By Range
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/enquiry/range?startMonth=Jan-25&endMonth=Feb-25
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/range?startMonth=Jan-25&endMonth=Feb-25
 Response:
 [
     {
@@ -6165,7 +6165,7 @@ Response:
 
 Get visit stats
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/visit/field-officer-stats?employeeId=19&startDate=2025-05-15&endDate=2025-05-25
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/field-officer-stats?employeeId=19&startDate=2025-05-15&endDate=2025-05-25
 Response:
 {
     "totalVisits": 56,
@@ -6181,9 +6181,9 @@ Response:
     }
 }
 Get visit details by store type and employee Id
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/visit/customer-visit-details?employeeId=19&startDate=2025-05-15&endDate=2025-05-25&customerType=shop
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/customer-visit-details?employeeId=19&startDate=2025-05-15&endDate=2025-05-25&customerType=shop
 
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/visit/customer-visit-details?employeeId=19&startDate=2025-05-15&endDate=2025-05-25&customerType=others
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/customer-visit-details?employeeId=19&startDate=2025-05-15&endDate=2025-05-25&customerType=others
 
 Get Call
 Response:
@@ -6202,7 +6202,7 @@ Response:
 ]
 Filter in enquiry
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/enquiry/filter?storeName=ABC Store&taluka=Mumbai&sheetName=Sheet1&fileName=Sales2024.xlsx
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/filter?storeName=ABC Store&taluka=Mumbai&sheetName=Sheet1&fileName=Sales2024.xlsx
 Response:
 [
     {
@@ -6222,7 +6222,7 @@ Response:
 ]
 Paginated Get All
 Get Call
-http://localhost:8081/enquiry/getAllPaginated
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/getAllPaginated
 Response:
 {
     "content": [
@@ -6270,7 +6270,7 @@ Response:
 }
 Multilevel Filtering
 Get Call
-http://localhost:8081/enquiry/filtered?storeName=ABC%20Store&taluka=Mumbai&city=Mumbai&state=Maharashtra&startMonthYear=Jan-24&endMonthYear=Dec-24&sortByStoreCount=false&page=0&size=5&sortBy=dealerName&direction=asc
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/filtered?storeName=ABC%20Store&taluka=Mumbai&city=Mumbai&state=Maharashtra&startMonthYear=Jan-24&endMonthYear=Dec-24&sortByStoreCount=false&page=0&size=5&sortBy=dealerName&direction=asc
 
 
 Response:
@@ -6289,7 +6289,7 @@ Response:
 ]
 Sort By (State, City, Taluka and either sales Count or Store Name)
 Get Call
-http://ec2-3-88-111-83.compute-1.amazonaws.com:8081/enquiry/sorted?sortByOccurrences=true
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/sorted?sortByOccurrences=true
 Response:
 [
     {
@@ -6318,7 +6318,7 @@ Response:
 NESTED RESPONSE - EXPORT
 Get By Id
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/nested-response/getById?id=1
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/nested-response/getById?id=1
 Response:
 {
     "visitDto": [
@@ -6353,14 +6353,14 @@ Response:
             "attachmentResponse": [
                 {
                     "fileName": "Second.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Second.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Second.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
                 },
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
@@ -6458,21 +6458,21 @@ Response:
             "attachmentResponse": [
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
                 },
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-out",
                     "size": 0
                 },
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
@@ -6550,7 +6550,7 @@ Response:
 }
 Get By Range
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/nested-response/getByRange?id=1&start=2024-03-21&end=2024-03-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/nested-response/getByRange?id=1&start=2024-03-21&end=2024-03-30
 Response:
 {
     "visitDto": [
@@ -6585,14 +6585,14 @@ Response:
             "attachmentResponse": [
                 {
                     "fileName": "Second.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Second.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Second.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
                 },
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
@@ -6690,21 +6690,21 @@ Response:
             "attachmentResponse": [
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
                 },
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-out",
                     "size": 0
                 },
                 {
                     "fileName": "Exception-Handling-768.png",
-                    "fileDownloadUri": "http://localhost:8081/downloadFile/Exception-Handling-768.png",
+                    "fileDownloadUri": "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png",
                     "fileType": "image/png",
                     "tag": "check-in",
                     "size": 0
@@ -6785,7 +6785,7 @@ Response:
 
 To Be Added:
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/store/getAll
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getAll
 Last Visit Date
 Last Visit Outcome
 Total Visits
@@ -6847,10 +6847,10 @@ New Users(After adding company):
 
 Get Call
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/downloadFile/Exception-Handling-768.png
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/downloadFile/Exception-Handling-768.png
 
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/uploadFile
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/uploadFile
 
 
 Response
@@ -7054,10 +7054,10 @@ To be added:
 2) Get all stores by employee ID
 
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/downloadFile/32/check-in/0FF92EA8-967B-4FF2-847A-A96EDDBE46D5.jpg
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/downloadFile/32/check-in/0FF92EA8-967B-4FF2-847A-A96EDDBE46D5.jpg
 
 To be removed (attachment response)
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/visit/getByStore?id
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByStore?id
 
 store/getById
 store/getByEmployee
@@ -7088,14 +7088,14 @@ Phone : partial number
 Client type: partial match
 
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getForRange?start=2024-05-31&end=2024-06-29
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange?start=2024-05-31&end=2024-06-29
 
 
 
 
 
 Call 1:
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getForRange1?start=2024-04-01&end=2024-04-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange1?start=2024-04-01&end=2024-04-30
 Response:
 [
     {
@@ -7115,7 +7115,7 @@ Response:
     }
 ]
 Call 2:
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getForRange?start=2024-04-01&end=2024-04-30
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange?start=2024-04-01&end=2024-04-30
 
 Response:
 [
@@ -7149,7 +7149,7 @@ Response:
 Employee Hierarchy
 Get All Field Officers
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getFieldOfficer
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getFieldOfficer
 Response:
 [
     {
@@ -7192,7 +7192,7 @@ Response:
 ]
 Get All Office Manager
 Get Call
-http://localhost:8081/employee/getOfficeManager
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getOfficeManager
 Response:
 [
     {
@@ -7227,7 +7227,7 @@ Response:
 ]
 Get Field Officers By City
 Get Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/getFieldOfficerByCity?city=Mumbai
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getFieldOfficerByCity?city=Mumbai
 Response:
 [
     {
@@ -7270,13 +7270,13 @@ Response:
 ]
 Assign City to Office Manager
 Put Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/assignCity?id=2&city=Mumbai
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/assignCity?id=2&city=Mumbai
 Response:
 Mumbai assigned to Employee Id: 2
 
 Create Team
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee/team/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/create
 Response:
 {
     "officeManager":6,
@@ -7292,7 +7292,7 @@ Error Creating Team: Field Officer 3 is not in the same city as the office manag
 
 Create Login for Manager
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/employee-user/create
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee-user/create
 PayLoad:
 {
   "user": {
@@ -7321,7 +7321,7 @@ PayLoad:
 
 Login With Credentials For Manager
 Post Call
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/user/token
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/token
 PayLoad:
  {
     "username":"Abc",
@@ -7339,7 +7339,7 @@ Tasks should have ability to add upto 5 images
 
 
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getForRange?start=2024-08-01&end=2024-08-04
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange?start=2024-08-01&end=2024-08-04
 
 
 
@@ -7358,7 +7358,7 @@ http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/attendance-log/getFo
 
   
 
-http://localhost:8081/travel-allowance/getForEmployeeAndDate?employeeId=1&start=2024-03-22&end=2024-03-29
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-allowance/getForEmployeeAndDate?employeeId=1&start=2024-03-22&end=2024-03-29
 
 {
     "employeeId": 1,
@@ -7388,7 +7388,7 @@ http://localhost:8081/travel-allowance/getForEmployeeAndDate?employeeId=1&start=
 
 
 
-http://ec2-51-20-32-8.eu-north-1.compute.amazonaws.com:8081/travel-allowance/getForEmployeeAndDate?employeeId=19&start=2024-08-01&end=2024-08-31
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-allowance/getForEmployeeAndDate?employeeId=19&start=2024-08-01&end=2024-08-31
 
 
 

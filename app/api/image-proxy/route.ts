@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { GERMAN_STEELS_BACKEND_ORIGIN } from '@/lib/backend-origin';
 
-const UPSTREAM_BASE = (process.env.API_PROXY_TARGET || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081').replace(/\/$/, '');
+const UPSTREAM_BASE = GERMAN_STEELS_BACKEND_ORIGIN;
 
 export async function GET(request: NextRequest) {
   try {

@@ -4,13 +4,13 @@ German Steels is a Next.js field-sales dashboard for visits, customers, employee
 
 ## Backend configuration
 
-All browser requests use the same-origin `/api/proxy` route. The upstream service is configured server-side:
+All browser requests use the same-origin `/api/proxy` route. Local development and deployed builds both use:
 
-```bash
-API_PROXY_TARGET=http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
+```text
+http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
 ```
 
-Copy `.env.example` to `.env.local` when setting up a new environment.
+The upstream is fixed in `lib/backend-origin.ts`. Browser requests remain same-origin through `/api/proxy`, so no public backend environment variable is needed.
 
 ## Run locally
 
