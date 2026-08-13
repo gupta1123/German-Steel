@@ -77,7 +77,7 @@ const SalesPerformanceReport: React.FC = () => {
     const fetchStores = useCallback(async () => {
         try {
             const response = await axios.get<{ content: Store[], totalPages: number }>(
-                '/api/proxy/store/filteredValues',
+                'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/filteredValues',
                 {
                     params: {
                         storeName: storeSearchQuery || storeNameFilter,
@@ -113,7 +113,7 @@ const SalesPerformanceReport: React.FC = () => {
 
     const fetchMonthData = useCallback(async (start: string, end: string, storeId: number) => {
         try {
-            const response = await axios.get('/api/proxy/report/getAvgValues', {
+            const response = await axios.get('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/report/getAvgValues', {
                 params: { startDate: start, endDate: end, storeId },
                 headers: { Authorization: `Bearer ${token}` }
             });

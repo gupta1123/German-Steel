@@ -77,7 +77,7 @@ const Allowance: React.FC = () => {
         if (!token) return;
 
         try {
-            const response = await fetch('/api/proxy/travel-rates/getAll', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/getAll', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
@@ -115,7 +115,7 @@ const Allowance: React.FC = () => {
 
         setIsSaving(true);
         try {
-            const salaryResponse = await fetch(`/api/proxy/employee/setSalary`, {
+            const salaryResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/setSalary`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -142,7 +142,7 @@ const Allowance: React.FC = () => {
 
             let travelRateResponse;
             if (existingTravelRate) {
-                travelRateResponse = await fetch(`/api/proxy/travel-rates/edit?id=${existingTravelRate.id}`, {
+                travelRateResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/edit?id=${existingTravelRate.id}`, {
                     method: 'PUT',
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -151,7 +151,7 @@ const Allowance: React.FC = () => {
                     body: JSON.stringify(travelRateData),
                 });
             } else {
-                travelRateResponse = await fetch(`/api/proxy/travel-rates/create`, {
+                travelRateResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/create`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,

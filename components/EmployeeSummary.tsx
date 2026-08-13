@@ -159,7 +159,7 @@ const EmployeeSummary: React.FC = () => {
             }
 
             const response = await fetch(
-                `/api/proxy/salary-calculation/manual-summary-range?startDate=${startDate}&endDate=${endDate}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/salary-calculation/manual-summary-range?startDate=${startDate}&endDate=${endDate}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -298,7 +298,7 @@ const EmployeeSummary: React.FC = () => {
                 adjustmentAmount: String(adjustmentAmount),
             });
 
-            const response = await fetch(`/api/proxy/travel-allowance/apply-salary-adjustment?${adjustmentParams.toString()}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-allowance/apply-salary-adjustment?${adjustmentParams.toString()}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

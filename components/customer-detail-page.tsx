@@ -218,7 +218,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const fetchIntentData = useCallback(async (id: string) => {
         try {
-            const response = await fetch(`/api/proxy/intent-audit/getByStore?id=${id}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/intent-audit/getByStore?id=${id}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -232,7 +232,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const fetchSalesData = useCallback(async (id: string) => {
         try {
-            const response = await fetch(`/api/proxy/monthly-sale/getByStore?storeId=${id}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/monthly-sale/getByStore?storeId=${id}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -247,7 +247,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const fetchCustomerData = useCallback(async (id: string) => {
         try {
             setIsLoadingCustomer(true);
-            const response = await fetch(`/api/proxy/store/getById?id=${id}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getById?id=${id}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -267,7 +267,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const fetchNotesData = useCallback(async (id: string) => {
         try {
-            const response = await fetch(`/api/proxy/notes/getByStore?id=${id}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/getByStore?id=${id}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -294,7 +294,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const fetchTasksData = useCallback(async (id: string, start: Date, end: Date) => {
         try {
-            const response = await fetch(`/api/proxy/task/getByStoreAndDate?storeId=${id}&start=${format(start, 'yyyy-MM-dd')}&end=${format(end, 'yyyy-MM-dd')}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByStoreAndDate?storeId=${id}&start=${format(start, 'yyyy-MM-dd')}&end=${format(end, 'yyyy-MM-dd')}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -316,7 +316,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const fetchEmployees = useCallback(async () => {
         try {
             setIsLoadingEmployees(true);
-            const response = await fetch('/api/proxy/employee/getFieldOfficer', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getFieldOfficer', {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -449,7 +449,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         if (isNoteSaving) return;
         try {
             setIsNoteSaving(true);
-            const response = await fetch('/api/proxy/notes/create', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/create', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -485,7 +485,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         if (isNoteSaving) return;
         try {
             setIsNoteSaving(true);
-            const response = await fetch(`/api/proxy/notes/edit?id=${editingNoteId}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/edit?id=${editingNoteId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -513,7 +513,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const handleDeleteNoteConfirm = async () => {
         if (!notePendingDelete) return;
         try {
-            const response = await fetch(`/api/proxy/notes/delete?id=${notePendingDelete.id}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/delete?id=${notePendingDelete.id}`, {
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -687,7 +687,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const handleChangeStatus = async (taskId: number, status: string) => {
         try {
-            const response = await fetch(`/api/proxy/task/updateTask?taskId=${taskId}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/updateTask?taskId=${taskId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -725,7 +725,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
             console.log('Sending data:', requestData);
 
-            const response = await fetch(`/api/proxy/store/edit?id=${storeId}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/edit?id=${storeId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -780,7 +780,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const handleCreateComplaint = async () => {
         try {
-            const response = await fetch('/api/proxy/task/create', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -816,7 +816,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const handleCreateRequirement = async () => {
         try {
-            const response = await fetch('/api/proxy/task/create', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -154,7 +154,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     setError(null);
     try {
       if (isManagerUser) {
-        const response = await fetch(`/api/proxy/employee/team/getbyEmployee?id=${employeeId}`, {
+        const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getbyEmployee?id=${employeeId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -259,7 +259,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const fetchArchivedEmployees = async () => {
     try {
       console.log('Fetching archived employees...');
-      const response = await fetch('/api/proxy/employee/getAllInactive', {
+      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getAllInactive', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -281,7 +281,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const deleteUserById = async (userId: number) => {
     try {
       const response = await fetch(
-        `/api/proxy/employee/delete?id=${userId}`,
+        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/delete?id=${userId}`,
         {
           method: 'PUT',
           headers: {
@@ -321,7 +321,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
     try {
       const response = await fetch(
-        "/api/proxy/user/manage/update",
+        "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/update",
         {
           method: 'PUT',
           headers: {
@@ -351,7 +351,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const handleUnarchive = async (employeeId: number) => {
     try {
       const response = await fetch(
-        `/api/proxy/employee/setActive?id=${employeeId}`,
+        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/setActive?id=${employeeId}`,
         {
           method: 'PUT',
           headers: {
@@ -382,7 +382,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
         
         const encodedUsername = encodeURIComponent(editingUsername.username.trim());
         const response = await fetch(
-          `/api/proxy/employee/editUsername?id=${editingUsername.id}&username=${encodedUsername}`,
+          `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/editUsername?id=${editingUsername.id}&username=${encodedUsername}`,
           {
             method: 'PUT',
             headers: {

@@ -31,7 +31,7 @@ const DailyPricingChecker = () => {
       const startDate = new Date(endDate);
       startDate.setDate(endDate.getDate() - 1);
 
-      const url = `/api/proxy/brand/getByDateRange?start=${formatDate(startDate)}&end=${formatDate(endDate)}`;
+      const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=${formatDate(startDate)}&end=${formatDate(endDate)}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {

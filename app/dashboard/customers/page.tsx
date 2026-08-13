@@ -777,7 +777,7 @@ function CustomerListContent() {
                 }
                 
                 // Fallback to direct fetch
-                const response = await fetch(`/api/proxy/store/deleteById?id=${selectedCustomerId}`, {
+                const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/deleteById?id=${selectedCustomerId}`, {
                     method: 'DELETE',
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -824,7 +824,7 @@ function CustomerListContent() {
         try {
             console.log('Starting export process...');
             
-            const response = await fetch('/api/proxy/store/export', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/export', {
                 method: 'GET',
                 headers: {
                     Authorization: `Bearer ${token}`,

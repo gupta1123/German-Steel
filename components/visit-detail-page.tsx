@@ -609,7 +609,7 @@ export default function VisitDetailPage() {
           .map(async (attachment: Record<string, unknown>) => {
             try{
            
-              const response = await fetch(`/api/proxy/visit/downloadFile/${visitId}/check-in/${attachment.fileName}`, {
+              const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/downloadFile/${visitId}/check-in/${attachment.fileName}`, {
                 headers: {
                   'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
                 },
@@ -1071,7 +1071,7 @@ export default function VisitDetailPage() {
       setIsNoteSaving(true);
       if (isNoteEditMode && editingNoteId !== null) {
         const response = await fetch(
-          `/api/proxy/notes/edit?id=${editingNoteId}`,
+          `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/edit?id=${editingNoteId}`,
           {
             method: 'PUT',
             headers: {
@@ -1093,7 +1093,7 @@ export default function VisitDetailPage() {
         await refreshNotes();
       } else {
         const response = await fetch(
-          '/api/proxy/notes/create',
+          'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/create',
           {
             method: 'POST',
             headers: {
@@ -1130,7 +1130,7 @@ export default function VisitDetailPage() {
   const deleteNote = async (id: number) => {
     try {
       const response = await fetch(
-        `/api/proxy/notes/delete?id=${id}`,
+        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/delete?id=${id}`,
         {
           method: 'DELETE',
           headers: {
@@ -1239,7 +1239,7 @@ export default function VisitDetailPage() {
         visitId: Number(visitId),
       };
 
-      const response = await fetch('/api/proxy/task/create', {
+      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

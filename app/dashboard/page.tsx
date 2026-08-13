@@ -388,7 +388,7 @@ export default function DashboardPage() {
       try {
         const today = new Date().toISOString().split('T')[0];
         console.log('Checking pricing for today:', today);
-        const response = await fetch(`/api/proxy/brand/getByDateRange?start=${today}&end=${today}`, {
+        const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=${today}&end=${today}`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',

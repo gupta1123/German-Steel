@@ -130,7 +130,7 @@ const AddTeam = () => {
             const [allEmployeesData, teamsResponse] = await Promise.all([
                 API.getAllEmployees<OfficeManager>(),
                 fetch(
-                    "/api/proxy/employee/team/getAll",
+                    "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getAll",
                     {
                         headers: {
                             Authorization: `Bearer ${token}`,
@@ -201,7 +201,7 @@ const AddTeam = () => {
         try {
             console.log('=== FETCHING CITIES ===');
             const response = await fetch(
-                "/api/proxy/employee/getCities",
+                "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getCities",
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -275,7 +275,7 @@ const AddTeam = () => {
             setIsLoadingEmployees(true);
             const promises = cities.map(city =>
                 fetch(
-                    `/api/proxy/employee/getFieldOfficerByCity?city=${encodeURIComponent(city)}`,
+                    `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getFieldOfficerByCity?city=${encodeURIComponent(city)}`,
                     {
                         headers: {
                             Authorization: `Bearer ${token}`,
@@ -312,7 +312,7 @@ const AddTeam = () => {
     const assignCitiesToManagers = async (managerIds: number[]) => {
         await Promise.all(managerIds.flatMap((managerId) => selectedCities.map(async (city) => {
             const response = await fetch(
-                `/api/proxy/employee/assignCity?id=${managerId}&city=${encodeURIComponent(city)}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/assignCity?id=${managerId}&city=${encodeURIComponent(city)}`,
                 {
                     method: 'PUT',
                     headers: {
@@ -384,7 +384,7 @@ const AddTeam = () => {
             console.log('Team creation request body:', requestBody);
             
             const response = await fetch(
-                "/api/proxy/employee/team/create",
+                "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/create",
                 {
                     method: 'POST',
                     headers: {

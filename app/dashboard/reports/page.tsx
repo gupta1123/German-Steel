@@ -197,7 +197,7 @@ const ReportsPage: React.FC = () => {
             try {
                 const [allEmployees, inactiveEmployeesResponse] = await Promise.all([
                     API.getAllEmployees<Employee>(),
-                    fetch('/api/proxy/employee/getAllInactive', {
+                    fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getAllInactive', {
                         headers: { Authorization: `Bearer ${token}` },
                     }),
                 ]);
@@ -281,7 +281,7 @@ const ReportsPage: React.FC = () => {
         const apiCustomerType = displayCategoryToApiTypeMap[displayCategory] || displayCategory.toLowerCase();
 
         try {
-            const url = `/api/proxy/visit/customer-visit-details?employeeId=${selectedEmployeeId}&startDate=${startDate}&endDate=${endDate}&customerType=${apiCustomerType}`;
+            const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/customer-visit-details?employeeId=${selectedEmployeeId}&startDate=${startDate}&endDate=${endDate}&customerType=${apiCustomerType}`;
             const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } }, 6, 1000);
             const data: VisitDetail[] = await response.json();
             setVisitDetails(data);
@@ -306,7 +306,7 @@ const ReportsPage: React.FC = () => {
         setDateRangeError(null);
         setReportLoading(true); setReportError(null); setShowReport(false);
         try {
-            const url = `/api/proxy/visit/field-officer-stats?employeeId=${selectedEmployeeId}&startDate=${startDate}&endDate=${endDate}`;
+            const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/field-officer-stats?employeeId=${selectedEmployeeId}&startDate=${startDate}&endDate=${endDate}`;
             const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } }, 6, 1000);
             const data: FieldOfficerStatsResponse = await response.json();
 

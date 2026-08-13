@@ -1,7 +1,7 @@
 // API service for WebSalesV3 - All endpoints from api.md
-// Use direct API calls to /api/proxy
-const API_BASE_URL = '/api/proxy';
-const SECONDARY_API_BASE_URL = '/api/proxy';
+// Use direct API calls to http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
+const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+const SECONDARY_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const DISTANCE_RECALCULATION_API_URL = `${API_BASE_URL}/attendance-log/updateDistanceTravelledForEmployeesWithOlaMaps`;
 
 // Types based on API responses from api.md

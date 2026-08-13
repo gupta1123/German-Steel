@@ -78,7 +78,7 @@ const PricingPage = () => {
             setIsRoleDetermined(false);
             
             try {
-                const response = await fetch('/api/proxy/user/manage/current-user', {
+                const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/current-user', {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
@@ -177,7 +177,7 @@ const PricingPage = () => {
 
             if (isManager || isFieldOfficer) {
                 const responses = await Promise.all(teamIds.map(async (id) => {
-                    const url = `/api/proxy/brand/getByTeamAndDate?id=${id}&start=${formattedStartDate}&end=${formattedEndDate}`;
+                    const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByTeamAndDate?id=${id}&start=${formattedStartDate}&end=${formattedEndDate}`;
                     console.log('Team pricing API call:', url);
                     const response = await fetch(url, {
                         headers: {
@@ -188,7 +188,7 @@ const PricingPage = () => {
                 }));
                 data = Array.from(new Map(responses.flat().map((brand) => [brand.id, brand])).values());
             } else {
-                const url = `/api/proxy/brand/getByDateRange?start=${formattedStartDate}&end=${formattedEndDate}`;
+                const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=${formattedStartDate}&end=${formattedEndDate}`;
                 console.log(isAdmin ? 'Admin API call:' : 'Default (Admin) API call:', url);
                 const response = await fetch(url, {
                     headers: {
@@ -240,7 +240,7 @@ const PricingPage = () => {
 
             if (isManager || isFieldOfficer) {
                 const responses = await Promise.all(teamIds.map(async (id) => {
-                    const url = `/api/proxy/brand/getByTeamAndDate?id=${id}&start=${previousDay}&end=${previousDay}`;
+                    const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByTeamAndDate?id=${id}&start=${previousDay}&end=${previousDay}`;
                     console.log('Team Previous Day API call:', url);
                     const response = await fetch(url, {
                         headers: {
@@ -251,7 +251,7 @@ const PricingPage = () => {
                 }));
                 data = Array.from(new Map(responses.flat().map((brand) => [brand.id, brand])).values());
             } else {
-                const url = `/api/proxy/brand/getByDateRange?start=${previousDay}&end=${previousDay}`;
+                const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=${previousDay}&end=${previousDay}`;
                 console.log(isAdmin ? 'Admin Previous Day API call:' : 'Default (Admin) Previous Day API call:', url);
                 const response = await fetch(url, {
                     headers: {

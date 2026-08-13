@@ -333,7 +333,7 @@ export default function TeamSettings() {
     setIsRemovingCity(true);
     try {
       const response = await fetch(
-        `/api/proxy/employee/removeAssignedCity?employeeId=${cityToRemove.employeeId}&city=${encodeURIComponent(cityToRemove.city.toLowerCase())}`,
+        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/removeAssignedCity?employeeId=${cityToRemove.employeeId}&city=${encodeURIComponent(cityToRemove.city.toLowerCase())}`,
         {
           method: 'PUT',
           headers: {

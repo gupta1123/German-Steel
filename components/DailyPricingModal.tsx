@@ -66,7 +66,7 @@ const DailyPricingModal = ({ open, onOpenChange, onCreateSuccess }: DailyPricing
         employeeDto: { id: employeeId }
       };
 
-      const response = await fetch('/api/proxy/brand/create', {
+      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

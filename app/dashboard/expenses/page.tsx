@@ -222,7 +222,7 @@ export default function ExpensesPage() {
   // Handle approve expense
   const handleApprove = async (employeeName: string, expenseId: number) => {
     try {
-      const response = await fetch(`/api/proxy/expense/updateApproval?id=${expenseId}`, {
+      const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/updateApproval?id=${expenseId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -274,7 +274,7 @@ export default function ExpensesPage() {
         paymentMethod: 'cash',
       }));
 
-      const response = await fetch('/api/proxy/expense/approveMultiple', {
+      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/approveMultiple', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -311,7 +311,7 @@ export default function ExpensesPage() {
   // Handle reject expense
   const handleReject = async (employeeName: string, expenseId: number) => {
     try {
-      const response = await fetch(`/api/proxy/expense/reject?id=${expenseId}`, {
+      const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/reject?id=${expenseId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -359,7 +359,7 @@ export default function ExpensesPage() {
         rejectionReason: 'Reason',
       }));
 
-      const response = await fetch('/api/proxy/expense/rejectMultiple', {
+      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/rejectMultiple', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

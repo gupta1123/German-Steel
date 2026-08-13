@@ -136,7 +136,7 @@ export default function AttendancePage() {
 
     try {
       const response = await fetch(
-        `/api/proxy/attendance-log/getForRange1?start=${startDate}&end=${endDate}`,
+        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange1?start=${startDate}&end=${endDate}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -198,7 +198,7 @@ export default function AttendancePage() {
       }
 
       try {
-        const url = `/api/proxy/visit/getByDateSorted?startDate=${date}&endDate=${date}&employeeName=${employeeName}&page=0&size=100&sort=id,desc`;
+        const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateSorted?startDate=${date}&endDate=${date}&employeeName=${employeeName}&page=0&size=100&sort=id,desc`;
         
         console.log('Making API request to:', url);
         console.log('Request params:', { date, employeeName, token: token ? 'Present' : 'Missing' });

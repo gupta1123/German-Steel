@@ -216,8 +216,8 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
       console.log('requestBody', requestBody)
       const url = existingData && existingData.id
-        ? `/api/proxy/store/update?id=${existingData.id}`
-        : '/api/proxy/store/create';
+        ? `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/update?id=${existingData.id}`
+        : 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/create';
       const method = existingData && existingData.id ? 'PUT' : 'POST';
 
       const response = await fetch(url, {

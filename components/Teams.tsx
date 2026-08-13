@@ -125,7 +125,7 @@ const Teams: React.FC = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch('/api/proxy/employee/team/getAll', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getAll', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
@@ -165,7 +165,7 @@ const Teams: React.FC = () => {
         if (!token) return;
 
         try {
-            const response = await fetch("/api/proxy/employee/getCities", {
+            const response = await fetch("http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getCities", {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -189,7 +189,7 @@ const Teams: React.FC = () => {
         try {
             const [employeesData, teamsResponse] = await Promise.all([
                 API.getAllEmployees<TeamManager>(),
-                fetch('/api/proxy/employee/team/getAll', {
+                fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getAll', {
                     headers: { Authorization: `Bearer ${token}` },
                 }),
             ]);
@@ -228,7 +228,7 @@ const Teams: React.FC = () => {
 
         try {
             const promises = cities.map(city =>
-                fetch(`/api/proxy/employee/getFieldOfficerByCity?city=${encodeURIComponent(city)}`, {
+                fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getFieldOfficerByCity?city=${encodeURIComponent(city)}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                     },
@@ -270,7 +270,7 @@ const Teams: React.FC = () => {
 
         setIsSaving(true);
         try {
-            const response = await fetch(`/api/proxy/employee/team/delete?id=${deleteTeamId}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/delete?id=${deleteTeamId}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -343,7 +343,7 @@ const Teams: React.FC = () => {
         setModalError(null); // Clear previous errors
         try {
             const response = await fetch(
-                `/api/proxy/employee/removeAssignedCity?employeeId=${selectedOfficeManagerId}&city=${encodeURIComponent(cityToRemove.toLowerCase())}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/removeAssignedCity?employeeId=${selectedOfficeManagerId}&city=${encodeURIComponent(cityToRemove.toLowerCase())}`,
                 {
                     method: 'DELETE',
                     headers: {
@@ -386,7 +386,7 @@ const Teams: React.FC = () => {
         setModalError(null); // Clear previous errors
         try {
             const response = await fetch(
-                `/api/proxy/employee/team/addFieldOfficer?id=${selectedTeamId}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/addFieldOfficer?id=${selectedTeamId}`,
                 {
                     method: 'PUT',
                     headers: {
@@ -421,7 +421,7 @@ const Teams: React.FC = () => {
 
         setIsSaving(true);
         try {
-            const response = await fetch(`/api/proxy/employee/team/deleteFieldOfficer?id=${teamId}`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/deleteFieldOfficer?id=${teamId}`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -525,7 +525,7 @@ const Teams: React.FC = () => {
             // Assign all selected cities
             const promises = selectedCities.map(city =>
                 fetch(
-                    `/api/proxy/employee/assignCity?id=${selectedOfficeManagerId}&city=${city}`,
+                    `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/assignCity?id=${selectedOfficeManagerId}&city=${city}`,
                     {
                         method: 'PUT',
                         headers: {
@@ -580,7 +580,7 @@ const Teams: React.FC = () => {
         setModalError(null);
         try {
             const response = await fetch(
-                `/api/proxy/employee/team/editOfficeManager?id=${selectedTeamId}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/editOfficeManager?id=${selectedTeamId}`,
                 {
                     method: 'PUT',
                     headers: {

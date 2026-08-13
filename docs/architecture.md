@@ -10,28 +10,25 @@ German Steels is the web administration and operations client for a field-sales 
 - Tailwind CSS and Radix UI components
 - Recharts/Chart.js for reporting
 - Leaflet for live locations and employee journeys
-- Spring Boot backend fixed in the server-only `lib/backend-origin.ts` module
+- Spring Boot backend called directly at `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081`
 
 ## Request flow
 
 ```mermaid
 flowchart LR
-  B[Browser UI] -->|same-origin /api/proxy/*| P[Next.js proxy route]
-  P -->|Bearer JWT| S[German Steels Spring Boot API]
-  S --> P --> B
-  C[authToken cookie] --> P
+  B[Browser UI] -->|Direct HTTP request with Bearer JWT| S[German Steels Spring Boot API]
+  S --> B
   L[authToken localStorage] --> B
+  C[authToken cookie] --> G[Next.js route guard]
 ```
 
-The browser never needs the EC2 origin hardcoded in individual screens. `app/api/proxy/[...path]/route.ts` reads the fixed server-only origin from `lib/backend-origin.ts`, forwards the request body and authorization header, and disables response caching for authenticated API data. This keeps local and deployed builds on the same German Steels backend.
-
-`app/api/image-proxy/route.ts` proxies authenticated attachments. It validates the exact configured backend origin before fetching to prevent server-side request forgery.
+The browser calls the EC2 origin directly from `lib/api.ts`, `lib/auth.ts`, `lib/meetings-api.ts`, and screen-level requests. There is no Next.js API proxy or image proxy. The backend must allow the frontend origin through CORS and expose HTTPS before the HTTPS Netlify deployment can use it without browser mixed-content blocking.
 
 ## Authentication and authorization
 
 1. `app/login/page.tsx` calls `authService.login`.
 2. `lib/auth.ts` posts credentials to `/user/token` and parses either JSON or the backend's role/token text format.
-3. The JWT is stored in local storage for client API calls and in an `authToken` cookie for the Next.js proxy and route guard.
+3. The JWT is stored in local storage for direct client API calls and in an `authToken` cookie for the Next.js route guard.
 4. User details come from `/user/manage/get` and `/user/manage/current-user`.
 5. Team membership is loaded to correct manager/field-officer role detection.
 6. Root `proxy.ts` rejects missing, malformed, or expired JWTs for `/dashboard/**` and redirects authenticated users away from `/login`.
@@ -48,8 +45,8 @@ Backend access controls remain authoritative. The web role helpers only control 
 | API client | `lib/api.ts` | DTOs, authenticated request handling, typed endpoint methods |
 | Authentication | `lib/auth.ts` | Login/logout, JWT persistence, role normalization |
 | Team scoping | `lib/team-access.ts` | Manager and field-officer access helpers |
-| API gateway | `app/api/proxy/[...path]/route.ts` | Same-origin proxy to Spring Boot |
-| Attachments | `app/api/image-proxy/route.ts` | Authenticated and origin-validated file proxy |
+| API origin | `lib/api.ts`, `lib/auth.ts`, `lib/meetings-api.ts` | Direct calls to the fixed Spring Boot origin |
+| Attachments | Screen-level requests | Direct authenticated downloads from Spring Boot |
 | Route guard | `proxy.ts` | JWT expiry validation and route redirects |
 
 ## Optimized data paths
@@ -83,4 +80,4 @@ npm run build
 npm run dev -- --port 3000
 ```
 
-The backend health check is available through the application at `/api/proxy/actuator/health`.
+The backend health check is available directly at `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/actuator/health`.

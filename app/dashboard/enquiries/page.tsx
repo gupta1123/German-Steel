@@ -121,7 +121,7 @@ export default function EnquiriesPage() {
 
     try {
       const queryParams = new URLSearchParams();
-      const baseUrl = '/api/proxy/enquiry/filtered';
+      const baseUrl = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/enquiry/filtered';
 
       if (storeNameFilter) queryParams.append('storeName', storeNameFilter);
       if (talukaFilter) queryParams.append('taluka', talukaFilter);

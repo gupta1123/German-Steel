@@ -149,7 +149,7 @@ const DailyBreakdown: React.FC = () => {
         try {
             const empId = selectedEmployee;
             const res = await fetch(
-                `/api/proxy/salary-calculation/daily-breakdown?employeeId=${empId}&startDate=${startDate}&endDate=${endDate}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/salary-calculation/daily-breakdown?employeeId=${empId}&startDate=${startDate}&endDate=${endDate}`,
                 { headers: { 'Authorization': `Bearer ${token}` } }
             );
             if (!res.ok) throw new Error("Failed to fetch data");
@@ -217,7 +217,7 @@ const DailyBreakdown: React.FC = () => {
                 const normalizedStatus = update.status.toLowerCase();
                 
                 const response = await fetch(
-                    `/api/proxy/attendance-log/admin/updateStatus?employeeId=${update.employeeId}&date=${update.date}&status=${encodeURIComponent(normalizedStatus)}`,
+                    `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/admin/updateStatus?employeeId=${update.employeeId}&date=${update.date}&status=${encodeURIComponent(normalizedStatus)}`,
                     {
                         method: 'PUT',
                         headers: {

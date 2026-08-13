@@ -79,7 +79,7 @@ export default function ApprovalsPage() {
         const fetchCurrentUser = async () => {
             if (!token) return;
             try {
-                const response = await fetch('/api/proxy/user/manage/current-user', {
+                const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/current-user', {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
                 
@@ -126,7 +126,7 @@ export default function ApprovalsPage() {
             if (requests.length === 0) setLoading(true);
             else setIsRefreshing(true);
 
-            const url = '/api/proxy/request/getByStatus?status=pending';
+            const url = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/getByStatus?status=pending';
             const response = await fetch(url, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -168,7 +168,7 @@ export default function ApprovalsPage() {
 
         try {
             await fetch(
-                `/api/proxy/request/updateStatus?id=${id}&status=${action}&attendance=${encodeURIComponent(type)}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/updateStatus?id=${id}&status=${action}&attendance=${encodeURIComponent(type)}`,
                 {
                     method: 'PUT',
                     headers: {

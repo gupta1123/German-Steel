@@ -1,8 +1,8 @@
 // Authentication service for WebSalesV3
 import { teamHasManager } from './team-access';
 
-const API_BASE_URL = '/api/proxy';
-const SECONDARY_API_BASE_URL = '/api/proxy';
+const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+const SECONDARY_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const LOGIN_ENDPOINT = `${API_BASE_URL}/user/token`;
 const LOGOUT_ENDPOINT = `${API_BASE_URL}/user/logout`;
 const USER_ROLE_ENDPOINT = `${API_BASE_URL}/user/manage/get`;

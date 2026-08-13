@@ -45,7 +45,7 @@ const WorkingDays: React.FC = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch(`/api/proxy/attendance-rule/getById?id=2`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/getById?id=2`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
@@ -79,7 +79,7 @@ const WorkingDays: React.FC = () => {
                 halfDayCount: Number(editedData.halfDayCount || 0),
             };
 
-            const response = await fetch(`/api/proxy/attendance-rule/edit?id=2`, {
+            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/edit?id=2`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,

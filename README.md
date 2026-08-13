@@ -4,13 +4,17 @@ German Steels is a Next.js field-sales dashboard for visits, customers, employee
 
 ## Backend configuration
 
-All browser requests use the same-origin `/api/proxy` route. Local development and deployed builds both use:
+All browser requests call the German Steels backend directly. Local development and deployed builds both use:
 
 ```text
 http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
 ```
 
-The upstream is fixed in `lib/backend-origin.ts`. Browser requests remain same-origin through `/api/proxy`, so no public backend environment variable is needed.
+The origin is fixed in the frontend API clients and screen-level requests, so no environment variable or Next.js proxy route is used.
+
+> Netlify serves the frontend over HTTPS. The backend must also expose HTTPS for
+> production browsers to permit these direct requests; an HTTP API is treated as
+> blocked mixed content by modern browsers.
 
 ## Run locally
 

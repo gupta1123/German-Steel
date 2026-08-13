@@ -1,4 +1,4 @@
-const MEETINGS_API_BASE_URL = "/api/proxy";
+const MEETINGS_API_BASE_URL = "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081";
 
 export const MEETING_TYPES = [
   "Counter",

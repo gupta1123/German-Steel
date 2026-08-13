@@ -241,7 +241,7 @@ const Requirements = () => {
             // Use different API endpoints based on user role
             if (isManager) {
                 const responses = await Promise.all(teamIds.map((id) =>
-                    fetch(`/api/proxy/task/getByTeam?id=${id}`, {
+                    fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByTeam?id=${id}`, {
                         headers: {
                             Authorization: `Bearer ${token}`,
                         },
@@ -287,7 +287,7 @@ const Requirements = () => {
                 // For admins, use date-based API
                 const formattedStartDate = format(new Date(filters.startDate), 'yyyy-MM-dd');
                 const formattedEndDate = format(new Date(filters.endDate), 'yyyy-MM-dd');
-                url = `/api/proxy/task/getByDate?start=${formattedStartDate}&end=${formattedEndDate}`;
+                url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByDate?start=${formattedStartDate}&end=${formattedEndDate}`;
                 console.log('Using ADMIN API:', url, 'User Role:', userRole);
             }
 
@@ -351,7 +351,7 @@ const Requirements = () => {
         
         setIsStoresLoading(true);
         try {
-            const response = await fetch('/api/proxy/store/names', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/names', {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -586,7 +586,7 @@ const Requirements = () => {
                 taskType: 'requirement',
             };
 
-            const response = await fetch('/api/proxy/task/create', {
+            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -638,7 +638,7 @@ const Requirements = () => {
         
         try {
             const response = await fetch(
-                `/api/proxy/task/updateTask?taskId=${taskToUpdate}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/updateTask?taskId=${taskToUpdate}`,
                 {
                     method: 'PUT',
                     headers: {
@@ -668,7 +668,7 @@ const Requirements = () => {
         if (!token) return;
         
         try {
-            await fetch(`/api/proxy/task/deleteById?taskId=${taskId}`, {
+            await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/deleteById?taskId=${taskId}`, {
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${token}`,
