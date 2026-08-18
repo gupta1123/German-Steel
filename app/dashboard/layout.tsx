@@ -65,6 +65,10 @@ export default function Layout({ children }: { children: ReactNode }) {
       heading: "Settings",
       subheading: "Manage your organization settings and preferences"
     },
+    "/dashboard/settings/target": {
+      heading: "Store Targets",
+      subheading: "Manage monthly and daily store sales targets and fulfilment"
+    },
     "/dashboard/live-locations": {
       heading: "Live Locations",
       subheading: "Track real-time employee locations"

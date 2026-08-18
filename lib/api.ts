@@ -31,6 +31,14 @@ export interface EmployeeDto {
 // Alias for backward compatibility
 export type Employee = EmployeeDto;
 
+export interface VisitAttachmentResponse {
+  fileName: string;
+  fileDownloadUri: string;
+  fileType: string;
+  tag?: string;
+  size?: number;
+}
+
 export interface VisitDto {
   id: number;
   storeId: number;
@@ -59,8 +67,12 @@ export interface VisitDto {
   priority?: string;
   outcome?: string;
   feedback?: string;
+  hasGift?: boolean;
+  giftName?: string | null;
+  giftQuantity?: number | null;
+  giftRemarks?: string | null;
   attachment?: Array<Record<string, unknown>>;
-  attachmentResponse?: Array<Record<string, unknown>>;
+  attachmentResponse?: VisitAttachmentResponse[];
   visitIntentId?: number;
   visitIntentValue?: number;
   city?: string;
@@ -340,6 +352,7 @@ export interface StoreDto {
   likes?: { likeCount: number; userLiked: boolean };
   dateOfBirth?: string | null;
   dob?: string | null;
+  yearOfJoining?: number | null;
 }
 
 export interface StoreResponse {
@@ -386,10 +399,13 @@ export interface EmployeeUserDto {
   dateOfJoining: string;
   city: string;
   state: string;
+  district?: string | null;
+  subDistrict?: string | null;
   country?: string;
   addressLine1?: string;
   addressLine2?: string;
   pincode?: string | number;
+  assignedCity?: string[] | null;
   houseLatitude?: number;
   houseLongitude?: number;
   userDto: {
@@ -537,6 +553,88 @@ export interface DailyBreakdownDto {
   baseEarned: number;
 }
 
+export type SalesTargetType = 'MONTHLY' | 'DAILY';
+
+export interface SalesTargetDto {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  storeId: number;
+  storeName: string;
+  storeCity?: string | null;
+  storeState?: string | null;
+  targetType: SalesTargetType;
+  month?: number | null;
+  year?: number | null;
+  targetDate?: string | null;
+  targetTons: number;
+  fulfilledTons?: number | null;
+  salesTons?: number | null;
+  effectiveFulfilledTons: number;
+  pendingTons: number;
+  achievementPercent: number;
+  status: string;
+  remarks?: string | null;
+}
+
+export interface SalesTargetCreatePayload {
+  employeeId: number;
+  storeId: number;
+  targetType: SalesTargetType;
+  targetTons: number;
+  remarks?: string;
+  month?: number;
+  year?: number;
+  targetDate?: string;
+}
+
+export interface SalesTargetEditPayload {
+  targetTons?: number;
+  fulfilledTons?: number | null;
+  remarks?: string;
+}
+
+export interface SalesTargetSearchParams {
+  employeeId?: number;
+  storeId?: number;
+  targetType?: SalesTargetType;
+  month?: number;
+  year?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface FieldOfficerPerformanceDto {
+  employeeId: number;
+  employeeCode?: string | null;
+  employeeName: string;
+  city?: string | null;
+  teamId?: number | null;
+  startDate: string;
+  endDate: string;
+  targetValue: number;
+  achievedValue: number;
+  achievementPercent: number;
+  totalVisits: number;
+  completedVisits: number;
+  completionRate: number;
+  uniqueStoresVisited: number;
+  newStores: number;
+  presentDays: number;
+  fullDays: number;
+  halfDays: number;
+  absences: number;
+  rating: 'Excellent' | 'Good' | 'Average' | 'Poor' | 'Not Rated' | string;
+}
+
+export interface FieldOfficerPerformanceParams {
+  startDate: string;
+  endDate: string;
+  employeeId?: number;
+  city?: string;
+  teamId?: number;
+}
+
 // API Service Class
 export class API {
   private baseUrl: string;
@@ -582,6 +680,10 @@ export class API {
 
   static async getReportCounts(startDate: string, endDate: string): Promise<ReportCountsItem[]> {
     return apiService.getReportCounts(startDate, endDate);
+  }
+
+  static async getFieldOfficerPerformance(params: FieldOfficerPerformanceParams): Promise<FieldOfficerPerformanceDto[]> {
+    return apiService.getFieldOfficerPerformance(params);
   }
 
   static async getAttendanceByDate(date: string): Promise<AttendanceLogItem[]> {
@@ -702,6 +804,14 @@ export class API {
     return apiService.getCities();
   }
 
+  static async assignEmployeeCity(employeeId: number, city: string): Promise<unknown> {
+    return apiService.assignEmployeeCity(employeeId, city);
+  }
+
+  static async removeEmployeeCity(employeeId: number, city: string): Promise<unknown> {
+    return apiService.removeEmployeeCity(employeeId, city);
+  }
+
   static async getAllInactiveEmployees(): Promise<EmployeeUserDto[]> {
     return apiService.getAllInactiveEmployees();
   }
@@ -790,6 +900,18 @@ export class API {
     return apiService.getStoresByDobDateRange(startDate, endDate);
   }
 
+  static async searchSalesTargets(params: SalesTargetSearchParams = {}): Promise<SalesTargetDto[]> {
+    return apiService.searchSalesTargets(params);
+  }
+
+  static async createSalesTarget(payload: SalesTargetCreatePayload): Promise<number> {
+    return apiService.createSalesTarget(payload);
+  }
+
+  static async editSalesTarget(id: number, payload: SalesTargetEditPayload): Promise<SalesTargetDto> {
+    return apiService.editSalesTarget(id, payload);
+  }
+
   private async loadToken(): Promise<void> {
     if (typeof window !== 'undefined') {
       // Client-side: get from localStorage
@@ -801,7 +923,7 @@ export class API {
         const { cookies } = require('next/headers');
         const cookieStore = await cookies();
         this.token = cookieStore.get('authToken')?.value || null;
-      } catch (error) {
+      } catch {
         // If cookies() fails, token will remain null
         this.token = null;
       }
@@ -884,7 +1006,9 @@ export class API {
         const successTextEndpoints = [
           '/employee-user/create',
           '/attendance-log/createAttendanceLog',
-          '/employee/edit'
+          '/employee/edit',
+          '/employee/assignCity',
+          '/employee/removeAssignedCity'
         ];
         
         if (visitEndpoints.some(visitEndpoint => endpoint.includes(visitEndpoint)) && response.ok) {
@@ -1253,6 +1377,18 @@ Please check your internet connection and try again.`);
     return this.makeRequest<Record<string, T[]>>(`/report/getForEmployeeRange?${query}`);
   }
 
+  async getFieldOfficerPerformance(params: FieldOfficerPerformanceParams): Promise<FieldOfficerPerformanceDto[]> {
+    const query = new URLSearchParams({
+      startDate: params.startDate,
+      endDate: params.endDate,
+    });
+    if (params.employeeId != null) query.set('employeeId', String(params.employeeId));
+    if (params.city?.trim()) query.set('city', params.city.trim());
+    if (params.teamId != null) query.set('teamId', String(params.teamId));
+
+    return this.makeRequest<FieldOfficerPerformanceDto[]>(`/report/field-officer-performance?${query}`);
+  }
+
   // Expense APIs
   async getExpensesByDateRange(startDate: string, endDate: string): Promise<ExpenseDto[]> {
     return this.makeRequest<ExpenseDto[]>(`/expense/getByDateRange?start=${startDate}&end=${endDate}`);
@@ -1517,6 +1653,22 @@ Please check your internet connection and try again.`);
     return this.makeRequest<string[]>('/employee/getCities');
   }
 
+  async assignEmployeeCity(employeeId: number, city: string): Promise<unknown> {
+    this.invalidateEmployeeDirectory();
+    return this.makeRequest<unknown>(
+      `/employee/assignCity?id=${employeeId}&city=${encodeURIComponent(city)}`,
+      { method: 'PUT' }
+    );
+  }
+
+  async removeEmployeeCity(employeeId: number, city: string): Promise<unknown> {
+    this.invalidateEmployeeDirectory();
+    return this.makeRequest<unknown>(
+      `/employee/removeAssignedCity?employeeId=${employeeId}&city=${encodeURIComponent(city)}`,
+      { method: 'DELETE' }
+    );
+  }
+
   async getAllInactiveEmployees(): Promise<EmployeeUserDto[]> {
     return this.makeRequest<EmployeeUserDto[]>('/employee/getAllInactive');
   }
@@ -1587,6 +1739,36 @@ Please check your internet connection and try again.`);
   async getStoresByDobDateRange(startDate: string, endDate: string): Promise<StoreDto[]> {
     // Use the same base URL as other store calls (relative path)
     return this.makeRequest<StoreDto[]>(`/store/getByDobDateRange?startDate=${startDate}&endDate=${endDate}`);
+  }
+
+  // Store-attached sales target APIs. These are intentionally separate from
+  // the legacy city-level /target endpoints.
+  async searchSalesTargets(params: SalesTargetSearchParams = {}): Promise<SalesTargetDto[]> {
+    const query = new URLSearchParams();
+    if (params.employeeId != null) query.set('employeeId', String(params.employeeId));
+    if (params.storeId != null) query.set('storeId', String(params.storeId));
+    if (params.targetType) query.set('targetType', params.targetType);
+    if (params.month != null) query.set('month', String(params.month));
+    if (params.year != null) query.set('year', String(params.year));
+    if (params.startDate) query.set('startDate', params.startDate);
+    if (params.endDate) query.set('endDate', params.endDate);
+
+    const queryString = query.toString();
+    return this.makeRequest<SalesTargetDto[]>(`/sales-target/search${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async createSalesTarget(payload: SalesTargetCreatePayload): Promise<number> {
+    return this.makeRequest<number>('/sales-target/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async editSalesTarget(id: number, payload: SalesTargetEditPayload): Promise<SalesTargetDto> {
+    return this.makeRequest<SalesTargetDto>(`/sales-target/edit?id=${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
   }
 }
 

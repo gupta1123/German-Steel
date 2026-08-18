@@ -17,14 +17,8 @@ import {
   CalendarIcon, 
   DownloadIcon, 
   Building,
-  MapPin,
-  User,
-  Target,
-  TrendingUp,
   Loader
 } from "lucide-react";
-import { format, subDays, startOfMonth, endOfMonth } from "date-fns";
-import { DateRange } from "react-day-picker";
 import {
   Popover,
   PopoverContent,
@@ -45,7 +39,7 @@ import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import NewCustomersReport from "@/components/NewCustomersReport";
 import SalesPerformanceReport from "@/components/SalesPerformanceReport";
-import MonthlyTargetPage from "@/app/dashboard/reports/monthly-target/page";
+import FieldOfficerPerformanceReport from "@/components/FieldOfficerPerformanceReport";
 import dayjs from 'dayjs';
 import { API } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
@@ -457,21 +451,15 @@ const ReportsPage: React.FC = () => {
         loadingMessage: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
     };
 
-  const formatDateRange = () => {
-        if (!startDate) return "Select date range";
-        if (!endDate) return dayjs(startDate).format('MMM D, YYYY');
-        return `${dayjs(startDate).format('MMM D, YYYY')} - ${dayjs(endDate).format('MMM D, YYYY')}`;
-  };
-
   return (
     <div className="min-w-0 space-y-6 overflow-hidden">
       <Tabs defaultValue="fieldOfficerReport" className="w-full min-w-0">
         <div className="mb-6 overflow-x-auto">
           <TabsList className="flex h-auto w-max min-w-full justify-start gap-2 p-1">
             <TabsTrigger value="fieldOfficerReport">Field Officer Visit Report</TabsTrigger>
+            <TabsTrigger value="fieldOfficerPerformance">Field Officer Performance</TabsTrigger>
             <TabsTrigger value="newCustomers">New Customers Report</TabsTrigger>
             <TabsTrigger value="salesPerformance">Sales Performance Report</TabsTrigger>
-            <TabsTrigger value="monthlyTarget">Monthly Target Report</TabsTrigger>
           </TabsList>
         </div>
         
@@ -755,6 +743,14 @@ const ReportsPage: React.FC = () => {
               </CardContent>
             </Card>
         </TabsContent>
+
+        <TabsContent value="fieldOfficerPerformance" className="space-y-6">
+          <FieldOfficerPerformanceReport
+            officers={fieldOfficers}
+            officersLoading={employeesLoading}
+            officersError={employeesError}
+          />
+        </TabsContent>
         
         <TabsContent value="newCustomers" className="space-y-6">
           <NewCustomersReport />
@@ -762,10 +758,6 @@ const ReportsPage: React.FC = () => {
 
         <TabsContent value="salesPerformance" className="space-y-6">
           <SalesPerformanceReport />
-        </TabsContent>
-
-        <TabsContent value="monthlyTarget" className="space-y-6">
-          <MonthlyTargetPage />
         </TabsContent>
       </Tabs>
     </div>

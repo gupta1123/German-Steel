@@ -46,6 +46,7 @@ import {
   MapPin as MapMarker,
   LogIn,
   LogOut,
+  Gift,
   ChevronLeft,
   ChevronRight,
   X
@@ -72,7 +73,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
-import { API, BrandProCon, IntentAuditLog, MonthlySaleChange, Task, Note as ApiNote, VisitDto } from "@/lib/api";
+import { API, BrandProCon, IntentAuditLog, MonthlySaleChange, Task, Note as ApiNote, VisitAttachmentResponse, VisitDto } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { hasManagerPrivileges } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -112,6 +113,11 @@ type VisitDetail = {
   checkoutTime?: string;
   checkoutDate?: string; 
   feedback?: string;
+  hasGift?: boolean;
+  giftName?: string | null;
+  giftQuantity?: number | null;
+  giftRemarks?: string | null;
+  attachmentResponse?: VisitAttachmentResponse[];
 };
 
 interface Visit {
@@ -363,6 +369,30 @@ const VISIT_CHECKOUT_ROLES = new Set([
   "MANAGER",
 ]);
 
+const VISIT_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+
+const fetchAuthenticatedVisitImage = async (
+  visitId: number,
+  tag: string,
+  fileName: string,
+  signal?: AbortSignal
+) => {
+  const authToken = localStorage.getItem('authToken');
+  const response = await fetch(
+    `${VISIT_API_BASE_URL}/visit/downloadFile/${visitId}/${encodeURIComponent(tag)}/${encodeURIComponent(fileName)}`,
+    {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      signal,
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${tag} image`);
+  }
+
+  return URL.createObjectURL(await response.blob());
+};
+
 const normalizeVisitRole = (value?: string | null) =>
   String(value || "")
     .replace(/^ROLE[\s_]+/i, "")
@@ -401,7 +431,7 @@ export default function VisitDetailPage() {
   const router = useRouter();
   const params = useParams();
   const visitId = params?.id as string;
-  const { userRole, userData, currentUser } = useAuth();
+  const { token, userRole, userData, currentUser } = useAuth();
   
   const [visitDetail, setVisitDetail] = useState<VisitDetail | null>(null);
   const [activeTab, setActiveTab] = useState("metrics");
@@ -417,6 +447,9 @@ export default function VisitDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkinImages, setCheckinImages] = useState<string[]>([]);
+  const [giftImage, setGiftImage] = useState<string | null>(null);
+  const [isGiftImageLoading, setIsGiftImageLoading] = useState(false);
+  const [giftImageError, setGiftImageError] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -428,6 +461,8 @@ export default function VisitDetailPage() {
   const [filteredComplaints, setFilteredComplaints] = useState<Task[]>([]);
   const [isRequirementModalOpen, setIsRequirementModalOpen] = useState(false);
   const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
   const [activeRequirementTab, setActiveRequirementTab] = useState('general');
   const [activeComplaintTab, setActiveComplaintTab] = useState('general');
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -439,7 +474,7 @@ export default function VisitDetailPage() {
     dueDate: '',
     assignedToId: 0,
     assignedToName: '',
-    assignedById: 97,
+    assignedById: 0,
     assignedByName: '',
     storeId: 0,
     storeName: '',
@@ -463,7 +498,7 @@ export default function VisitDetailPage() {
     dueDate: '',
     assignedToId: 0,
     assignedToName: '',
-    assignedById: 97,
+    assignedById: 0,
     assignedByName: '',
     storeId: 0,
     storeName: '',
@@ -486,13 +521,16 @@ export default function VisitDetailPage() {
     address: string;
   } | null>(null);
   const loggedInEmployeeId = useMemo(() => {
+    if (userData?.employeeId) {
+      return userData.employeeId;
+    }
     if (typeof window !== "undefined") {
       const stored = Number(localStorage.getItem("employeeId"));
       if (!Number.isNaN(stored) && stored > 0) {
         return stored;
       }
     }
-    return userData?.employeeId ?? 0;
+    return 0;
   }, [userData?.employeeId]);
   
   // Role-based state
@@ -520,6 +558,20 @@ export default function VisitDetailPage() {
   const [newCons, setNewCons] = useState<string[]>([]);
   const [currentPro, setCurrentPro] = useState('');
   const [currentCon, setCurrentCon] = useState('');
+
+  const giftAttachment = useMemo(
+    () => visitDetail?.attachmentResponse?.find(
+      (attachment) => String(attachment.tag || '').trim().toLowerCase() === 'gift'
+    ),
+    [visitDetail]
+  );
+  const hasSavedGift = Boolean(
+    visitDetail?.hasGift ||
+    visitDetail?.giftName?.trim() ||
+    visitDetail?.giftQuantity != null ||
+    visitDetail?.giftRemarks?.trim() ||
+    giftAttachment
+  );
 
   // Helper functions
   const getOutcomeStatus = (visit: VisitDetail | null): { emoji: React.ReactNode; status: string; color: string; isOngoing: boolean } => {
@@ -600,27 +652,14 @@ export default function VisitDetailPage() {
     );
   };
 
-  const fetchCheckinImages = async (visitId: number, attachments: Array<Record<string, unknown>>) => {
+  const fetchCheckinImages = async (visitId: number, attachments: VisitAttachmentResponse[]) => {
     try {
-      const api = new API();
       const checkinImageUrls = await Promise.all(
         attachments
-          .filter((attachment: Record<string, unknown>) => attachment.tag === 'check-in')
-          .map(async (attachment: Record<string, unknown>) => {
+          .filter((attachment) => String(attachment.tag || '').trim().toLowerCase() === 'check-in')
+          .map(async (attachment) => {
             try{
-           
-              const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/downloadFile/${visitId}/check-in/${attachment.fileName}`, {
-                headers: {
-                  'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                },
-              });
-              
-              if (!response.ok) {
-                throw new Error('Failed to fetch image');
-              }
-              
-              const blob = await response.blob();
-              return URL.createObjectURL(blob);
+              return await fetchAuthenticatedVisitImage(visitId, 'check-in', attachment.fileName);
             } catch (error) {
               console.error('Error fetching individual image:', error);
               return null;
@@ -848,6 +887,44 @@ export default function VisitDetailPage() {
       fetchVisitDetail(visitId);
     }
   }, [visitId, fetchVisitDetail]);
+
+  useEffect(() => {
+    const currentVisitId = visitDetail?.id;
+    const giftFileName = giftAttachment?.fileName;
+
+    if (!currentVisitId || !giftFileName) {
+      setGiftImage(null);
+      setIsGiftImageLoading(false);
+      setGiftImageError(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+
+    setGiftImage(null);
+    setGiftImageError(false);
+    setIsGiftImageLoading(true);
+
+    void fetchAuthenticatedVisitImage(currentVisitId, 'gift', giftFileName, controller.signal)
+      .then((url) => {
+        objectUrl = url;
+        setGiftImage(url);
+      })
+      .catch((imageError: unknown) => {
+        if (imageError instanceof DOMException && imageError.name === 'AbortError') return;
+        console.error('Error fetching gift image:', imageError);
+        setGiftImageError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsGiftImageLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [giftAttachment?.fileName, visitDetail?.id]);
 
   // Handler functions
   const handleBack = () => {
@@ -1227,10 +1304,20 @@ export default function VisitDetailPage() {
   };
 
   const createTask = async (taskType: string) => {
+    setIsCreatingTask(true);
+    setTaskCreateError(null);
     try {
+      if (!token) {
+        throw new Error('Your session is unavailable. Please sign in again.');
+      }
+      if (!loggedInEmployeeId) {
+        throw new Error('Unable to identify the logged-in employee. Please sign in again.');
+      }
+
       const currentTask = taskType === 'requirement' ? newTask : complaintTask;
       const taskToCreate = {
         ...currentTask,
+        assignedById: loggedInEmployeeId,
         taskType,
         storeId: visitDetail?.storeId ?? 0,
         assignedToId: visitDetail?.employeeId ?? 0,
@@ -1243,13 +1330,14 @@ export default function VisitDetailPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(taskToCreate),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create task');
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed to create ${taskType} (${response.status})`);
       }
 
       const data = await response.json();
@@ -1276,7 +1364,7 @@ export default function VisitDetailPage() {
           dueDate: '',
           assignedToId: 0,
           assignedToName: '',
-          assignedById: 97,
+          assignedById: 0,
           assignedByName: '',
           storeId: 0,
           storeName: '',
@@ -1305,7 +1393,7 @@ export default function VisitDetailPage() {
           dueDate: '',
           assignedToId: 0,
           assignedToName: '',
-          assignedById: 97,
+          assignedById: 0,
           assignedByName: '',
           storeId: 0,
           storeName: '',
@@ -1327,6 +1415,9 @@ export default function VisitDetailPage() {
       }
     } catch (error) {
       console.error('Error creating task:', error);
+      setTaskCreateError(error instanceof Error ? error.message : `Failed to create ${taskType}`);
+    } finally {
+      setIsCreatingTask(false);
     }
   };
 
@@ -1495,7 +1586,10 @@ export default function VisitDetailPage() {
                     variant="outline"
                     size="icon"
                     className="h-10 w-10 rounded-full"
-                    onClick={() => setIsRequirementModalOpen(true)}
+                    onClick={() => {
+                      setTaskCreateError(null);
+                      setIsRequirementModalOpen(true);
+                    }}
                   >
                     <FileText className="h-4 w-4" />
                   </Button>
@@ -1508,7 +1602,10 @@ export default function VisitDetailPage() {
                     variant="outline"
                     size="icon"
                     className="h-10 w-10 rounded-full"
-                    onClick={() => setIsComplaintModalOpen(true)}
+                    onClick={() => {
+                      setTaskCreateError(null);
+                      setIsComplaintModalOpen(true);
+                    }}
                   >
                     <AlertCircle className="h-4 w-4" />
                   </Button>
@@ -1693,6 +1790,24 @@ export default function VisitDetailPage() {
                         </div>
                       </div>
                     )}
+
+                    <div className="p-4 bg-muted/30 rounded-lg border">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-100 dark:bg-rose-900">
+                          <Gift className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                        </div>
+                        <div className="flex flex-1 items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-foreground">Gift</p>
+                          <Badge
+                            className={hasSavedGift
+                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-muted text-muted-foreground hover:bg-muted'}
+                          >
+                            {hasSavedGift ? 'Gift recorded' : 'No gift recorded'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2128,6 +2243,81 @@ export default function VisitDetailPage() {
 
         {/* Right Panel */}
         <aside className="lg:col-span-3 space-y-4 md:space-y-6">
+          {hasSavedGift && (
+            <Card>
+              <CardHeader className="pb-3 md:pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <Heading as="h3" size="lg" weight="semibold" className="text-base md:text-lg">
+                    Gift Details
+                  </Heading>
+                  <Gift className="h-5 w-5 text-rose-500" aria-hidden="true" />
+                </div>
+              </CardHeader>
+              <CardContent className="p-3 md:p-6 pt-0 md:pt-0 space-y-4">
+                <dl className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <dt className="text-xs font-medium text-muted-foreground">Gift name</dt>
+                    <dd className="mt-1 text-sm font-semibold text-foreground break-words">
+                      {visitDetail?.giftName?.trim() || 'Not recorded'}
+                    </dd>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <dt className="text-xs font-medium text-muted-foreground">Quantity</dt>
+                    <dd className="mt-1 text-sm font-semibold text-foreground">
+                      {visitDetail?.giftQuantity ?? 'Not recorded'}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Remarks</p>
+                  <p className="mt-1 text-sm text-foreground whitespace-pre-wrap break-words">
+                    {visitDetail?.giftRemarks?.trim() || 'No remarks added'}
+                  </p>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Gift image</p>
+                  {isGiftImageLoading ? (
+                    <Skeleton className="h-40 w-full rounded-lg" />
+                  ) : giftImage ? (
+                    <div className="overflow-hidden rounded-lg border">
+                      <div className="relative h-40 w-full bg-muted">
+                        <Image
+                          src={giftImage}
+                          alt={`${visitDetail?.giftName?.trim() || 'Gift'} image`}
+                          width={300}
+                          height={200}
+                          className="h-full w-full cursor-pointer object-cover transition-opacity hover:opacity-90"
+                          onClick={() => handleImageClick(giftImage)}
+                        />
+                      </div>
+                      <div className="p-2 md:p-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-xs md:text-sm"
+                          onClick={() => handleImageClick(giftImage)}
+                        >
+                          View Full Size
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-5 text-center">
+                      <ImageIcon className="mx-auto mb-2 h-8 w-8 text-muted-foreground/60" />
+                      <Text tone="muted" className="text-sm">
+                        {giftImageError ? 'Gift image could not be loaded' : 'No gift image uploaded'}
+                      </Text>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="pb-3 md:pb-4">
               <Heading as="h3" size="lg" weight="semibold" className="text-base md:text-lg">
@@ -2433,7 +2623,7 @@ export default function VisitDetailPage() {
                       />
                     </div>
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={() => setIsRequirementModalOpen(false)} className="w-full sm:w-auto">Cancel</Button>
+                      <Button variant="outline" onClick={() => { setTaskCreateError(null); setIsRequirementModalOpen(false); }} className="w-full sm:w-auto">Cancel</Button>
                       <Button onClick={() => setActiveRequirementTab('details')} className="w-full sm:w-auto">Next</Button>
                     </div>
                   </div>
@@ -2485,9 +2675,17 @@ export default function VisitDetailPage() {
                         </SelectContent>
                       </Select>
               </div>
+                    {taskCreateError && (
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                        {taskCreateError}
+                      </div>
+                    )}
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
                       <Button variant="outline" onClick={() => setActiveRequirementTab('general')} className="w-full sm:w-auto">Back</Button>
-                      <Button onClick={() => createTask('requirement')} className="w-full sm:w-auto">Create Requirement</Button>
+                      <Button onClick={() => createTask('requirement')} disabled={isCreatingTask} className="w-full sm:w-auto">
+                        {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Create Requirement
+                      </Button>
                     </div>
                   </div>
                 </TabsContent>
@@ -2555,7 +2753,7 @@ export default function VisitDetailPage() {
                       />
               </div>
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={() => setIsComplaintModalOpen(false)} className="w-full sm:w-auto">Cancel</Button>
+                      <Button variant="outline" onClick={() => { setTaskCreateError(null); setIsComplaintModalOpen(false); }} className="w-full sm:w-auto">Cancel</Button>
                       <Button onClick={() => setActiveComplaintTab('details')} className="w-full sm:w-auto">Next</Button>
                     </div>
                   </div>
@@ -2607,9 +2805,17 @@ export default function VisitDetailPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {taskCreateError && (
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                        {taskCreateError}
+                      </div>
+                    )}
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
                       <Button variant="outline" onClick={() => setActiveComplaintTab('general')} className="w-full sm:w-auto">Back</Button>
-                      <Button onClick={() => createTask('complaint')} className="w-full sm:w-auto">Create Complaint</Button>
+                      <Button onClick={() => createTask('complaint')} disabled={isCreatingTask} className="w-full sm:w-auto">
+                        {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Create Complaint
+                      </Button>
                     </div>
                   </div>
                 </TabsContent>

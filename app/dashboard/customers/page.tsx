@@ -235,7 +235,6 @@ function CustomerListContent() {
     const [isManager, setIsManager] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const [isFieldOfficer, setIsFieldOfficer] = useState(false);
-    const [userRoleFromAPI, setUserRoleFromAPI] = useState<string | null>(null);
     const [teamId, setTeamId] = useState<number | null>(null);
     const [teamIds, setTeamIds] = useState<number[]>([]);
     const [scopedEmployees, setScopedEmployees] = useState<EmployeeUserDto[]>([]);
@@ -1535,7 +1534,7 @@ function CustomerListContent() {
                     token={token || ''}
                     employeeId={employeeId ? Number(employeeId) : null}
                     onCustomerAdded={handleCustomerAdded}
-                    userRole={userRoleFromAPI || undefined}
+                    userRole={userRole || undefined}
                     userData={userData ? (userData as unknown as Record<string, unknown>) : undefined}
                 />
             </div>

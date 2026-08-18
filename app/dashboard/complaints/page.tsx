@@ -73,7 +73,7 @@ const Complaints = () => {
         dueDate: '',
         assignedToId: 0,
         assignedToName: '',
-        assignedById: 86,
+        assignedById: 0,
         status: 'Assigned',
         priority: 'low',
         category: 'Complaint',
@@ -577,10 +577,16 @@ const Complaints = () => {
 
     const createTask = async () => {
         if (!token) return;
+        const assignedById = userData?.employeeId;
+        if (!assignedById) {
+            setErrorMessage('Unable to identify the logged-in employee. Please sign in again.');
+            return;
+        }
         
         try {
             const taskToCreate = {
                 ...newTask,
+                assignedById,
                 taskDesciption: newTask.taskDesciption, // Backend expects taskDesciption without 'r'
                 taskType: 'complaint',
             };
@@ -593,10 +599,14 @@ const Complaints = () => {
                 },
                 body: JSON.stringify(taskToCreate),
             });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || `Failed to create complaint (${response.status})`);
+            }
             const data = await response.json();
 
             const createdTask = {
-                ...newTask,
+                ...taskToCreate,
                 id: data.id,
                 assignedToName: assignmentEmployees.find(emp => emp.id === newTask.assignedToId)?.firstName + ' ' + assignmentEmployees.find(emp => emp.id === newTask.assignedToId)?.lastName || 'Unknown',
                 storeName: stores.find(store => store.id === newTask.storeId)?.storeName || '',
@@ -608,6 +618,7 @@ const Complaints = () => {
             resetForm();
         } catch (error) {
             console.error('Error creating task:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to create complaint');
         }
     };
 
@@ -746,7 +757,7 @@ const Complaints = () => {
             dueDate: '',
             assignedToId: 0,
             assignedToName: '',
-            assignedById: 86,
+            assignedById: 0,
             status: 'Assigned',
             priority: 'low',
             category: 'Complaint',

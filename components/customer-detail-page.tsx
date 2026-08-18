@@ -42,12 +42,17 @@ import { SpacedCalendar } from '@/components/ui/spaced-calendar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { API, type StoreDto, type VisitDto, type Note as ApiNote, type BrandProCon } from "@/lib/api";
+import { useAuth } from '@/components/auth-provider';
 import BrandTab from "@/components/BrandTab";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateToUserFriendly } from "@/lib/utils";
 
 const ITEMS_PER_PAGE = 3;
+const JOINING_YEAR_OPTIONS = Array.from(
+    { length: 76 },
+    (_, index) => new Date().getFullYear() - index,
+);
 
 interface CustomerData {
     storeId: number;
@@ -74,6 +79,7 @@ interface CustomerData {
     pincode?: string;
     dateOfBirth?: string | null;
     dob?: string | null;
+    yearOfJoining?: number | null;
 }
 
 interface Visit {
@@ -111,6 +117,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const router = useRouter();
     const params = useParams();
     const storeId = params.id;
+    const { token, userData } = useAuth();
 
     const [customerData, setCustomerData] = useState<Record<string, unknown> | null>(null);
     const [isLoadingCustomer, setIsLoadingCustomer] = useState(true);
@@ -125,6 +132,8 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const [editingTask, setEditingTask] = useState<Record<string, unknown> | null>(null);
     const [activeInfoTab, setActiveInfoTab] = useState('leads-info');
     const [isEditCustomerModalVisible, setIsEditCustomerModalVisible] = useState(false);
+    const [isUpdatingCustomer, setIsUpdatingCustomer] = useState(false);
+    const [customerEditError, setCustomerEditError] = useState<string | null>(null);
     const [noteContent, setNoteContent] = useState('');
     const [activeActivityTab, setActiveActivityTab] = useState('visits');
     const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -149,6 +158,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         pincode: '',
         dateOfBirth: null,
         dob: null,
+        yearOfJoining: null,
     });
     const [isOtherClientType, setIsOtherClientType] = useState(false);
 
@@ -157,13 +167,15 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const [isVisitModalVisible, setIsVisitModalVisible] = useState(false);
     const [isRequirementModalOpen, setIsRequirementModalOpen] = useState(false);
     const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
+    const [isCreatingTask, setIsCreatingTask] = useState(false);
+    const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
     const [requirementTask, setRequirementTask] = useState({
         taskTitle: '',
         taskDesciption: '',
         dueDate: '',
         assignedToId: 0,
         assignedToName: '',
-        assignedById: 86,
+        assignedById: 0,
         status: 'Assigned',
         priority: 'low',
         taskType: 'requirement',
@@ -178,7 +190,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         dueDate: '',
         assignedToId: 0,
         assignedToName: '',
-        assignedById: 86,
+        assignedById: 0,
         status: 'Assigned',
         priority: 'low',
         taskType: 'complaint',
@@ -213,8 +225,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     const [intentData, setIntentData] = useState<Array<Record<string, unknown>>>([]);
     const [salesData, setSalesData] = useState<Array<Record<string, unknown>>>([]);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-    const employeeId = typeof window !== 'undefined' ? localStorage.getItem('employeeId') : null;
+    const employeeId = userData?.employeeId ?? null;
 
     const fetchIntentData = useCallback(async (id: string) => {
         try {
@@ -376,7 +387,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
             dueDate: todayString,
             assignedToId: existingTask?.assignedToId ?? (employee ? employee.id as number : 0),
             assignedToName: existingTask?.assignedToName || employeeNameStr || '',
-            assignedById: 86,
+            assignedById: 0,
             status: 'Assigned',
             priority: 'low',
             taskType: 'complaint',
@@ -410,7 +421,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
             dueDate: todayString,
             assignedToId: existingTask?.assignedToId ?? (employee ? employee.id as number : 0),
             assignedToName: existingTask?.assignedToName || employeeNameStr || '',
-            assignedById: 86,
+            assignedById: 0,
             status: 'Assigned',
             priority: 'low',
             taskType: 'requirement',
@@ -424,16 +435,19 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const closeComplaintModal = useCallback(() => {
         setIsComplaintModalOpen(false);
+        setTaskCreateError(null);
         resetComplaintTaskState();
     }, [resetComplaintTaskState]);
 
     const closeRequirementModal = useCallback(() => {
         setIsRequirementModalOpen(false);
+        setTaskCreateError(null);
         resetRequirementTaskState();
     }, [resetRequirementTaskState]);
 
     const closeEditCustomerModal = useCallback(() => {
         setIsEditCustomerModalVisible(false);
+        setCustomerEditError(null);
         setActiveTab('basic-info');
         setHasUnlockedAddressTab(false);
     }, []);
@@ -709,21 +723,37 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     };
 
     const handleCustomerEditSubmit = async (data: Partial<CustomerData>) => {
+        const clientFirstName = data.clientFirstName?.trim();
+        const clientLastName = data.clientLastName?.trim();
+
+        if (!clientFirstName || !clientLastName) {
+            setCustomerEditError('First name and last name are required.');
+            setActiveTab('basic-info');
+            return;
+        }
+
+        setIsUpdatingCustomer(true);
+        setCustomerEditError(null);
         try {
             const dobValue = data.dob || data.dateOfBirth || '';
             const normalizedDob = dobValue ? dobValue.replace(/\//g, '-') : undefined;
 
             const requestData = {
-                clientLastName: data.clientLastName,
-                email: data.email,
+                clientFirstName,
+                clientLastName,
+                email: data.email?.trim() || null,
                 clientType: data.clientType,
-                brandsInUse: [], // Empty array for now
-                brandProsCons: [], // Empty array for now
-                likes: {}, // Empty object for now
+                gstNumber: data.gstNumber?.trim() || null,
+                addressLine1: data.addressLine1?.trim() || null,
+                addressLine2: data.addressLine2?.trim() || null,
+                district: data.village?.trim() || null,
+                subDistrict: data.taluka?.trim() || null,
+                city: data.city?.trim() || null,
+                state: data.state?.trim() || null,
+                pincode: data.pincode ? Number(data.pincode) : null,
                 dob: normalizedDob,
+                yearOfJoining: data.yearOfJoining == null ? null : Number(data.yearOfJoining),
             };
-
-            console.log('Sending data:', requestData);
 
             const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/edit?id=${storeId}`, {
                 method: 'PUT',
@@ -740,10 +770,13 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 console.log('Customer updated successfully!');
             } else {
                 const errorText = await response.text();
-                console.error('Failed to update customer:', response.status, errorText);
+                throw new Error(errorText || `Failed to update customer (${response.status})`);
             }
         } catch (error) {
             console.error('Error updating customer:', error);
+            setCustomerEditError(error instanceof Error ? error.message : 'Failed to update customer');
+        } finally {
+            setIsUpdatingCustomer(false);
         }
     };
 
@@ -779,6 +812,14 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     };
 
     const handleCreateComplaint = async () => {
+        const assignedById = userData?.employeeId;
+        if (!assignedById) {
+            setTaskCreateError('Unable to identify the logged-in employee. Please sign in again.');
+            return;
+        }
+
+        setIsCreatingTask(true);
+        setTaskCreateError(null);
         try {
             const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
                 method: 'POST',
@@ -790,6 +831,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                     ...complaintTask,
                     dueDate: complaintTask.dueDate.split('T')[0],
                     storeId: complaintTask.storeId,
+                    assignedById,
                     taskType: 'complaint'
                 }),
             });
@@ -799,10 +841,14 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 await createTask();
                 closeComplaintModal();
             } else {
-                console.error('Failed to create complaint:', response.statusText);
+                const errorText = await response.text();
+                throw new Error(errorText || `Failed to create complaint (${response.status})`);
             }
         } catch (error) {
             console.error('Error creating complaint:', error);
+            setTaskCreateError(error instanceof Error ? error.message : 'Failed to create complaint');
+        } finally {
+            setIsCreatingTask(false);
         }
     };
 
@@ -815,6 +861,14 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     };
 
     const handleCreateRequirement = async () => {
+        const assignedById = userData?.employeeId;
+        if (!assignedById) {
+            setTaskCreateError('Unable to identify the logged-in employee. Please sign in again.');
+            return;
+        }
+
+        setIsCreatingTask(true);
+        setTaskCreateError(null);
         try {
             const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
                 method: 'POST',
@@ -826,6 +880,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                     ...requirementTask,
                     dueDate: requirementTask.dueDate.split('T')[0],
                     storeId: requirementTask.storeId,
+                    assignedById,
                     taskType: 'requirement'
                 }),
             });
@@ -835,10 +890,14 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 await createTask();
                 closeRequirementModal();
             } else {
-                console.error('Failed to create requirement:', response.statusText);
+                const errorText = await response.text();
+                throw new Error(errorText || `Failed to create requirement (${response.status})`);
             }
         } catch (error) {
             console.error('Error creating requirement:', error);
+            setTaskCreateError(error instanceof Error ? error.message : 'Failed to create requirement');
+        } finally {
+            setIsCreatingTask(false);
         }
     };
 
@@ -929,6 +988,9 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 pincode: (customerData.pincode as string) || '',
                 dateOfBirth: (customerData.dateOfBirth as string) || (customerData.dob as string) || null,
                 dob: (customerData.dateOfBirth as string) || (customerData.dob as string) || null,
+                yearOfJoining: customerData.yearOfJoining != null && Number.isInteger(Number(customerData.yearOfJoining))
+                    ? Number(customerData.yearOfJoining)
+                    : null,
             });
 
             setIsOtherClientType(!isStandardType);
@@ -1184,6 +1246,17 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                             <div className="min-w-0">
                                                 <p className="text-sm font-medium text-muted-foreground">Store Name</p>
                                                 <p className="text-sm text-foreground">{customerData.storeName as string}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-start gap-3">
+                                            <CalendarIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium text-muted-foreground">Year of Joining</p>
+                                                <p className="text-sm text-foreground">
+                                                    {customerData.yearOfJoining != null
+                                                        ? String(customerData.yearOfJoining)
+                                                        : 'Not recorded'}
+                                                </p>
                                             </div>
                                         </div>
                                         {(customerData.clientType as string) && (
@@ -1905,6 +1978,32 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                             className="h-11"
                                         />
                                     </div>
+                                    <div className="space-y-3">
+                                        <Label htmlFor="yearOfJoining" className="text-sm font-medium text-foreground">
+                                            Year of Joining
+                                        </Label>
+                                        <Select
+                                            value={formData.yearOfJoining != null ? String(formData.yearOfJoining) : 'not-set'}
+                                            onValueChange={(value) => {
+                                                setFormData((previous) => ({
+                                                    ...previous,
+                                                    yearOfJoining: value === 'not-set' ? null : Number(value),
+                                                }));
+                                            }}
+                                        >
+                                            <SelectTrigger id="yearOfJoining" className="h-11">
+                                                <SelectValue placeholder="Select year" />
+                                            </SelectTrigger>
+                                            <SelectContent className="max-h-64">
+                                                <SelectItem value="not-set">Not set</SelectItem>
+                                                {JOINING_YEAR_OPTIONS.map((year) => (
+                                                    <SelectItem key={year} value={String(year)}>
+                                                        {year}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                 </div>
                                 <div className="space-y-3">
                                     <Label htmlFor="clientType" className="text-sm font-medium text-foreground">
@@ -2060,9 +2159,17 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                             Cancel
                                         </Button>
                                     </div>
-                                    <Button onClick={handleSubmit} className="h-11 px-6">
-                                        Save Changes
-                                    </Button>
+                                    <div className="flex flex-col items-end gap-2">
+                                        {customerEditError && (
+                                            <p className="max-w-md text-right text-sm text-destructive">
+                                                {customerEditError}
+                                            </p>
+                                        )}
+                                        <Button onClick={handleSubmit} disabled={isUpdatingCustomer} className="h-11 px-6">
+                                            {isUpdatingCustomer && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                            Save Changes
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         </TabsContent>
@@ -2214,6 +2321,11 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 This field is auto-filled with the field officer assigned to this store.
                                             </p>
                                         </div>
+                                        {taskCreateError && (
+                                            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                                                {taskCreateError}
+                                            </div>
+                                        )}
                                         <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t">
                                             <Button variant="outline" onClick={handleComplaintBack} className="h-11 px-6">
                                                 Back
@@ -2222,7 +2334,8 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 <Button variant="ghost" onClick={closeComplaintModal} className="h-11 px-6">
                                                     Cancel
                                                 </Button>
-                                                <Button onClick={handleCreateComplaint} className="h-11 px-6">
+                                                <Button onClick={handleCreateComplaint} disabled={isCreatingTask} className="h-11 px-6">
+                                                    {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                                     Save Complaint
                                                 </Button>
                                             </div>
@@ -2379,6 +2492,11 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 This field is auto-filled with the field officer assigned to this store.
                                             </p>
                                         </div>
+                                        {taskCreateError && (
+                                            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                                                {taskCreateError}
+                                            </div>
+                                        )}
                                         <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t">
                                             <Button variant="outline" onClick={handleRequirementBack} className="h-11 px-6">
                                                 Back
@@ -2387,7 +2505,8 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 <Button variant="ghost" onClick={closeRequirementModal} className="h-11 px-6">
                                                     Cancel
                                                 </Button>
-                                                <Button onClick={handleCreateRequirement} className="h-11 px-6">
+                                                <Button onClick={handleCreateRequirement} disabled={isCreatingTask} className="h-11 px-6">
+                                                    {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                                     Save Requirement
                                                 </Button>
                                             </div>

@@ -2,14 +2,14 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   CreditCard, 
   Calendar, 
   Users,
   BarChart3,
-  Route
+  Route,
+  Target
 } from "lucide-react";
 
 // Import all the setting components
@@ -19,6 +19,7 @@ import WorkingDays from "@/components/WorkingDays";
 import Teams from "@/components/Teams";
 import DailyBreakdown from "@/components/DailyBreakdown";
 import DistanceRecalculation from "@/components/DistanceRecalculation";
+import StoreTargets from "@/components/StoreTargets";
 
 function SettingsContent() {
   const searchParams = useSearchParams();
@@ -26,7 +27,7 @@ function SettingsContent() {
   const tabParam = searchParams.get('tab');
   
   // Valid tab values
-  const validTabs = ['employeeSummary', 'allowance', 'working-days', 'team', 'dailyBreakdown', 'distanceRecalculation'];
+  const validTabs = ['employeeSummary', 'allowance', 'working-days', 'team', 'targets', 'dailyBreakdown', 'distanceRecalculation'];
   const initialTab = tabParam && validTabs.includes(tabParam) ? tabParam : 'employeeSummary';
   
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -51,7 +52,7 @@ function SettingsContent() {
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-        <TabsList className="w-max md:w-full md:grid md:grid-cols-6 gap-2">
+        <TabsList className="w-max md:w-full md:grid md:grid-cols-7 gap-2">
           <TabsTrigger value="employeeSummary" className="flex items-center gap-2 text-lg md:text-base px-5 py-3 md:px-4 md:py-2.5 whitespace-nowrap font-medium">
             <BarChart3 className="h-6 w-6 md:h-5 md:w-5" />
             Employee Summary
@@ -67,6 +68,10 @@ function SettingsContent() {
           <TabsTrigger value="team" className="flex items-center gap-2 text-lg md:text-base px-5 py-3 md:px-4 md:py-2.5 whitespace-nowrap font-medium">
             <Users className="h-6 w-6 md:h-5 md:w-5" />
             Team
+          </TabsTrigger>
+          <TabsTrigger value="targets" className="flex items-center gap-2 text-lg md:text-base px-5 py-3 md:px-4 md:py-2.5 whitespace-nowrap font-medium">
+            <Target className="h-6 w-6 md:h-5 md:w-5" />
+            Targets
           </TabsTrigger>
           <TabsTrigger value="dailyBreakdown" className="flex items-center gap-2 text-lg md:text-base px-5 py-3 md:px-4 md:py-2.5 whitespace-nowrap font-medium">
             <BarChart3 className="h-6 w-6 md:h-5 md:w-5" />
@@ -93,6 +98,10 @@ function SettingsContent() {
         
         <TabsContent value="team">
           <Teams />
+        </TabsContent>
+
+        <TabsContent value="targets">
+          <StoreTargets />
         </TabsContent>
         
         <TabsContent value="dailyBreakdown">

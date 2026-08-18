@@ -26,6 +26,8 @@ interface Employee {
     role: string;
     teamId: number | null;
     status?: string;
+    assignedCity?: string[] | null;
+    eligibleCities?: string[];
 }
 
 interface OfficeManager {
@@ -96,6 +98,8 @@ const AddTeam = () => {
     const [isCityPopoverOpen, setIsCityPopoverOpen] = useState(false);
     const [citySearchTerm, setCitySearchTerm] = useState("");
     const [cityAssignments, setCityAssignments] = useState<Record<string, string[]>>({});
+    const [assigningEmployeeCities, setAssigningEmployeeCities] = useState<string[]>([]);
+    const [modalError, setModalError] = useState<string | null>(null);
 
     const canManageTeamSetup = hasAdminSetupPrivileges(userRole, currentUser);
     const token = authToken ?? (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
@@ -123,6 +127,8 @@ const AddTeam = () => {
         setSelectedEmployees([]);
         setEmployees([]);
         setCitySearchTerm("");
+        setAssigningEmployeeCities([]);
+        setModalError(null);
     };
 
     const fetchOfficeManagers = useCallback(async () => {
@@ -210,9 +216,9 @@ const AddTeam = () => {
             );
             const data = await response.json();
             console.log('Cities data:', data);
-            
+
             const sortedCities = buildCityOptions<CityOption>(data, createCityOption);
-            
+
             console.log('Sorted cities:', sortedCities);
             setCities((prev) => mergeCityOptions(prev, sortedCities));
         } catch (error) {
@@ -285,11 +291,24 @@ const AddTeam = () => {
             );
 
             const responses = await Promise.all(promises);
+            const failedResponse = responses.find((response) => !response.ok);
+            if (failedResponse) {
+                throw new Error(await failedResponse.text() || 'Failed to load field officers');
+            }
             const allEmployeesData = await Promise.all(responses.map(r => r.json()));
             // Flatten and de-duplicate employees by id across cities
             const merged: Record<number, Employee> = {};
-            allEmployeesData.flat().forEach((employee: Employee) => {
-                if (!merged[employee.id]) merged[employee.id] = employee;
+            allEmployeesData.forEach((cityEmployees: Employee[], index: number) => {
+                const sourceCity = cities[index];
+                cityEmployees.forEach((employee: Employee) => {
+                    if (!merged[employee.id]) {
+                        merged[employee.id] = { ...employee, eligibleCities: [sourceCity] };
+                    } else {
+                        merged[employee.id].eligibleCities = Array.from(
+                            new Set([...(merged[employee.id].eligibleCities ?? []), sourceCity])
+                        );
+                    }
+                });
             });
 
             const allEmployees = Object.values(merged)
@@ -327,11 +346,36 @@ const AddTeam = () => {
         })));
     };
 
+    const isEmployeeAssignedToAnEligibleCity = (employee: Employee) => {
+        const assignedKeys = new Set((employee.assignedCity ?? []).map(normalizeCityKey));
+        return (employee.eligibleCities ?? []).some((city) => assignedKeys.has(normalizeCityKey(city)));
+    };
+
+    const assignCityToEmployee = async (employeeId: number, city: string) => {
+        if (!token) return;
+        const assignmentKey = `${employeeId}:${normalizeCityKey(city)}`;
+        setAssigningEmployeeCities((current) => [...current, assignmentKey]);
+        setModalError(null);
+
+        try {
+            await API.assignEmployeeCity(employeeId, city);
+            setEmployees((current) => current.map((employee) => {
+                if (employee.id !== employeeId) return employee;
+                const assignedCity = Array.from(new Set([...(employee.assignedCity ?? []), city]));
+                return { ...employee, assignedCity };
+            }));
+        } catch (error) {
+            setModalError(error instanceof Error ? error.message : `Failed to assign ${city}`);
+        } finally {
+            setAssigningEmployeeCities((current) => current.filter((key) => key !== assignmentKey));
+        }
+    };
+
     const handleCreateTeam = async () => {
         console.log('=== CREATING TEAM ===');
         console.log('Selected office manager:', selectedOfficeManager);
         console.log('Selected employees:', selectedEmployees);
-        
+
         if (selectedOfficeManager.length === 0) {
             console.log('No office manager selected');
             return;
@@ -358,7 +402,8 @@ const AddTeam = () => {
                 employees.some(e =>
                     e.id === id &&
                     String(e.status || '').toLowerCase() === 'active' &&
-                    e.teamId === null
+                    e.teamId === null &&
+                    isEmployeeAssignedToAnEligibleCity(e)
                 )
             );
             if (activeSelected.length === 0) {
@@ -375,14 +420,16 @@ const AddTeam = () => {
                 return;
             }
 
+            await assignCitiesToManagers(managerIds);
+
             const requestBody = {
                 officeManager: managerIds[0],
                 officeManagers: managerIds,
                 fieldOfficers: activeSelected,
             };
-            
+
             console.log('Team creation request body:', requestBody);
-            
+
             const response = await fetch(
                 "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/create",
                 {
@@ -396,17 +443,18 @@ const AddTeam = () => {
             );
 
             console.log('Team creation response status:', response.status);
-            
-            if (response.status === 200) {
-                await assignCitiesToManagers(managerIds);
+
+            if (response.ok) {
                 console.log('Team created successfully');
                 setIsModalOpen(false);
                 resetForm();
             } else {
-                console.log('Team creation failed with status:', response.status);
+                const errorText = await response.text();
+                throw new Error(errorText || `Team creation failed (${response.status})`);
             }
         } catch (error) {
             console.error("Error creating team:", error);
+            setModalError(error instanceof Error ? error.message : 'Failed to create team');
         } finally {
             setIsCreatingTeam(false);
         }
@@ -428,8 +476,10 @@ const AddTeam = () => {
         const employee = employees.find(e => e.id === employeeId);
         const isActive = String(employee?.status || '').toLowerCase() === 'active';
         const isUnassigned = employee?.teamId === null;
+        const hasCityAssignment = employee ? isEmployeeAssignedToAnEligibleCity(employee) : false;
         if (!isActive) return; // guard
         if (!isUnassigned) return;
+        if (!hasCityAssignment) return;
         setSelectedEmployees(prev => 
             prev.includes(employeeId) 
                 ? prev.filter(id => id !== employeeId)
@@ -648,20 +698,60 @@ const AddTeam = () => {
                                                         <div className="text-xs text-muted-foreground">No unassigned active officers found</div>
                                                     ) : (
                                                         <div className="space-y-2">
-                                                            {activeAvailable.map((employee) => (
-                                                                <div key={employee.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
-                                                                    <div className="flex items-center min-w-0">
-                                                                        <Checkbox
-                                                                            id={`employee-${employee.id}`}
-                                                                            checked={selectedEmployees.includes(employee.id)}
-                                                                            onCheckedChange={() => handleEmployeeToggle(employee.id)}
-                                                                        />
-                                                                        <label htmlFor={`employee-${employee.id}`} className="ml-2 text-sm truncate">
-                                                                            {toSentenceCase(`${employee.firstName} ${employee.lastName}`)}
-                                                                        </label>
+                                                            {activeAvailable.map((employee) => {
+                                                                const assignedKeys = new Set((employee.assignedCity ?? []).map(normalizeCityKey));
+                                                                const eligibleCities = employee.eligibleCities ?? [];
+                                                                const missingCities = eligibleCities.filter(
+                                                                    (city) => !assignedKeys.has(normalizeCityKey(city))
+                                                                );
+                                                                const canSelect = isEmployeeAssignedToAnEligibleCity(employee);
+
+                                                                return (
+                                                                    <div key={employee.id} className="space-y-2 rounded-md p-2 hover:bg-muted/50">
+                                                                        <div className="flex items-center justify-between gap-2">
+                                                                            <div className="flex min-w-0 items-center">
+                                                                                <Checkbox
+                                                                                    id={`employee-${employee.id}`}
+                                                                                    checked={selectedEmployees.includes(employee.id)}
+                                                                                    disabled={!canSelect}
+                                                                                    onCheckedChange={() => handleEmployeeToggle(employee.id)}
+                                                                                />
+                                                                                <label htmlFor={`employee-${employee.id}`} className="ml-2 text-sm truncate">
+                                                                                    {toSentenceCase(`${employee.firstName} ${employee.lastName}`)}
+                                                                                </label>
+                                                                            </div>
+                                                                            {!canSelect && (
+                                                                                <Badge variant="outline" className="shrink-0 border-amber-500/60 text-amber-600">
+                                                                                    City not assigned
+                                                                                </Badge>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {missingCities.length > 0 && (
+                                                                            <div className="flex flex-wrap gap-2 pl-6">
+                                                                                {missingCities.map((city) => {
+                                                                                    const assignmentKey = `${employee.id}:${normalizeCityKey(city)}`;
+                                                                                    const isAssigning = assigningEmployeeCities.includes(assignmentKey);
+                                                                                    return (
+                                                                                        <Button
+                                                                                            key={city}
+                                                                                            type="button"
+                                                                                            variant="outline"
+                                                                                            size="sm"
+                                                                                            className="h-7 border-amber-500/40 text-xs"
+                                                                                            disabled={isAssigning}
+                                                                                            onClick={() => assignCityToEmployee(employee.id, city)}
+                                                                                        >
+                                                                                            {isAssigning && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                                                                                            Assign {toSentenceCase(city)}
+                                                                                        </Button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
-                                                                </div>
-                                                            ))}
+                                                                );
+                                                            })}
                                                         </div>
                                                     )}
                                                 </div>
@@ -718,6 +808,11 @@ const AddTeam = () => {
                             )}
                         </div>
                     </div>
+                    {modalError && (
+                        <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                            {modalError}
+                        </div>
+                    )}
                     <div className="flex justify-end space-x-2 mt-4">
                         <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                             Cancel
@@ -732,7 +827,8 @@ const AddTeam = () => {
                                     employees.some(e =>
                                         e.id === id &&
                                         String(e.status || '').toLowerCase() === 'active' &&
-                                        e.teamId === null
+                                        e.teamId === null &&
+                                        isEmployeeAssignedToAnEligibleCity(e)
                                     )
                                 ).length === 0
                             }

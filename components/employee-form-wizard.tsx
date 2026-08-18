@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SpacedCalendar } from '@/components/ui/spaced-calendar';
 import { Separator } from "@/components/ui/separator";
@@ -30,8 +32,10 @@ import {
   Lock, 
   CheckCircle2, 
   ChevronRight,
+  ChevronsUpDown,
   Loader2,
-  ShieldAlert
+  ShieldAlert,
+  X
 } from 'lucide-react';
 
 import { API, EmployeeUserDto } from "@/lib/api";
@@ -149,6 +153,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [showBackConfirmDialog, setShowBackConfirmDialog] = useState(false);
   const [isFormReady, setIsFormReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
+  const [selectedAssignedCities, setSelectedAssignedCities] = useState<string[]>([]);
+  const [baselineAssignedCities, setBaselineAssignedCities] = useState<string[]>([]);
+  const [isCityAssignmentOpen, setIsCityAssignmentOpen] = useState(false);
   
   // Validation State
   const [primaryContactError, setPrimaryContactError] = useState<string | null>(null);
@@ -163,9 +171,14 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
 
-  const resetFormState = (state: NewEmployeeState = initialNewEmployeeState) => {
+  const resetFormState = (
+    state: NewEmployeeState = initialNewEmployeeState,
+    assignedCities: string[] = []
+  ) => {
     setNewEmployee(state);
     setBaselineEmployee(state);
+    setSelectedAssignedCities(assignedCities);
+    setBaselineAssignedCities(assignedCities);
     setCurrentStep(0);
     setPreviousStep(0);
     setShowPassword(false);
@@ -173,6 +186,19 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     setSecondaryContactError(null);
     setCityError(null);
   };
+
+  useEffect(() => {
+    if (!token) return;
+
+    API.getCities()
+      .then((cities) => {
+        const normalized = Array.from(
+          new Set((Array.isArray(cities) ? cities : []).map((city) => city.trim()).filter(Boolean))
+        ).sort((a, b) => a.localeCompare(b));
+        setAvailableCities(normalized);
+      })
+      .catch((error) => console.error('Failed to load assignable cities:', error));
+  }, [token]);
 
   // Reset form when navigating from employees list (create mode only)
   useEffect(() => {
@@ -217,7 +243,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         setLoadError(null);
         const employee = await API.getEmployeeById(employeeId);
         const mapped = mapEmployeeDtoToState(employee);
-        resetFormState(mapped);
+        resetFormState(mapped, employee.assignedCity ?? []);
         setIsFormReady(true);
       } catch (error) {
         console.error("Error loading employee:", error);
@@ -236,7 +262,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
 
   // Check if form has unsaved changes
   const hasFormChanges = (): boolean => {
-    return JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) || currentStep > 0;
+    return JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
+      JSON.stringify(selectedAssignedCities) !== JSON.stringify(baselineAssignedCities) ||
+      currentStep > 0;
   };
 
   // Handle back button click
@@ -325,6 +353,31 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     }
   };
 
+  const toggleAssignedCity = (city: string) => {
+    setSelectedAssignedCities((current) =>
+      current.some((item) => item.toLowerCase() === city.toLowerCase())
+        ? current.filter((item) => item.toLowerCase() !== city.toLowerCase())
+        : [...current, city]
+    );
+  };
+
+  const syncAssignedCities = async (targetEmployeeId: number) => {
+    const baselineByKey = new Map(baselineAssignedCities.map((city) => [city.trim().toLowerCase(), city]));
+    const selectedByKey = new Map(selectedAssignedCities.map((city) => [city.trim().toLowerCase(), city]));
+
+    const citiesToAssign = Array.from(selectedByKey.entries())
+      .filter(([key]) => !baselineByKey.has(key))
+      .map(([, city]) => city);
+    const citiesToRemove = Array.from(baselineByKey.entries())
+      .filter(([key]) => !selectedByKey.has(key))
+      .map(([, city]) => city);
+
+    await Promise.all([
+      ...citiesToAssign.map((city) => API.assignEmployeeCity(targetEmployeeId, city)),
+      ...citiesToRemove.map((city) => API.removeEmployeeCity(targetEmployeeId, city)),
+    ]);
+  };
+
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
@@ -375,16 +428,22 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
 
         await API.createEmployee(requestBody);
 
-        try {
-          const allEmployees = await API.getAllEmployees();
-          const createdEmployee = allEmployees.find(
-            (emp: EmployeeUserDto) => emp?.userDto?.username === newEmployee.userName
-          );
-          if (createdEmployee) {
-            await API.createAttendanceLog(createdEmployee.id);
+        const allEmployees = await API.getAllEmployees();
+        const createdEmployee = allEmployees.find(
+          (emp: EmployeeUserDto) => emp?.userDto?.username === newEmployee.userName
+        );
+        if (createdEmployee) {
+          if (roleForApi === 'Field Officer') {
+            await syncAssignedCities(createdEmployee.id);
           }
-        } catch (logErr) {
-          console.warn("Attendance log creation failed, but employee was created.", logErr);
+
+          try {
+            await API.createAttendanceLog(createdEmployee.id);
+          } catch (logErr) {
+            console.warn("Attendance log creation failed, but employee and city assignments were saved.", logErr);
+          }
+        } else if (roleForApi === 'Field Officer' && selectedAssignedCities.length > 0) {
+          throw new Error('Employee was created, but the new employee ID could not be resolved for city assignment.');
         }
       } else {
         if (!employeeId) {
@@ -402,6 +461,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         }
 
         await API.updateEmployee(employeeId, updatePayload);
+        if (roleForApi === 'Field Officer') {
+          await syncAssignedCities(employeeId);
+        }
       }
 
       router.push('/dashboard/employees');
@@ -430,6 +492,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   };
 
   const direction = currentStep > previousStep ? 1 : -1;
+  const cityAssignmentOptions = Array.from(
+    new Set([...availableCities, newEmployee.city].map((city) => city.trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
 
   if (isEditMode && loadError) {
     return (
@@ -632,7 +697,15 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                         </div>
                                         <div className="space-y-2">
                                             <Label>Assigned Role <span className="text-red-500">*</span></Label>
-                                            <Select value={newEmployee.role} onValueChange={(val) => setNewEmployee({ ...newEmployee, role: val })}>
+                                            <Select
+                                                value={newEmployee.role}
+                                                onValueChange={(val) => {
+                                                    setNewEmployee({ ...newEmployee, role: val });
+                                                    if (val !== 'Field Officer') {
+                                                        setSelectedAssignedCities([]);
+                                                    }
+                                                }}
+                                            >
                                                 <SelectTrigger className="h-11 bg-background">
                                                     <SelectValue placeholder="Select Role" />
                                                 </SelectTrigger>
@@ -671,6 +744,73 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                             </PopoverContent>
                                         </Popover>
                                     </div>
+
+                                    {newEmployee.role === 'Field Officer' && (
+                                        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+                                            <div>
+                                                <Label>Assign Cities to Field Officer</Label>
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    Select one or more operational cities. These assignments are saved after the employee profile is created.
+                                                </p>
+                                            </div>
+
+                                            {selectedAssignedCities.length > 0 && (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedAssignedCities.map((city) => (
+                                                        <Badge key={city} variant="secondary" className="gap-1 pr-1">
+                                                            {city}
+                                                            <button
+                                                                type="button"
+                                                                aria-label={`Remove ${city}`}
+                                                                className="rounded-sm p-0.5 hover:bg-background/70"
+                                                                onClick={() => toggleAssignedCity(city)}
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </button>
+                                                        </Badge>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <Popover open={isCityAssignmentOpen} onOpenChange={setIsCityAssignmentOpen}>
+                                                <PopoverTrigger asChild>
+                                                    <Button type="button" variant="outline" className="w-full justify-between">
+                                                        {selectedAssignedCities.length === 0
+                                                            ? 'Select assigned cities'
+                                                            : `${selectedAssignedCities.length} ${selectedAssignedCities.length === 1 ? 'city' : 'cities'} selected`}
+                                                        <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
+                                                    {cityAssignmentOptions.length === 0 ? (
+                                                        <div className="p-3 text-sm text-muted-foreground">
+                                                            Enter the employee city in the Residency step first.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="max-h-56 overflow-y-auto">
+                                                            {cityAssignmentOptions.map((city) => {
+                                                                const checked = selectedAssignedCities.some(
+                                                                    (item) => item.toLowerCase() === city.toLowerCase()
+                                                                );
+                                                                return (
+                                                                    <label
+                                                                        key={city}
+                                                                        className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted"
+                                                                    >
+                                                                        <Checkbox
+                                                                            checked={checked}
+                                                                            onCheckedChange={() => toggleAssignedCity(city)}
+                                                                        />
+                                                                        <span>{city}</span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

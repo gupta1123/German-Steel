@@ -64,7 +64,7 @@ const Requirements = () => {
         dueDate: '',
         assignedToId: 0,
         assignedToName: '',
-        assignedById: 86,
+        assignedById: 0,
         status: 'Assigned',
         priority: 'low',
         category: 'Requirement',
@@ -577,11 +577,18 @@ const Requirements = () => {
 
     const createTask = async () => {
         if (!token) return;
+
+        const assignedById = userData?.employeeId;
+        if (!assignedById) {
+            setErrorMessage('Unable to identify the logged-in employee. Please sign in again.');
+            return;
+        }
         
         setIsCreating(true);
         try {
             const taskToCreate = {
                 ...newTask,
+                assignedById,
                 taskDesciption: newTask.taskDesciption, // Use correct field name
                 taskType: 'requirement',
             };
@@ -594,10 +601,15 @@ const Requirements = () => {
                 },
                 body: JSON.stringify(taskToCreate),
             });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || `Failed to create requirement (${response.status})`);
+            }
+
             const data = await response.json();
 
             const createdTask = {
-                ...newTask,
+                ...taskToCreate,
                 id: data.id,
                 assignedToName: assignmentEmployees.find(emp => emp.id === newTask.assignedToId)?.firstName + ' ' + assignmentEmployees.find(emp => emp.id === newTask.assignedToId)?.lastName || 'Unknown',
                 storeName: stores.find(store => store.id === newTask.storeId)?.storeName || '',
@@ -609,6 +621,7 @@ const Requirements = () => {
             resetForm();
         } catch (error) {
             console.error('Error creating task:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to create requirement');
         } finally {
             setIsCreating(false);
         }
@@ -750,7 +763,7 @@ const Requirements = () => {
             dueDate: '',
             assignedToId: 0,
             assignedToName: '',
-            assignedById: 86,
+            assignedById: 0,
             status: 'Assigned',
             priority: 'low',
             category: 'Requirement',
