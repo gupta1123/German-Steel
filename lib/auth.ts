@@ -8,6 +8,9 @@ const LOGOUT_ENDPOINT = `${API_BASE_URL}/user/logout`;
 const USER_ROLE_ENDPOINT = `${API_BASE_URL}/user/manage/get`;
 const CURRENT_USER_ENDPOINT = `${SECONDARY_API_BASE_URL}/user/manage/current-user`;
 
+export const FIELD_OFFICER_WEB_ACCESS_MESSAGE =
+  'Field Officer accounts do not have access to the web portal.';
+
 export const normalizeRoleValue = (value: string | null | undefined): string | null => {
   if (!value) return null;
   return value.trim().replace(/\s+/g, ' ').toUpperCase();
@@ -28,6 +31,29 @@ export const isManagerRoleValue = (value: string | null | undefined): boolean =>
     normalized === 'ROLE OFFICE MANAGER' ||
     normalized === 'ROLE_OFFICE MANAGER' ||
     normalized === 'ROLE_OFFICE_MANAGER';
+};
+
+export const isFieldOfficerRoleValue = (value: string | null | undefined): boolean => {
+  const normalized = normalizeRoleValue(value);
+  if (!normalized) return false;
+
+  return normalized
+    .replace(/^ROLE[\s_-]+/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() === 'FIELD OFFICER';
+};
+
+export const hasFieldOfficerPrivileges = (
+  userRole: string | null,
+  currentUser?: CurrentUserDto | null,
+  correctedFlags?: { isManager: boolean; isFieldOfficer: boolean } | null
+): boolean => {
+  if (correctedFlags?.isFieldOfficer || isFieldOfficerRoleValue(userRole)) {
+    return true;
+  }
+
+  return (currentUser?.authorities ?? []).some((auth) => isFieldOfficerRoleValue(auth.authority));
 };
 
 export const hasManagerPrivileges = (userRole: string | null, currentUser?: CurrentUserDto | null): boolean => {
@@ -87,17 +113,14 @@ export const getCorrectedRoleFlags = (
   // Fallback to authority-based detection if no teamId was fetched
   const normalizedRole = normalizeRoleValue(userRole);
   const authorities = currentUser?.authorities ?? [];
-  const authorityRole = authorities.length > 0 ? normalizeRoleValue(authorities[0].authority) : null;
-
-  const isManager = isManagerRoleValue(userRole) || isManagerRoleValue(authorityRole);
-  const isFieldOfficer = normalizedRole === 'ROLE_FIELD OFFICER' || 
-                         normalizedRole === 'FIELD OFFICER' ||
-                         authorityRole === 'ROLE_FIELD OFFICER' || 
-                         authorityRole === 'FIELD OFFICER';
+  const isManager = isManagerRoleValue(userRole) || authorities.some((auth) => isManagerRoleValue(auth.authority));
+  const isFieldOfficer = hasFieldOfficerPrivileges(userRole, currentUser);
   const isAdmin = normalizedRole === 'ROLE_ADMIN' || 
                   normalizedRole === 'ADMIN' ||
-                  authorityRole === 'ROLE_ADMIN' || 
-                  authorityRole === 'ADMIN';
+                  authorities.some((auth) => {
+                    const authorityRole = normalizeRoleValue(auth.authority);
+                    return authorityRole === 'ROLE_ADMIN' || authorityRole === 'ADMIN';
+                  });
 
   return { isManager, isFieldOfficer, isAdmin };
 };
@@ -128,13 +151,15 @@ const parseTokenResponse = (raw: string): { token: string; role: string } => {
     throw new Error(`Unexpected login response: "${trimmed}"`);
   }
 
-  const role = parts[0];
   let tokenCandidate = parts[parts.length - 1];
+  const roleParts = parts.slice(0, -1);
 
-  // Handle "ROLE_ADMIN Bearer <token>" formats
-  if (tokenCandidate.toLowerCase() === 'bearer' && parts.length >= 3) {
-    tokenCandidate = parts[parts.length - 1];
+  // Handle "ROLE_ADMIN Bearer <token>" formats.
+  if (roleParts.at(-1)?.toLowerCase() === 'bearer') {
+    roleParts.pop();
   }
+
+  const role = roleParts.join(' ');
 
   // Strip any surrounding quotes
   tokenCandidate = tokenCandidate.replace(/^"(.*)"$/, '$1');
@@ -301,6 +326,24 @@ export const tokenManager = {
   }
 };
 
+const denyFieldOfficerWebAccess = async (token: string): Promise<never> => {
+  tokenManager.removeToken();
+
+  try {
+    await fetch(LOGOUT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  } catch (logoutError) {
+    console.warn('Field Officer session could not be revoked remotely:', logoutError);
+  }
+
+  throw new Error(FIELD_OFFICER_WEB_ACCESS_MESSAGE);
+};
+
 // Authentication API calls
 export const authService = {
   login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
@@ -350,16 +393,15 @@ export const authService = {
         throw parseError;
       }
 
-      // Store token in localStorage
+      // Clear any stale session data before starting the new login transaction.
+      tokenManager.removeToken();
       tokenManager.setToken(token);
+
+      let userRoleData: UserRoleResponse | null = null;
 
       // Fetch detailed user role information
       try {
-        console.log('Fetching role for username:', credentials.username);
-        console.log('Raw token response:', tokenData);
-        console.log('Token being used:', token);
-        
-        const roleResponse = await fetch(`${USER_ROLE_ENDPOINT}?username=${credentials.username}`, {
+        const roleResponse = await fetch(`${USER_ROLE_ENDPOINT}?username=${encodeURIComponent(credentials.username)}`, {
           credentials: 'include', // Ensure cookies are sent
           method: 'GET',
           headers: {
@@ -369,9 +411,10 @@ export const authService = {
         });
 
         if (roleResponse.ok) {
-          const userRoleData: UserRoleResponse = await roleResponse.json();
-          tokenManager.setUserRole(userRoleData);
-          console.log('User role data stored:', userRoleData);
+          userRoleData = await roleResponse.json() as UserRoleResponse;
+          if (!isFieldOfficerRoleValue(userRoleData.roles)) {
+            tokenManager.setUserRole(userRoleData);
+          }
         } else {
           console.warn('Failed to fetch user role data:', roleResponse.status, roleResponse.statusText);
           const errorText = await roleResponse.text();
@@ -380,6 +423,14 @@ export const authService = {
       } catch (roleError) {
         console.warn('Error fetching user role data:', roleError);
       }
+
+      // The manage/get response is the authoritative role check for web access.
+      if (isFieldOfficerRoleValue(userRoleData?.roles)) {
+        await denyFieldOfficerWebAccess(token);
+      }
+
+      let currentUserData: CurrentUserDto | null = null;
+      let correctedRoleFlags: { isManager: boolean; isFieldOfficer: boolean } | null = null;
 
       // Fetch current user details
       try {
@@ -393,7 +444,7 @@ export const authService = {
         });
 
         if (currentUserResponse.ok) {
-          const currentUserData: CurrentUserDto = await currentUserResponse.json();
+          currentUserData = await currentUserResponse.json() as CurrentUserDto;
           tokenManager.setCurrentUser(currentUserData);
           console.log('Current user data stored:', currentUserData);
         } else {
@@ -444,7 +495,8 @@ export const authService = {
               console.log('⚠️ Could not determine role from team structure, defaulting to manager');
             }
             
-            tokenManager.setCorrectedRoleFlags({ isManager, isFieldOfficer });
+            correctedRoleFlags = { isManager, isFieldOfficer };
+            tokenManager.setCorrectedRoleFlags(correctedRoleFlags);
             console.log('✅ Role corrected based on teamId:', { isManager, isFieldOfficer, teamId });
           } else {
             console.log('No team data found - user is not a manager or field officer');
@@ -459,6 +511,14 @@ export const authService = {
         // Don't throw - this is expected for admins and regular users
         tokenManager.setTeamId(null);
         tokenManager.setCorrectedRoleFlags(null);
+      }
+
+      const isFieldOfficer =
+        isFieldOfficerRoleValue(role) ||
+        hasFieldOfficerPrivileges(userRoleData?.roles ?? null, currentUserData, correctedRoleFlags);
+
+      if (isFieldOfficer) {
+        await denyFieldOfficerWebAccess(token);
       }
 
       return {

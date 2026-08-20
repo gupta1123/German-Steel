@@ -45,7 +45,10 @@ export default function LoginPage() {
 
             <form onSubmit={handleLogin} className="space-y-4">
               {error && (
-                <div className="px-4 py-3 rounded-md text-sm border border-destructive/40 text-destructive bg-destructive/10">
+                <div
+                  role="alert"
+                  className="px-4 py-3 rounded-md text-sm border border-destructive/40 text-destructive bg-destructive/10"
+                >
                   {error}
                 </div>
               )}

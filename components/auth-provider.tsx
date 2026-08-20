@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { authService, UserRoleResponse, CurrentUserDto } from '@/lib/auth';
+import { authService, hasFieldOfficerPrivileges, UserRoleResponse, CurrentUserDto } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
@@ -60,7 +60,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedToken) {
       const exp = getTokenExpiry(storedToken);
       const nowSec = Math.floor(Date.now() / 1000);
-      if (exp && exp <= nowSec) {
+      const isStoredFieldOfficer = hasFieldOfficerPrivileges(
+        storedUserRole,
+        storedCurrentUser,
+        storedCorrectedRoleFlags
+      );
+
+      if (isStoredFieldOfficer) {
+        authService.logout().finally(() => {
+          router.replace('/login');
+        });
+      } else if (exp && exp <= nowSec) {
         // Token already expired; force logout immediately
         authService.logout().finally(() => {
           setToken(null);
