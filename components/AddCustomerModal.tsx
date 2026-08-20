@@ -7,12 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { API, type EmployeeUserDto } from '@/lib/api';
+import { API, type EmployeeUserDto, type LocationMasterDto } from '@/lib/api';
 import { isManagerRoleValue } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Search, Check, MapPin, Loader2, ChevronDown } from 'lucide-react';
-import { getAllStates, getDistricts } from 'india-state-district';
+import { Search, Check, Loader2, ChevronDown } from 'lucide-react';
 
 interface CustomerData {
   id?: number;
@@ -51,6 +50,114 @@ interface AddCustomerModalProps {
   userData?: Record<string, unknown>;
 }
 
+interface SearchableLocationSelectProps {
+  id: string;
+  value?: string;
+  options: LocationMasterDto[];
+  placeholder: string;
+  searchPlaceholder: string;
+  emptyMessage: string;
+  loadingLabel: string;
+  loading?: boolean;
+  disabled?: boolean;
+  onSelect: (option: LocationMasterDto) => void;
+}
+
+const SearchableLocationSelect = ({
+  id,
+  value,
+  options,
+  placeholder,
+  searchPlaceholder,
+  emptyMessage,
+  loadingLabel,
+  loading = false,
+  disabled = false,
+  onSelect,
+}: SearchableLocationSelectProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const filteredOptions = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return options;
+    return options.filter((option) => option.name.toLowerCase().includes(query));
+  }, [options, searchTerm]);
+
+  const isDisabled = disabled || loading;
+
+  return (
+    <Popover open={isOpen} onOpenChange={(open) => {
+      setIsOpen(open);
+      if (!open) setSearchTerm('');
+    }}>
+      <PopoverTrigger asChild>
+        <Button
+          id={id}
+          type="button"
+          variant="outline"
+          className="w-full justify-between font-normal"
+          disabled={isDisabled}
+        >
+          <span className={`truncate ${value ? '' : 'text-muted-foreground'}`}>
+            {loading ? loadingLabel : value || placeholder}
+          </span>
+          {loading
+            ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+            : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="bottom"
+        collisionPadding={16}
+        className="p-0 shadow-xl"
+        style={{ width: 'var(--radix-popover-trigger-width)' }}
+      >
+        <div className="border-b p-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              autoFocus
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder={searchPlaceholder}
+              className="h-9 pl-9"
+            />
+          </div>
+        </div>
+        <div className="max-h-56 overflow-y-auto overscroll-contain p-1">
+          {filteredOptions.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+              {emptyMessage}
+            </div>
+          ) : (
+            filteredOptions.map((option) => {
+              const isSelected = value?.trim().toLowerCase() === option.name.trim().toLowerCase();
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    isSelected ? 'bg-primary/10 font-medium text-primary' : 'hover:bg-muted'
+                  }`}
+                  onClick={() => {
+                    onSelect(option);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                >
+                  <span className="truncate">{option.name}</span>
+                  {isSelected && <Check className="ml-2 h-4 w-4 shrink-0" />}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
 const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   isOpen,
   onClose,
@@ -77,11 +184,15 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [isFieldOfficerPopoverOpen, setIsFieldOfficerPopoverOpen] = useState(false);
   const [fieldOfficerSearchTerm, setFieldOfficerSearchTerm] = useState("");
   const [dobDisplayValue, setDobDisplayValue] = useState<string>('');
-  const [isAssigningCustomerCity, setIsAssigningCustomerCity] = useState(false);
-  const [cityAssignmentError, setCityAssignmentError] = useState<string | null>(null);
-  const [assignableCities, setAssignableCities] = useState<string[]>([]);
-  const [isDistrictPopoverOpen, setIsDistrictPopoverOpen] = useState(false);
-  const [districtSearchTerm, setDistrictSearchTerm] = useState('');
+  const [locationStates, setLocationStates] = useState<LocationMasterDto[]>([]);
+  const [locationDistricts, setLocationDistricts] = useState<LocationMasterDto[]>([]);
+  const [locationCities, setLocationCities] = useState<LocationMasterDto[]>([]);
+  const [selectedStateId, setSelectedStateId] = useState<number | null>(null);
+  const [selectedDistrictId, setSelectedDistrictId] = useState<number | null>(null);
+  const [isLoadingStates, setIsLoadingStates] = useState(false);
+  const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
+  const [isLoadingCities, setIsLoadingCities] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const fieldOfficerOptions = useMemo(() => {
     return employees
@@ -89,17 +200,6 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       .map((employee) => ({
         id: employee.id,
         name: [employee.firstName, employee.lastName].filter(Boolean).join(' ').trim(),
-        profileCity: employee.city?.trim() || '',
-        state: employee.state?.trim() || '',
-        district: employee.district?.trim() || '',
-        country: employee.country?.trim() || '',
-        assignedCities: Array.from(
-          new Set(
-            (Array.isArray(employee.assignedCity) ? employee.assignedCity : [])
-              .map((city) => city?.trim())
-              .filter((city): city is string => Boolean(city)),
-          ),
-        ),
       }));
   }, [employees]);
 
@@ -117,86 +217,46 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     return match?.name ?? '';
   }, [customerData.fieldOfficerId, fieldOfficerOptions]);
 
-  const selectedFieldOfficer = useMemo(() => {
-    if (!customerData.fieldOfficerId) return undefined;
-    return fieldOfficerOptions.find((option) => option.id === customerData.fieldOfficerId);
-  }, [customerData.fieldOfficerId, fieldOfficerOptions]);
-
-  const selectedOfficerCities = useMemo(() => {
-    if (!selectedFieldOfficer) return [];
-    return selectedFieldOfficer.assignedCities;
-  }, [selectedFieldOfficer]);
-
-  const districtOptions = useMemo(() => {
-    const state = customerData.state?.trim();
-    if (!state) return [];
-    const stateCode = getAllStates().find(
-      (option) => option.name.toLowerCase() === state.toLowerCase(),
-    )?.code;
-    if (!stateCode) return [];
-    return [...getDistricts(stateCode)]
-      .sort((left, right) => left.localeCompare(right));
-  }, [customerData.state]);
-
-  const stateOptions = useMemo(() => (
-    getAllStates()
-      .map((option) => option.name)
-      .sort((left, right) => left.localeCompare(right))
-  ), []);
-
-  const filteredDistrictOptions = useMemo(() => {
-    const query = districtSearchTerm.trim().toLowerCase();
-    if (!query) return districtOptions;
-    return districtOptions.filter((district) => district.toLowerCase().includes(query));
-  }, [districtOptions, districtSearchTerm]);
-
   const joiningYearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 76 }, (_, index) => currentYear - index);
   }, []);
 
-  const applyOfficerLocation = (
-    officer: (typeof fieldOfficerOptions)[number] | undefined,
-    city?: string,
-  ) => {
-    const selectedCity = city ?? officer?.assignedCities[0] ?? '';
-    const matchesProfileCity = Boolean(
-      selectedCity && officer?.profileCity && selectedCity.trim().toLowerCase() === officer.profileCity.toLowerCase(),
-    );
+  const handleCustomerStateChange = (state: LocationMasterDto) => {
+    setSelectedStateId(state.id);
+    setSelectedDistrictId(null);
+    setLocationDistricts([]);
+    setLocationCities([]);
     setCustomerData((previous) => ({
       ...previous,
-      city: selectedCity,
-      state: matchesProfileCity ? officer?.state ?? '' : '',
-      district: matchesProfileCity ? officer?.district ?? '' : '',
-      country: matchesProfileCity ? officer?.country || previous.country || '' : previous.country || '',
+      state: state.name,
+      district: '',
+      city: '',
     }));
   };
 
-  const handleCustomerStateChange = (state: string) => {
+  const handleCustomerDistrictChange = (district: LocationMasterDto) => {
+    setSelectedDistrictId(district.id);
+    setLocationCities([]);
     setCustomerData((previous) => ({
       ...previous,
-      state,
-      district: '',
+      district: district.name,
+      city: '',
     }));
-    setDistrictSearchTerm('');
-    setIsDistrictPopoverOpen(false);
+  };
+
+  const handleCustomerCityChange = (city: LocationMasterDto) => {
+    setCustomerData((previous) => ({
+      ...previous,
+      city: city.name,
+    }));
   };
 
   const handleFieldOfficerSelect = (id: number) => {
-    const officer = fieldOfficerOptions.find((option) => option.id === id);
-    const assignedCity = officer?.assignedCities[0] ?? '';
-    const matchesProfileCity = Boolean(
-      assignedCity && officer?.profileCity && assignedCity.toLowerCase() === officer.profileCity.toLowerCase(),
-    );
     setCustomerData((previous) => ({
       ...previous,
       fieldOfficerId: id,
-      city: assignedCity,
-      state: matchesProfileCity ? officer?.state ?? '' : '',
-      district: matchesProfileCity ? officer?.district ?? '' : '',
-      country: matchesProfileCity ? officer?.country || previous.country || '' : previous.country || '',
     }));
-    setCityAssignmentError(null);
     setFieldOfficerSearchTerm('');
     setIsFieldOfficerPopoverOpen(false);
   };
@@ -212,42 +272,11 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       return;
     }
 
-    const officer = fieldOfficerOptions.find((option) => option.id === employeeId);
-    const assignedCity = officer?.assignedCities[0] ?? '';
-    const matchesProfileCity = Boolean(
-      assignedCity && officer?.profileCity && assignedCity.toLowerCase() === officer.profileCity.toLowerCase(),
-    );
     setCustomerData((previous) => ({
       ...previous,
       fieldOfficerId: employeeId,
-      city: assignedCity,
-      state: matchesProfileCity ? officer?.state ?? '' : '',
-      district: matchesProfileCity ? officer?.district ?? '' : '',
-      country: matchesProfileCity ? officer?.country || previous.country || '' : previous.country || '',
     }));
   }, [isOpen, existingData?.id, employeeId, fieldOfficerOptions, customerData.fieldOfficerId]);
-
-  const handleAssignCustomerCity = async (city: string) => {
-    const officerId = customerData.fieldOfficerId;
-    const normalizedCity = city.trim();
-    if (!officerId || !normalizedCity) return;
-
-    setIsAssigningCustomerCity(true);
-    setCityAssignmentError(null);
-    try {
-      await API.assignEmployeeCity(officerId, normalizedCity);
-      setEmployees((current) => current.map((employee) => {
-        if (employee.id !== officerId) return employee;
-        const assignedCity = Array.from(new Set([...(employee.assignedCity ?? []), normalizedCity]));
-        return { ...employee, assignedCity };
-      }));
-      applyOfficerLocation(selectedFieldOfficer, normalizedCity);
-    } catch (error) {
-      setCityAssignmentError(error instanceof Error ? error.message : `Failed to assign ${normalizedCity}`);
-    } finally {
-      setIsAssigningCustomerCity(false);
-    }
-  };
 
   useEffect(() => {
     const fetchEmployees = async () => {
@@ -286,20 +315,137 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    API.getCities()
-      .then((cities) => {
-        const normalized = Array.from(new Set(
-          (Array.isArray(cities) ? cities : [])
-            .map((city) => city?.trim())
-            .filter((city): city is string => Boolean(city)),
-        )).sort((left, right) => left.localeCompare(right));
-        setAssignableCities(normalized);
+    setCustomerData(existingData ? { ...existingData } : {
+      clientFirstName: '',
+      clientLastName: '',
+      email: '',
+      dateOfBirth: '',
+      dob: '',
+    });
+    setActiveTab('basic');
+    setPrimaryContactError(null);
+    setSecondaryContactError(null);
+    setSelectedStateId(null);
+    setSelectedDistrictId(null);
+    setLocationDistricts([]);
+    setLocationCities([]);
+    setLocationError(null);
+    setFieldOfficerSearchTerm('');
+    setIsFieldOfficerPopoverOpen(false);
+  }, [isOpen, existingData]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    setIsLoadingStates(true);
+    setLocationError(null);
+
+    API.getLocationStates()
+      .then((states) => {
+        if (cancelled) return;
+        setLocationStates([...states].sort((left, right) => left.name.localeCompare(right.name)));
       })
       .catch((error) => {
-        console.error('Failed to load cities for assignment:', error);
-        setAssignableCities([]);
+        if (cancelled) return;
+        console.error('Failed to load location states:', error);
+        setLocationStates([]);
+        setLocationError('Unable to load states. Please close this form and try again.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingStates(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || selectedStateId !== null || !customerData.state?.trim()) return;
+    const state = locationStates.find(
+      (option) => option.name.trim().toLowerCase() === customerData.state?.trim().toLowerCase()
+    );
+    if (state) setSelectedStateId(state.id);
+  }, [isOpen, locationStates, selectedStateId, customerData.state]);
+
+  useEffect(() => {
+    if (!isOpen || selectedStateId === null) {
+      setLocationDistricts([]);
+      setIsLoadingDistricts(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingDistricts(true);
+    setLocationError(null);
+
+    API.getLocationDistricts(selectedStateId)
+      .then((districts) => {
+        if (cancelled) return;
+        setLocationDistricts([...districts].sort((left, right) => left.name.localeCompare(right.name)));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to load location districts:', error);
+        setLocationDistricts([]);
+        setLocationError('Unable to load districts for the selected state.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDistricts(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, selectedStateId]);
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      selectedStateId === null ||
+      selectedDistrictId !== null ||
+      !customerData.district?.trim()
+    ) {
+      return;
+    }
+
+    const district = locationDistricts.find(
+      (option) => option.name.trim().toLowerCase() === customerData.district?.trim().toLowerCase()
+    );
+    if (district) setSelectedDistrictId(district.id);
+  }, [isOpen, locationDistricts, selectedStateId, selectedDistrictId, customerData.district]);
+
+  useEffect(() => {
+    if (!isOpen || selectedDistrictId === null) {
+      setLocationCities([]);
+      setIsLoadingCities(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingCities(true);
+    setLocationError(null);
+
+    API.getLocationCities(selectedDistrictId)
+      .then((cities) => {
+        if (cancelled) return;
+        setLocationCities([...cities].sort((left, right) => left.name.localeCompare(right.name)));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to load location cities:', error);
+        setLocationCities([]);
+        setLocationError('Unable to load cities for the selected district.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCities(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, selectedDistrictId]);
 
   const handleInputChange = (field: keyof CustomerData, value: string | number) => {
     let parsedValue: string | number = value;
@@ -506,17 +652,9 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
   // Sync DOB display value when modal opens or existingData changes
   useEffect(() => {
-    if (isOpen) {
-      if (existingData?.dateOfBirth || existingData?.dob) {
-        const displayValue = formatDateForDisplay(existingData.dateOfBirth || existingData.dob || '');
-        setDobDisplayValue(displayValue);
-      } else if (customerData?.dateOfBirth || customerData?.dob) {
-        const displayValue = formatDateForDisplay(customerData.dateOfBirth || customerData.dob || '');
-        setDobDisplayValue(displayValue);
-      } else {
-        setDobDisplayValue('');
-      }
-    }
+    if (!isOpen) return;
+    const dateValue = existingData?.dateOfBirth || existingData?.dob || '';
+    setDobDisplayValue(formatDateForDisplay(dateValue));
   }, [isOpen, existingData]);
 
   return (
@@ -625,9 +763,6 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                       </div>
                     </PopoverContent>
                   </Popover>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    The selected officer&apos;s location will prefill the Address step.
-                  </p>
                 </div>
               </div>
             </div>
@@ -691,98 +826,21 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                 <Input id="customer-addressLine2" autoComplete="address-line2" value={customerData.addressLine2 || ''} className="col-span-3" onChange={(e) => handleInputChange('addressLine2', e.target.value)} />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="customer-city" className="text-right">
-                  City
-                </Label>
-                <div className="col-span-3 space-y-2">
-                  {selectedOfficerCities.length > 1 ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button id="customer-city" type="button" variant="outline" className="w-full justify-between font-normal">
-                          <span className="flex min-w-0 items-center">
-                            <MapPin className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{customerData.city || 'Select assigned city'}</span>
-                          </span>
-                          <span className="text-xs text-muted-foreground">{selectedOfficerCities.length} options</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-[320px]" align="start">
-                        {selectedOfficerCities.map((city) => (
-                          <DropdownMenuItem key={city} onClick={() => applyOfficerLocation(selectedFieldOfficer, city)}>
-                            {city}
-                            {customerData.city?.trim().toLowerCase() === city.toLowerCase() && (
-                              <Check className="ml-auto h-4 w-4" />
-                            )}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : selectedOfficerCities.length === 1 ? (
-                    <Button id="customer-city" type="button" variant="outline" className="w-full cursor-default justify-start font-normal" disabled>
-                      <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
-                      {selectedOfficerCities[0]}
-                    </Button>
-                  ) : selectedFieldOfficer ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          id="customer-city"
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-between font-normal"
-                          disabled={isAssigningCustomerCity || assignableCities.length === 0}
-                        >
-                          <span className="flex min-w-0 items-center">
-                            {isAssigningCustomerCity
-                              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              : <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />}
-                            <span className="truncate">Assign a city to this Field Officer</span>
-                          </span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="max-h-64 w-[320px] overflow-y-auto" align="start">
-                        {assignableCities.map((city) => (
-                          <DropdownMenuItem key={city} onClick={() => handleAssignCustomerCity(city)}>
-                            Assign and use {city}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <Button id="customer-city" type="button" variant="outline" className="w-full justify-start font-normal" disabled>
-                      Select a Field Officer first
-                    </Button>
-                  )}
-                  {selectedFieldOfficer && selectedOfficerCities.length === 0 && (
-                    <p className="text-xs text-amber-600">
-                      No sales city is assigned. Choose an available city above to assign and use it.
-                    </p>
-                  )}
-                  {cityAssignmentError && (
-                    <p className="text-xs text-destructive">{cityAssignmentError}</p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="customer-state" className="text-right">
                   State
                 </Label>
                 <div className="col-span-3">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button id="customer-state" type="button" variant="outline" className="w-full justify-start font-normal">
-                        {customerData.state || 'Select state'}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="max-h-64 w-[320px] overflow-y-auto" align="start">
-                      {stateOptions.map((state) => (
-                        <DropdownMenuItem key={state} onClick={() => handleCustomerStateChange(state)}>
-                          {state}
-                          {customerData.state?.toLowerCase() === state.toLowerCase() && <Check className="ml-auto h-4 w-4" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <SearchableLocationSelect
+                    id="customer-state"
+                    value={customerData.state}
+                    options={locationStates}
+                    placeholder="Select state"
+                    searchPlaceholder="Search states..."
+                    emptyMessage="No states available"
+                    loadingLabel="Loading states..."
+                    loading={isLoadingStates}
+                    onSelect={handleCustomerStateChange}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
@@ -790,75 +848,46 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   District
                 </Label>
                 <div className="col-span-3">
-                  <Popover open={isDistrictPopoverOpen} onOpenChange={(open) => {
-                    setIsDistrictPopoverOpen(open);
-                    if (!open) setDistrictSearchTerm('');
-                  }}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        id="customer-district"
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-between font-normal"
-                        disabled={!customerData.state?.trim() || districtOptions.length === 0}
-                      >
-                        <span className={customerData.district ? '' : 'text-muted-foreground'}>
-                          {customerData.district || (customerData.state?.trim() ? 'Select district' : 'Select state first')}
-                        </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      side="bottom"
-                      collisionPadding={16}
-                      className="p-0 shadow-xl"
-                      style={{ width: 'var(--radix-popover-trigger-width)' }}
-                    >
-                      <div className="border-b p-2">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            autoFocus
-                            value={districtSearchTerm}
-                            onChange={(event) => setDistrictSearchTerm(event.target.value)}
-                            placeholder={`Search ${customerData.state || ''} districts...`}
-                            className="h-9 pl-9"
-                          />
-                        </div>
-                      </div>
-                      <div className="max-h-56 overflow-y-auto overscroll-contain p-1">
-                        {filteredDistrictOptions.length === 0 ? (
-                          <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                            No districts match your search
-                          </div>
-                        ) : (
-                          filteredDistrictOptions.map((district) => {
-                            const isSelected = customerData.district === district;
-                            return (
-                              <button
-                                key={district}
-                                type="button"
-                                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                                  isSelected ? 'bg-primary/10 font-medium text-primary' : 'hover:bg-muted'
-                                }`}
-                                onClick={() => {
-                                  handleInputChange('district', district);
-                                  setIsDistrictPopoverOpen(false);
-                                  setDistrictSearchTerm('');
-                                }}
-                              >
-                                <span className="truncate">{district}</span>
-                                {isSelected && <Check className="ml-2 h-4 w-4 shrink-0" />}
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                  <SearchableLocationSelect
+                    id="customer-district"
+                    value={customerData.district}
+                    options={locationDistricts}
+                    placeholder={selectedStateId === null ? 'Select state first' : 'Select district'}
+                    searchPlaceholder="Search districts..."
+                    emptyMessage="No districts available"
+                    loadingLabel="Loading districts..."
+                    loading={isLoadingDistricts}
+                    disabled={selectedStateId === null}
+                    onSelect={handleCustomerDistrictChange}
+                  />
                 </div>
               </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="customer-city" className="text-right">
+                  City
+                </Label>
+                <div className="col-span-3">
+                  <SearchableLocationSelect
+                    id="customer-city"
+                    value={customerData.city}
+                    options={locationCities}
+                    placeholder={selectedDistrictId === null ? 'Select district first' : 'Select city'}
+                    searchPlaceholder="Search cities..."
+                    emptyMessage="No cities available"
+                    loadingLabel="Loading cities..."
+                    loading={isLoadingCities}
+                    disabled={selectedDistrictId === null}
+                    onSelect={handleCustomerCityChange}
+                  />
+                </div>
+              </div>
+              {locationError && (
+                <div className="grid grid-cols-4 gap-4">
+                  <p role="alert" className="col-span-3 col-start-2 text-sm text-destructive">
+                    {locationError}
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="customer-country" className="text-right">
                   Country

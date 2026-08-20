@@ -384,6 +384,21 @@ export interface StoreResponse {
   empty: boolean;
 }
 
+export interface LocationMasterDto {
+  id: number;
+  lgdCode: number;
+  name: string;
+  type: string;
+}
+
+export interface LocationPageDto {
+  content: LocationMasterDto[];
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
 export interface EmployeeUserDto {
   id: number;
   firstName: string;
@@ -798,6 +813,18 @@ export class API {
 
   static async getTeamById(teamId: number): Promise<TeamDataDto> {
     return apiService.getTeamById(teamId);
+  }
+
+  static async getLocationStates(): Promise<LocationMasterDto[]> {
+    return apiService.getLocationStates();
+  }
+
+  static async getLocationDistricts(stateId: number): Promise<LocationMasterDto[]> {
+    return apiService.getLocationDistricts(stateId);
+  }
+
+  static async getLocationCities(districtId: number, search?: string): Promise<LocationMasterDto[]> {
+    return apiService.getAllLocationCities(districtId, search);
   }
 
   static async getCities(): Promise<string[]> {
@@ -1647,6 +1674,44 @@ Please check your internet connection and try again.`);
 
   async getTeamById(teamId: number): Promise<TeamDataDto> {
     return this.makeRequest<TeamDataDto>(`/employee/team/getById?id=${teamId}`);
+  }
+
+  async getLocationStates(): Promise<LocationMasterDto[]> {
+    return this.makeRequest<LocationMasterDto[]>('/locations/states');
+  }
+
+  async getLocationDistricts(stateId: number): Promise<LocationMasterDto[]> {
+    return this.makeRequest<LocationMasterDto[]>(`/locations/districts?stateId=${stateId}`);
+  }
+
+  async getLocationCityPage(
+    districtId: number,
+    page: number = 0,
+    size: number = 100,
+    search?: string
+  ): Promise<LocationPageDto> {
+    const query = new URLSearchParams({
+      districtId: String(districtId),
+      page: String(page),
+      size: String(size),
+    });
+    const normalizedSearch = search?.trim();
+    if (normalizedSearch) query.set('q', normalizedSearch);
+
+    return this.makeRequest<LocationPageDto>(`/locations/cities?${query.toString()}`);
+  }
+
+  async getAllLocationCities(districtId: number, search?: string): Promise<LocationMasterDto[]> {
+    const firstPage = await this.getLocationCityPage(districtId, 0, 100, search);
+    if (firstPage.totalPages <= 1) return firstPage.content;
+
+    const remainingPages = await Promise.all(
+      Array.from({ length: firstPage.totalPages - 1 }, (_, index) =>
+        this.getLocationCityPage(districtId, index + 1, 100, search)
+      )
+    );
+
+    return [firstPage, ...remainingPages].flatMap((page) => page.content);
   }
 
   async getCities(): Promise<string[]> {
