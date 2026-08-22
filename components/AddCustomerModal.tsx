@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { API, type EmployeeUserDto, type LocationMasterDto } from '@/lib/api';
+import { API, type ClientTypeDto, type EmployeeUserDto, type LocationMasterDto } from '@/lib/api';
 import { isManagerRoleValue } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -50,20 +50,25 @@ interface AddCustomerModalProps {
   userData?: Record<string, unknown>;
 }
 
-interface SearchableLocationSelectProps {
+interface SearchableSelectOption {
+  id: number;
+  name: string;
+}
+
+interface SearchableSelectProps<T extends SearchableSelectOption> {
   id: string;
   value?: string;
-  options: LocationMasterDto[];
+  options: T[];
   placeholder: string;
   searchPlaceholder: string;
   emptyMessage: string;
   loadingLabel: string;
   loading?: boolean;
   disabled?: boolean;
-  onSelect: (option: LocationMasterDto) => void;
+  onSelect: (option: T) => void;
 }
 
-const SearchableLocationSelect = ({
+const SearchableSelect = <T extends SearchableSelectOption,>({
   id,
   value,
   options,
@@ -74,7 +79,7 @@ const SearchableLocationSelect = ({
   loading = false,
   disabled = false,
   onSelect,
-}: SearchableLocationSelectProps) => {
+}: SearchableSelectProps<T>) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const filteredOptions = useMemo(() => {
@@ -107,6 +112,7 @@ const SearchableLocationSelect = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        portalled={false}
         align="start"
         side="bottom"
         collisionPadding={16}
@@ -175,6 +181,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       email: '',
       dateOfBirth: '',
       dob: '',
+      country: 'India',
     }
   );
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -193,6 +200,9 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
   const [isLoadingCities, setIsLoadingCities] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [clientTypes, setClientTypes] = useState<ClientTypeDto[]>([]);
+  const [isLoadingClientTypes, setIsLoadingClientTypes] = useState(false);
+  const [clientTypeError, setClientTypeError] = useState<string | null>(null);
 
   const fieldOfficerOptions = useMemo(() => {
     return employees
@@ -221,6 +231,29 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 76 }, (_, index) => currentYear - index);
   }, []);
+
+  const clientTypeOptions = useMemo(() => {
+    const uniqueTypes = new Map<string, ClientTypeDto>();
+
+    clientTypes.forEach((clientType) => {
+      const type = clientType.type?.trim();
+      if (!type) return;
+
+      const normalizedType = type.toLowerCase();
+      if (!uniqueTypes.has(normalizedType)) {
+        uniqueTypes.set(normalizedType, { ...clientType, type });
+      }
+    });
+
+    return Array.from(uniqueTypes.values());
+  }, [clientTypes]);
+
+  const clientTypeSelectOptions = useMemo(() => {
+    return clientTypeOptions.flatMap((clientType) => {
+      const type = clientType.type;
+      return type ? [{ id: clientType.id, name: type }] : [];
+    });
+  }, [clientTypeOptions]);
 
   const handleCustomerStateChange = (state: LocationMasterDto) => {
     setSelectedStateId(state.id);
@@ -321,6 +354,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       email: '',
       dateOfBirth: '',
       dob: '',
+      country: 'India',
     });
     setActiveTab('basic');
     setPrimaryContactError(null);
@@ -354,6 +388,32 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       })
       .finally(() => {
         if (!cancelled) setIsLoadingStates(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    setIsLoadingClientTypes(true);
+    setClientTypeError(null);
+
+    API.getClientTypes()
+      .then((types) => {
+        if (!cancelled) setClientTypes(types);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to load client types:', error);
+        setClientTypes([]);
+        setClientTypeError('Unable to load client types.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingClientTypes(false);
       });
 
     return () => {
@@ -519,6 +579,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       
       const requestBody = {
         ...restCustomerData,
+        country: customerData.country || 'India',
         primaryContact: customerData.primaryContact ? parseInt(customerData.primaryContact.toString(), 10) : undefined,
         secondaryContact: customerData.secondaryContact ? parseInt(customerData.secondaryContact.toString(), 10) : undefined,
         pincode: customerData.pincode ? parseInt(customerData.pincode.toString(), 10) : undefined,
@@ -826,11 +887,23 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                 <Input id="customer-addressLine2" autoComplete="address-line2" value={customerData.addressLine2 || ''} className="col-span-3" onChange={(e) => handleInputChange('addressLine2', e.target.value)} />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="customer-country" className="text-right">
+                  Country
+                </Label>
+                <Input
+                  id="customer-country"
+                  autoComplete="country"
+                  value={customerData.country || 'India'}
+                  className="col-span-3 bg-muted/50 text-foreground"
+                  readOnly
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="customer-state" className="text-right">
                   State
                 </Label>
                 <div className="col-span-3">
-                  <SearchableLocationSelect
+                  <SearchableSelect
                     id="customer-state"
                     value={customerData.state}
                     options={locationStates}
@@ -848,7 +921,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   District
                 </Label>
                 <div className="col-span-3">
-                  <SearchableLocationSelect
+                  <SearchableSelect
                     id="customer-district"
                     value={customerData.district}
                     options={locationDistricts}
@@ -867,7 +940,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   City
                 </Label>
                 <div className="col-span-3">
-                  <SearchableLocationSelect
+                  <SearchableSelect
                     id="customer-city"
                     value={customerData.city}
                     options={locationCities}
@@ -888,12 +961,6 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   </p>
                 </div>
               )}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="customer-country" className="text-right">
-                  Country
-                </Label>
-                <Input id="customer-country" autoComplete="country" value={customerData.country || ''} className="col-span-3" onChange={(e) => handleInputChange('country', e.target.value)} />
-              </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="customer-pincode" className="text-right">
                   Pincode
@@ -923,8 +990,11 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                 <div className="col-span-3">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button id="yearOfJoining" type="button" variant="outline" className="w-full justify-start font-normal">
-                        {customerData.yearOfJoining || 'Select year'}
+                      <Button id="yearOfJoining" type="button" variant="outline" className="w-full justify-between font-normal">
+                        <span className={customerData.yearOfJoining ? '' : 'text-muted-foreground'}>
+                          {customerData.yearOfJoining || 'Select year'}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="max-h-64 overflow-y-auto" align="start">
@@ -943,22 +1013,17 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   Client Type
                 </Label>
                 <div className="col-span-3">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="w-full">
-                      <Input
-                        id="customer-clientType"
-                        autoComplete="off"
-                        value={customerData.clientType || ''}
-                        placeholder="Select Client Type"
-                        readOnly
-                        className="cursor-pointer text-gray-400"
-                      />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onClick={() => handleInputChange('clientType', 'Project')}>Project</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleInputChange('clientType', 'Shop')}>Shop</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <SearchableSelect
+                    id="customer-clientType"
+                    value={customerData.clientType}
+                    options={clientTypeSelectOptions}
+                    placeholder="Select client type"
+                    searchPlaceholder="Search client types..."
+                    emptyMessage={clientTypeError || 'No client types available'}
+                    loadingLabel="Loading client types..."
+                    loading={isLoadingClientTypes}
+                    onSelect={(option) => handleInputChange('clientType', option.name)}
+                  />
                 </div>
               </div>
             </div>

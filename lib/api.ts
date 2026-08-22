@@ -355,6 +355,11 @@ export interface StoreDto {
   yearOfJoining?: number | null;
 }
 
+export interface ClientTypeDto {
+  id: number;
+  type: string | null;
+}
+
 export interface StoreResponse {
   content: StoreDto[];
   pageable: {
@@ -825,6 +830,10 @@ export class API {
 
   static async getLocationCities(districtId: number, search?: string): Promise<LocationMasterDto[]> {
     return apiService.getAllLocationCities(districtId, search);
+  }
+
+  static async getClientTypes(): Promise<ClientTypeDto[]> {
+    return apiService.getClientTypes();
   }
 
   static async getCities(): Promise<string[]> {
@@ -1682,6 +1691,10 @@ Please check your internet connection and try again.`);
 
   async getLocationDistricts(stateId: number): Promise<LocationMasterDto[]> {
     return this.makeRequest<LocationMasterDto[]>(`/locations/districts?stateId=${stateId}`);
+  }
+
+  async getClientTypes(): Promise<ClientTypeDto[]> {
+    return this.makeRequest<ClientTypeDto[]>('/clientType/getAll');
   }
 
   async getLocationCityPage(
