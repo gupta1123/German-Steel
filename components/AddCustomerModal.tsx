@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { API, type ClientTypeDto, type EmployeeUserDto, type LocationMasterDto } from '@/lib/api';
 import { isManagerRoleValue } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
@@ -229,7 +228,10 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
   const joiningYearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    return Array.from({ length: 76 }, (_, index) => currentYear - index);
+    return Array.from({ length: 76 }, (_, index) => {
+      const year = currentYear - index;
+      return { id: year, name: String(year) };
+    });
   }, []);
 
   const clientTypeOptions = useMemo(() => {
@@ -988,24 +990,16 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   Year of Joining
                 </Label>
                 <div className="col-span-3">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button id="yearOfJoining" type="button" variant="outline" className="w-full justify-between font-normal">
-                        <span className={customerData.yearOfJoining ? '' : 'text-muted-foreground'}>
-                          {customerData.yearOfJoining || 'Select year'}
-                        </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="max-h-64 overflow-y-auto" align="start">
-                      {joiningYearOptions.map((year) => (
-                        <DropdownMenuItem key={year} onClick={() => handleInputChange('yearOfJoining', year)}>
-                          {year}
-                          {customerData.yearOfJoining === year && <Check className="ml-auto h-4 w-4" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <SearchableSelect
+                    id="yearOfJoining"
+                    value={customerData.yearOfJoining ? String(customerData.yearOfJoining) : ''}
+                    options={joiningYearOptions}
+                    placeholder="Select year"
+                    searchPlaceholder="Search years..."
+                    emptyMessage="No matching year"
+                    loadingLabel="Loading years..."
+                    onSelect={(option) => handleInputChange('yearOfJoining', Number(option.name))}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
