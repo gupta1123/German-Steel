@@ -1,5 +1,7 @@
 // API service for WebSalesV3 - All endpoints from api.md
 // Use direct API calls to http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
+import { getApiErrorMessage } from '@/lib/api-error';
+
 const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const SECONDARY_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const DISTANCE_RECALCULATION_API_URL = `${API_BASE_URL}/attendance-log/updateDistanceTravelledForEmployeesWithOlaMaps`;
@@ -1004,20 +1006,9 @@ export class API {
       const contentType = response.headers.get('content-type') || '';
 
       if (!response.ok) {
-        // Try to extract error details from body (JSON or text)
-        let bodySnippet = '';
-        try {
-          if (contentType.includes('application/json')) {
-            const errJson = await response.json();
-            bodySnippet = typeof errJson === 'string' ? errJson : JSON.stringify(errJson);
-          } else {
-            bodySnippet = await response.text();
-          }
-        } catch {
-          // ignore body parsing errors
-        }
-        const preview = bodySnippet ? ` Body: ${bodySnippet.slice(0, 200)}` : '';
-        throw new Error(`API request failed: ${response.status} ${response.statusText}.${preview}`);
+        throw new Error(
+          await getApiErrorMessage(response, `Request failed (${response.status})`)
+        );
       }
 
       // No content
@@ -1130,14 +1121,14 @@ Please check your internet connection and try again.`);
 
     try {
       const response = await fetch(url, config);
-      const text = await response.text();
 
       if (!response.ok) {
-        const preview = text ? ` Body: ${text.slice(0, 200)}` : '';
-        throw new Error(`API request failed: ${response.status} ${response.statusText}.${preview}`);
+        throw new Error(
+          await getApiErrorMessage(response, `Request failed (${response.status})`)
+        );
       }
 
-      return text;
+      return response.text();
     } catch (error) {
       console.error(`🚨 Text API request failed for ${endpoint}:`, error);
       console.error('🌐 Request details:', {

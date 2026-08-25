@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { API, type ClientTypeDto, type EmployeeUserDto, type LocationMasterDto } from '@/lib/api';
+import { getApiErrorMessage, getErrorMessage } from '@/lib/api-error';
 import { isManagerRoleValue } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Search, Check, Loader2, ChevronDown } from 'lucide-react';
+import { AlertCircle, Search, Check, Loader2, ChevronDown } from 'lucide-react';
 
 interface CustomerData {
   id?: number;
@@ -202,6 +203,8 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [clientTypes, setClientTypes] = useState<ClientTypeDto[]>([]);
   const [isLoadingClientTypes, setIsLoadingClientTypes] = useState(false);
   const [clientTypeError, setClientTypeError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fieldOfficerOptions = useMemo(() => {
     return employees
@@ -366,6 +369,8 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     setLocationDistricts([]);
     setLocationCities([]);
     setLocationError(null);
+    setSubmitError(null);
+    setIsSubmitting(false);
     setFieldOfficerSearchTerm('');
     setIsFieldOfficerPopoverOpen(false);
   }, [isOpen, existingData]);
@@ -510,6 +515,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   }, [isOpen, selectedDistrictId]);
 
   const handleInputChange = (field: keyof CustomerData, value: string | number) => {
+    setSubmitError(null);
     let parsedValue: string | number = value;
     const numberFields: (keyof CustomerData)[] = ['pincode', 'monthlySale', 'primaryContact', 'secondaryContact', 'fieldOfficerId', 'yearOfJoining'];
     
@@ -559,6 +565,11 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
     try {
       // Get dob in yyyy-MM-dd format for API (only send `dob`, not `dateOfBirth`)
       const dobValue = customerData.dateOfBirth || customerData.dob || '';
@@ -608,21 +619,29 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
         body: JSON.stringify(requestBody),
       });
 
-      console.log(response)
       if (response.ok) {
-        const data = await response.json();
-        console.log(data)
         onClose(); // Close the modal after successful submission
         if (onCustomerAdded) {
           onCustomerAdded(); // Refresh the customers list
         }
       } else {
-        console.error('Failed to update/create customer');
-        // Handle error case, e.g., show an error message to the user
+        setSubmitError(
+          await getApiErrorMessage(
+            response,
+            existingData?.id ? 'Unable to update customer.' : 'Unable to create customer.'
+          )
+        );
       }
     } catch (error) {
       console.error('Error updating/creating customer:', error);
-      // Handle error case, e.g., show an error message to the user
+      setSubmitError(
+        getErrorMessage(
+          error,
+          existingData?.id ? 'Unable to update customer.' : 'Unable to create customer.'
+        )
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -727,6 +746,16 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
           <DialogTitle>Add Customer</DialogTitle>
           <DialogDescription>Enter the details of the new customer.</DialogDescription>
         </DialogHeader>
+        {submitError && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{submitError}</span>
+          </div>
+        )}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
           <TabsList>
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
@@ -1037,9 +1066,10 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
           ) : (
             <Button 
               onClick={handleSubmit}
-              disabled={!!primaryContactError || !!secondaryContactError}
+              disabled={isSubmitting || !!primaryContactError || !!secondaryContactError}
             >
-              Add Customer
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {existingData?.id ? 'Save Changes' : 'Add Customer'}
             </Button>
           )}
         </DialogFooter>

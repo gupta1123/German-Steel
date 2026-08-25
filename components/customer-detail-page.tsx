@@ -36,7 +36,7 @@ import {
     TabsTrigger,
 } from "@/components/ui/tabs";
 import { useRouter, useParams } from 'next/navigation';
-import { CalendarIcon, Edit, Trash2, Search, Check, MessageSquare, ClipboardList, User, Mail, Phone, Store, Tag, MapPin, Building, Flag, Loader2, Cake } from 'lucide-react';
+import { AlertCircle, CalendarIcon, Edit, Trash2, Search, Check, MessageSquare, ClipboardList, User, Mail, Phone, Store, Tag, MapPin, Building, Flag, Loader2, Cake } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { SpacedCalendar } from '@/components/ui/spaced-calendar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -47,6 +47,7 @@ import BrandTab from "@/components/BrandTab";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateToUserFriendly } from "@/lib/utils";
+import { getApiErrorMessage, getErrorMessage } from '@/lib/api-error';
 
 const ITEMS_PER_PAGE = 3;
 const JOINING_YEAR_OPTIONS = Array.from(
@@ -769,12 +770,13 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 closeEditCustomerModal();
                 console.log('Customer updated successfully!');
             } else {
-                const errorText = await response.text();
-                throw new Error(errorText || `Failed to update customer (${response.status})`);
+                throw new Error(
+                    await getApiErrorMessage(response, 'Unable to update customer.')
+                );
             }
         } catch (error) {
             console.error('Error updating customer:', error);
-            setCustomerEditError(error instanceof Error ? error.message : 'Failed to update customer');
+            setCustomerEditError(getErrorMessage(error, 'Unable to update customer.'));
         } finally {
             setIsUpdatingCustomer(false);
         }
@@ -782,11 +784,13 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
+        setCustomerEditError(null);
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleClientTypeChange = (value: string) => {
         const lowercaseValue = value.toLowerCase();
+        setCustomerEditError(null);
         setIsOtherClientType(lowercaseValue === 'others');
         setFormData((prev) => ({
             ...prev,
@@ -1857,6 +1861,16 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                             Update customer contact or address details.
                         </DialogDescription>
                     </DialogHeader>
+                    {customerEditError && (
+                        <div
+                            role="alert"
+                            aria-live="assertive"
+                            className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                        >
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span>{customerEditError}</span>
+                        </div>
+                    )}
                     <Tabs value={activeTab} onValueChange={handleCustomerTabChange} className="w-full">
                         <TabsList className="grid w-full grid-cols-2 mb-6">
                             <TabsTrigger value="basic-info" className="flex items-center gap-2">
@@ -1972,6 +1986,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                             value={formData.dob || ""}
                                             onChange={(e) => {
                                                 const sanitized = e.target.value.replace(/[^0-9-]/g, '');
+                                                setCustomerEditError(null);
                                                 setFormData((prev) => ({ ...prev, dob: sanitized }));
                                             }}
                                             placeholder="YYYY-MM-DD"
@@ -1985,6 +2000,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                         <Select
                                             value={formData.yearOfJoining != null ? String(formData.yearOfJoining) : 'not-set'}
                                             onValueChange={(value) => {
+                                                setCustomerEditError(null);
                                                 setFormData((previous) => ({
                                                     ...previous,
                                                     yearOfJoining: value === 'not-set' ? null : Number(value),
@@ -2160,11 +2176,6 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                         </Button>
                                     </div>
                                     <div className="flex flex-col items-end gap-2">
-                                        {customerEditError && (
-                                            <p className="max-w-md text-right text-sm text-destructive">
-                                                {customerEditError}
-                                            </p>
-                                        )}
                                         <Button onClick={handleSubmit} disabled={isUpdatingCustomer} className="h-11 px-6">
                                             {isUpdatingCustomer && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                             Save Changes
