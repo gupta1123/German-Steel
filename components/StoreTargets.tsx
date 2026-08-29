@@ -357,6 +357,22 @@ export default function StoreTargets() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const targetFormIsDirty = isFormOpen && JSON.stringify(form) !== JSON.stringify(baselineForm);
   const { markSaved, requestDiscard } = useUnsavedChanges(targetFormIsDirty);
+  const targetTonsValue = Number(form.targetTons);
+  const fulfilledTonsValue = Number(form.fulfilledTons);
+  const hasValidTargetTons = form.targetTons.trim() !== "" && Number.isFinite(targetTonsValue) && targetTonsValue > 0;
+  const hasValidPeriod = form.targetType === "MONTHLY"
+    ? Number.isInteger(form.month) && form.month >= 1 && form.month <= 12 && Number.isInteger(form.year) && form.year > 0
+    : form.targetDate.trim() !== "";
+  const hasValidManualFulfilment = !form.manualFulfilment || (
+    form.fulfilledTons.trim() !== "" && Number.isFinite(fulfilledTonsValue) && fulfilledTonsValue >= 0
+  );
+  const isTargetFormValid = Boolean(
+    form.storeId &&
+    form.employeeId &&
+    hasValidTargetTons &&
+    hasValidPeriod &&
+    hasValidManualFulfilment
+  );
 
   const storeOptions = useMemo(() => stores.map((store) => ({
     value: String(store.storeId), label: `${store.storeName}${store.city ? ` · ${store.city}` : ""}`, data: store,
@@ -526,9 +542,9 @@ export default function StoreTargets() {
   const validateForm = () => {
     if (!form.storeId) return "Select a store.";
     if (!form.employeeId) return "Select the field officer responsible for this target.";
-    if (!form.targetTons || Number(form.targetTons) <= 0) return "Target tons must be greater than zero.";
-    if (form.targetType === "DAILY" && !form.targetDate) return "Select the daily target date.";
-    if (form.manualFulfilment && (form.fulfilledTons === "" || Number(form.fulfilledTons) < 0)) return "Manual fulfilment must be zero or greater.";
+    if (!hasValidTargetTons) return "Target tons must be a valid number greater than zero.";
+    if (!hasValidPeriod) return form.targetType === "DAILY" ? "Select the daily target date." : "Select a valid target period.";
+    if (!hasValidManualFulfilment) return "Manual fulfilment must be a valid number of zero or greater.";
     return null;
   };
 
@@ -652,7 +668,7 @@ export default function StoreTargets() {
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-center">
               <div className="flex min-w-0 shrink-0 items-center rounded-md border bg-background">
                 <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-r-none" onClick={() => changeMonth(-1)} aria-label="Previous month"><ChevronLeft className="h-4 w-4" /></Button>
                 <Select value={String(filters.month)} onValueChange={(value) => updateFilters({ month: Number(value) })}>
@@ -676,9 +692,9 @@ export default function StoreTargets() {
                 <SelectContent><SelectItem value="ALL">All</SelectItem><SelectItem value="behind">Behind</SelectItem><SelectItem value="slipping">Slipping</SelectItem><SelectItem value="onpace">On pace</SelectItem><SelectItem value="met">Met</SelectItem></SelectContent>
               </Select>
               {activeSecondaryFilterCount > 0 && <Button type="button" variant="ghost" size="sm" className="h-9 shrink-0 justify-start xl:justify-center" onClick={clearFilters}>Clear filters</Button>}
-              <div className="relative min-w-56 flex-1 xl:ml-auto xl:max-w-60">
+              <div className="relative min-w-72 flex-1 xl:ml-auto xl:max-w-80">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search store, officer or code" className="h-9 pl-9 pr-9" />
+                <Input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search store, officer, or code" className="h-9 pl-9 pr-9" />
                 {searchQuery && <button type="button" onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search"><X className="h-4 w-4" /></button>}
               </div>
           </div>
@@ -747,19 +763,65 @@ export default function StoreTargets() {
             <SheetHeader className="border-b p-6 pr-12"><SheetTitle>{editingTarget ? "Edit store target" : "Add store target"}</SheetTitle><SheetDescription>{editingTarget ? "Update the target, fulfilment, or notes. Its store and period remain unchanged." : "Create a monthly target, or choose Daily for a one-day target."}</SheetDescription></SheetHeader>
             <div className="flex-1 space-y-5 p-6">
               {formError && <InlineMessage title="Could not save target">{formError}</InlineMessage>}
-              <div className="space-y-2"><Label>Store</Label>{editingTarget ? <Input value={`${editingTarget.storeName} (${editingTarget.storeCity || "No city"})`} disabled /> : <SearchableSelect options={storeOptions} value={form.storeId || undefined} onSelect={(option) => handleStoreSelection(option?.value || "")} placeholder="Select store" searchPlaceholder="Search stores..." loading={isLoadingDirectory} triggerClassName="w-full" contentClassName="w-[min(420px,calc(100vw-2rem))]" />}</div>
-              <div className="space-y-2"><Label>Field officer</Label>{editingTarget ? <Input value={editingTarget.employeeName || `Employee #${editingTarget.employeeId}`} disabled /> : <SearchableSelect options={employeeOptions} value={form.employeeId || undefined} onSelect={(option) => setForm((current) => ({ ...current, employeeId: option?.value || "" }))} placeholder="Select field officer" searchPlaceholder="Search field officers..." loading={isLoadingDirectory} triggerClassName="w-full" contentClassName="w-[min(420px,calc(100vw-2rem))]" />}{!editingTarget && form.storeId && stores.find((store) => String(store.storeId) === form.storeId)?.employeeId && <p className="text-xs text-muted-foreground">Pre-filled from the store&apos;s assigned field officer.</p>}</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2"><Label htmlFor="sales-target-type">Target type</Label><Select value={form.targetType} onValueChange={(value: SalesTargetType) => setForm((current) => ({ ...current, targetType: value }))} disabled={Boolean(editingTarget)}><SelectTrigger id="sales-target-type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MONTHLY">Monthly</SelectItem><SelectItem value="DAILY">Daily</SelectItem></SelectContent></Select></div>
-                {form.targetType === "MONTHLY" ? (
-                  <div className="space-y-2"><Label htmlFor="sales-target-month">Period</Label><div className="grid grid-cols-[1fr_90px] gap-2"><Select value={String(form.month)} onValueChange={(value) => setForm((current) => ({ ...current, month: Number(value) }))} disabled={Boolean(editingTarget)}><SelectTrigger id="sales-target-month"><SelectValue /></SelectTrigger><SelectContent>{MONTHS.map((month, index) => <SelectItem key={month} value={String(index + 1)}>{month.slice(0, 3)}</SelectItem>)}</SelectContent></Select><Select value={String(form.year)} onValueChange={(value) => setForm((current) => ({ ...current, year: Number(value) }))} disabled={Boolean(editingTarget)}><SelectTrigger aria-label="Target year"><SelectValue /></SelectTrigger><SelectContent>{yearOptions.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}</SelectContent></Select></div></div>
-                ) : <div className="space-y-2"><Label htmlFor="sales-target-date">Period</Label><Input id="sales-target-date" type="date" value={form.targetDate} disabled={Boolean(editingTarget)} onChange={(event) => setForm((current) => ({ ...current, targetDate: event.target.value }))} /></div>}
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-destructive" aria-hidden="true">*</span> Required fields
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="sales-target-store">
+                  Store <span className="text-destructive" aria-hidden="true">*</span>
+                </Label>
+                {editingTarget ? (
+                  <Input id="sales-target-store" value={`${editingTarget.storeName} (${editingTarget.storeCity || "No city"})`} disabled />
+                ) : (
+                  <SearchableSelect
+                    triggerId="sales-target-store"
+                    required
+                    options={storeOptions}
+                    value={form.storeId || undefined}
+                    onSelect={(option) => handleStoreSelection(option?.value || "")}
+                    placeholder="Select store"
+                    searchPlaceholder="Search stores..."
+                    loading={isLoadingDirectory}
+                    triggerClassName="w-full"
+                    contentClassName="w-[min(420px,calc(100vw-2rem))]"
+                  />
+                )}
               </div>
-              <div className="space-y-2"><Label htmlFor="sales-target-tons">Target (tonnes)</Label><Input id="sales-target-tons" type="number" min="0.01" step="0.01" inputMode="decimal" value={form.targetTons} onChange={(event) => setForm((current) => ({ ...current, targetTons: event.target.value }))} placeholder="e.g. 50" />{formRateHint && <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{formRateHint}</p>}</div>
-              {editingTarget && <div className="space-y-3 rounded-lg border p-4"><div className="flex items-center justify-between gap-4"><div><Label htmlFor="manual-fulfilment">Manual fulfilment</Label><p className="text-xs text-muted-foreground">Turn off to use recorded sales tons.</p></div><Switch id="manual-fulfilment" checked={form.manualFulfilment} onCheckedChange={(checked) => setForm((current) => ({ ...current, manualFulfilment: checked, fulfilledTons: checked && current.fulfilledTons === "" ? String(getEffectiveFulfilled(editingTarget)) : current.fulfilledTons }))} /></div>{form.manualFulfilment && <div className="space-y-2"><Label htmlFor="fulfilled-tons">Fulfilled tons</Label><Input id="fulfilled-tons" type="number" min="0" step="0.01" inputMode="decimal" value={form.fulfilledTons} onChange={(event) => setForm((current) => ({ ...current, fulfilledTons: event.target.value }))} /></div>}</div>}
-              <div className="space-y-2"><Label htmlFor="sales-target-remarks">Remarks</Label><Textarea id="sales-target-remarks" value={form.remarks} onChange={(event) => setForm((current) => ({ ...current, remarks: event.target.value }))} placeholder="Optional context for this target" rows={4} /></div>
+              <div className="space-y-2">
+                <Label htmlFor="sales-target-field-officer">
+                  Field officer <span className="text-destructive" aria-hidden="true">*</span>
+                </Label>
+                {editingTarget ? (
+                  <Input id="sales-target-field-officer" value={editingTarget.employeeName || `Employee #${editingTarget.employeeId}`} disabled />
+                ) : (
+                  <SearchableSelect
+                    triggerId="sales-target-field-officer"
+                    required
+                    options={employeeOptions}
+                    value={form.employeeId || undefined}
+                    onSelect={(option) => setForm((current) => ({ ...current, employeeId: option?.value || "" }))}
+                    placeholder="Select field officer"
+                    searchPlaceholder="Search field officers..."
+                    loading={isLoadingDirectory}
+                    triggerClassName="w-full"
+                    contentClassName="w-[min(420px,calc(100vw-2rem))]"
+                  />
+                )}
+                {!editingTarget && form.storeId && stores.find((store) => String(store.storeId) === form.storeId)?.employeeId && (
+                  <p className="text-xs text-muted-foreground">Pre-filled from the store&apos;s assigned field officer.</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2"><Label htmlFor="sales-target-type">Target type <span className="text-destructive" aria-hidden="true">*</span></Label><Select value={form.targetType} onValueChange={(value: SalesTargetType) => setForm((current) => ({ ...current, targetType: value }))} disabled={Boolean(editingTarget)}><SelectTrigger id="sales-target-type" aria-required="true"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MONTHLY">Monthly</SelectItem><SelectItem value="DAILY">Daily</SelectItem></SelectContent></Select></div>
+                {form.targetType === "MONTHLY" ? (
+                  <div className="space-y-2"><Label htmlFor="sales-target-month">Period <span className="text-destructive" aria-hidden="true">*</span></Label><div className="grid grid-cols-[1fr_90px] gap-2"><Select value={String(form.month)} onValueChange={(value) => setForm((current) => ({ ...current, month: Number(value) }))} disabled={Boolean(editingTarget)}><SelectTrigger id="sales-target-month" aria-required="true"><SelectValue /></SelectTrigger><SelectContent>{MONTHS.map((month, index) => <SelectItem key={month} value={String(index + 1)}>{month.slice(0, 3)}</SelectItem>)}</SelectContent></Select><Select value={String(form.year)} onValueChange={(value) => setForm((current) => ({ ...current, year: Number(value) }))} disabled={Boolean(editingTarget)}><SelectTrigger aria-label="Target year" aria-required="true"><SelectValue /></SelectTrigger><SelectContent>{yearOptions.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}</SelectContent></Select></div></div>
+                ) : <div className="space-y-2"><Label htmlFor="sales-target-date">Period <span className="text-destructive" aria-hidden="true">*</span></Label><Input id="sales-target-date" type="date" value={form.targetDate} required disabled={Boolean(editingTarget)} onChange={(event) => setForm((current) => ({ ...current, targetDate: event.target.value }))} /></div>}
+              </div>
+              <div className="space-y-2"><Label htmlFor="sales-target-tons">Target (tonnes) <span className="text-destructive" aria-hidden="true">*</span></Label><Input id="sales-target-tons" type="number" min="0.01" step="0.01" inputMode="decimal" value={form.targetTons} required onChange={(event) => setForm((current) => ({ ...current, targetTons: event.target.value }))} placeholder="e.g. 50" />{formRateHint && <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{formRateHint}</p>}</div>
+              {editingTarget && <div className="space-y-3 rounded-lg border p-4"><div className="flex items-center justify-between gap-4"><div><Label htmlFor="manual-fulfilment">Manual fulfilment</Label><p className="text-xs text-muted-foreground">Turn off to use recorded sales tons.</p></div><Switch id="manual-fulfilment" checked={form.manualFulfilment} onCheckedChange={(checked) => setForm((current) => ({ ...current, manualFulfilment: checked, fulfilledTons: checked && current.fulfilledTons === "" ? String(getEffectiveFulfilled(editingTarget)) : current.fulfilledTons }))} /></div>{form.manualFulfilment && <div className="space-y-2"><Label htmlFor="fulfilled-tons">Fulfilled tons <span className="text-destructive" aria-hidden="true">*</span></Label><Input id="fulfilled-tons" type="number" min="0" step="0.01" inputMode="decimal" value={form.fulfilledTons} required onChange={(event) => setForm((current) => ({ ...current, fulfilledTons: event.target.value }))} /></div>}</div>}
+              <div className="space-y-2"><Label htmlFor="sales-target-remarks">Remarks <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="sales-target-remarks" value={form.remarks} onChange={(event) => setForm((current) => ({ ...current, remarks: event.target.value }))} placeholder="Optional context for this target" rows={4} /></div>
             </div>
-            <SheetFooter className="sticky bottom-0 border-t bg-background p-6"><Button type="button" variant="outline" onClick={() => setFormOpen(false)} disabled={isSaving}>Cancel</Button><Button type="submit" disabled={isSaving || isLoadingDirectory}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingTarget ? "Save changes" : "Create target"}</Button></SheetFooter>
+            <SheetFooter className="sticky bottom-0 border-t bg-background p-6"><Button type="button" variant="outline" onClick={() => setFormOpen(false)} disabled={isSaving}>Cancel</Button><Button type="submit" disabled={isSaving || isLoadingDirectory || !isTargetFormValid}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingTarget ? "Save changes" : "Create target"}</Button></SheetFooter>
           </form>
         </SheetContent>
       </Sheet>

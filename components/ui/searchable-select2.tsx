@@ -16,6 +16,7 @@ export type SearchableOption<T = unknown> = {
 };
 
 interface SearchableSelectProps<T = unknown> {
+  triggerId?: string;
   options: SearchableOption<T>[];
   value?: string;
   onSelect: (option: SearchableOption<T> | null) => void;
@@ -30,9 +31,11 @@ interface SearchableSelectProps<T = unknown> {
   loading?: boolean;
   loadingMessage?: string;
   onOpenChange?: (open: boolean) => void;
+  required?: boolean;
 }
 
 export function SearchableSelect<T = unknown>({
+  triggerId,
   options,
   value,
   onSelect,
@@ -47,6 +50,7 @@ export function SearchableSelect<T = unknown>({
   loading = false,
   loadingMessage = "Loading...",
   onOpenChange,
+  required = false,
 }: SearchableSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -92,9 +96,12 @@ export function SearchableSelect<T = unknown>({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
+          id={triggerId}
+          type="button"
           role="combobox"
           aria-expanded={open}
           aria-haspopup="listbox"
+          aria-required={required}
           variant="outline"
           disabled={disabled}
           className={cn(
@@ -171,5 +178,4 @@ export function SearchableSelect<T = unknown>({
 }
 
 export default SearchableSelect;
-
 

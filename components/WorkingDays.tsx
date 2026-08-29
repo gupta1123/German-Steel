@@ -33,6 +33,10 @@ const WorkingDays: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const isValidDayCount = (value: number | "") =>
+        value !== "" && Number.isInteger(value) && value >= 1;
+    const isWorkingDaysFormValid =
+        isValidDayCount(editedData.fullDayCount) && isValidDayCount(editedData.halfDayCount);
     const workingDaysAreDirty = editMode && (
         Number(editedData.fullDayCount) !== workingDays.fullDayCount ||
         Number(editedData.halfDayCount) !== workingDays.halfDayCount
@@ -72,6 +76,8 @@ const WorkingDays: React.FC = () => {
     }, [token]);
 
     const updateWorkingDays = async () => {
+        if (!isWorkingDaysFormValid) return;
+
         if (!token) {
             setError('Authentication token not found. Please log in.');
             return;
@@ -81,8 +87,8 @@ const WorkingDays: React.FC = () => {
         setError(null);
         try {
             const payload = {
-                fullDayCount: Number(editedData.fullDayCount || 0),
-                halfDayCount: Number(editedData.halfDayCount || 0),
+                fullDayCount: Number(editedData.fullDayCount),
+                halfDayCount: Number(editedData.halfDayCount),
             };
 
             const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/edit?id=2`, {
@@ -189,12 +195,6 @@ const WorkingDays: React.FC = () => {
                             {/* Mobile view */}
                             <div className="md:hidden space-y-4">
                                 <Card className="overflow-hidden">
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="text-xl font-bold flex items-center gap-3">
-                                            <Calendar className="h-6 w-6 text-foreground" />
-                                            Working Days Settings
-                                        </CardTitle>
-                                    </CardHeader>
                                     <CardContent className="space-y-5">
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between py-3 px-4 bg-muted/30 rounded-lg border border-border/50">
@@ -208,7 +208,9 @@ const WorkingDays: React.FC = () => {
                                                         value={editedData.fullDayCount}
                                                         onChange={(e) => handleInputChange('fullDayCount', e.target.value)}
                                                         className="w-32 text-right h-12 text-lg"
-                                                        min="0"
+                                                        min="1"
+                                                        step="1"
+                                                        aria-invalid={!isValidDayCount(editedData.fullDayCount)}
                                                     />
                                                 ) : (
                                                     <span className="font-semibold text-xl">{workingDays.fullDayCount}</span>
@@ -220,13 +222,20 @@ const WorkingDays: React.FC = () => {
                                                     <Label className="font-medium text-lg">Half Days:</Label>
                                                 </div>
                                                 {editMode ? (
-                                                    <Input
-                                                        type="number"
-                                                        value={editedData.halfDayCount}
-                                                        onChange={(e) => handleInputChange('halfDayCount', e.target.value)}
-                                                        className="w-32 text-right h-12 text-lg"
-                                                        min="0"
-                                                    />
+                                                    <div className="space-y-1 text-right">
+                                                        <Input
+                                                            id="mobile-half-day-count"
+                                                            type="number"
+                                                            value={editedData.halfDayCount}
+                                                            onChange={(e) => handleInputChange('halfDayCount', e.target.value)}
+                                                            className="w-32 text-right h-12 text-lg"
+                                                            min="1"
+                                                            step="1"
+                                                            aria-describedby="mobile-half-day-minimum"
+                                                            aria-invalid={!isValidDayCount(editedData.halfDayCount)}
+                                                        />
+                                                        <p id="mobile-half-day-minimum" className="text-xs text-muted-foreground">Minimum: 1</p>
+                                                    </div>
                                                 ) : (
                                                     <span className="font-semibold text-xl">{workingDays.halfDayCount}</span>
                                                 )}
@@ -238,7 +247,7 @@ const WorkingDays: React.FC = () => {
                                                     <Button 
                                                         onClick={updateWorkingDays} 
                                                         className="flex-1 h-14 text-lg font-medium" 
-                                                        disabled={isSaving}
+                                                        disabled={isSaving || !isWorkingDaysFormValid}
                                                     >
                                                         {isSaving ? (
                                                             <>
@@ -266,17 +275,13 @@ const WorkingDays: React.FC = () => {
                             {/* Desktop view */}
                             <div className="hidden md:block">
                                 <div className="rounded-lg border bg-card">
-                                    <div className="p-4 border-b">
-                                        <h3 className="text-lg font-semibold text-foreground">Working Days Configuration</h3>
-                                        <p className="text-sm text-muted-foreground">Set the number of full days and half days for attendance calculations</p>
-                                    </div>
                                     <div className="overflow-x-auto">
                                         <Table>
                                             <TableHeader>
                                                 <TableRow>
                                                     <TableHead className="w-1/3">Full Days</TableHead>
                                                     <TableHead className="w-1/3">Half Days</TableHead>
-                                                    <TableHead className="w-1/3">Action</TableHead>
+                                                    <TableHead className="w-1/3 text-right">Action</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -293,7 +298,9 @@ const WorkingDays: React.FC = () => {
                                                                     value={editedData.fullDayCount}
                                                                     onChange={(e) => handleInputChange('fullDayCount', e.target.value)}
                                                                     className="w-full"
-                                                                    min="0"
+                                                                    min="1"
+                                                                    step="1"
+                                                                    aria-invalid={!isValidDayCount(editedData.fullDayCount)}
                                                                 />
                                                             </div>
                                                         ) : (
@@ -315,8 +322,12 @@ const WorkingDays: React.FC = () => {
                                                                     value={editedData.halfDayCount}
                                                                     onChange={(e) => handleInputChange('halfDayCount', e.target.value)}
                                                                     className="w-full"
-                                                                    min="0"
+                                                                    min="1"
+                                                                    step="1"
+                                                                    aria-describedby="half-day-minimum"
+                                                                    aria-invalid={!isValidDayCount(editedData.halfDayCount)}
                                                                 />
+                                                                <p id="half-day-minimum" className="text-xs text-muted-foreground">Minimum: 1</p>
                                                             </div>
                                                         ) : (
                                                             <div className="flex items-center space-x-2">
@@ -325,13 +336,14 @@ const WorkingDays: React.FC = () => {
                                                             </div>
                                                         )}
                                                     </TableCell>
-                                                    <TableCell>
+                                                    <TableCell className="text-right">
                                                         {editMode ? (
-                                                            <div className="flex space-x-2">
+                                                            <div className="flex justify-end gap-2">
                                                                 <Button 
                                                                     onClick={updateWorkingDays} 
-                                                                    className="flex-1" 
-                                                                    disabled={isSaving}
+                                                                    size="sm"
+                                                                    className="min-w-24"
+                                                                    disabled={isSaving || !isWorkingDaysFormValid}
                                                                 >
                                                                     {isSaving ? (
                                                                         <>
@@ -342,12 +354,12 @@ const WorkingDays: React.FC = () => {
                                                                         'Save'
                                                                     )}
                                                                 </Button>
-                                                                <Button onClick={cancelEdit} variant="outline" className="flex-1">
+                                                                <Button onClick={cancelEdit} variant="outline" size="sm" className="min-w-24">
                                                                     Cancel
                                                                 </Button>
                                                             </div>
                                                         ) : (
-                                                            <Button onClick={startEdit} className="w-full">
+                                                            <Button onClick={startEdit} size="sm" className="min-w-24">
                                                                 Edit
                                                             </Button>
                                                         )}

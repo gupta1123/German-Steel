@@ -33,12 +33,14 @@ import {
     Loader2,
     Plus,
     Search,
-    ChevronDown
+    ChevronDown,
+    Filter
 } from 'lucide-react';
 import { buildCityOptions, mergeCityOptions, normalizeCityKey } from '@/lib/city-options';
 import { getPrimaryTeamManager, getTeamAssignedCities, getTeamManagers } from '@/lib/team-access';
 import { API } from '@/lib/api';
 import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
+import { SearchableSelect } from '@/components/ui/searchable-select2';
 
 interface Team {
     id: number;
@@ -103,6 +105,11 @@ const Teams: React.FC = () => {
     const [selectedManagerIds, setSelectedManagerIds] = useState<number[]>([]);
     const [managerSearchTerm, setManagerSearchTerm] = useState("");
     const [isLoadingManagers, setIsLoadingManagers] = useState(false);
+    const [managerFilterId, setManagerFilterId] = useState("");
+    const [cityFilter, setCityFilter] = useState("");
+    const [fieldOfficerFilterId, setFieldOfficerFilterId] = useState("");
+    const [isTeamFiltersOpen, setIsTeamFiltersOpen] = useState(false);
+    const [teamSearchQuery, setTeamSearchQuery] = useState("");
 
     const managerBaselineIds = useMemo(() => {
         const team = teams.find((item) => item.id === selectedTeamId);
@@ -670,6 +677,66 @@ const Teams: React.FC = () => {
         );
     }, [allOfficeManagers, managerSearchTerm]);
 
+    const managerFilterOptions = useMemo(() => {
+        const managersById = new Map<number, TeamManager>();
+        teams.forEach((team) => {
+            getTeamManagers(team).forEach((manager) => managersById.set(manager.id, manager));
+        });
+        return Array.from(managersById.values())
+            .map((manager) => ({ value: String(manager.id), label: getManagerName(manager) }))
+            .sort((left, right) => left.label.localeCompare(right.label));
+    }, [teams]);
+
+    const cityFilterOptions = useMemo(
+        () => buildCityOptions(teams.flatMap((team) => getTeamAssignedCities(team))),
+        [teams]
+    );
+
+    const fieldOfficerFilterOptions = useMemo(() => {
+        const officersById = new Map<number, FieldOfficer>();
+        teams.forEach((team) => {
+            team.fieldOfficers.forEach((officer) => officersById.set(officer.id, officer));
+        });
+        return Array.from(officersById.values())
+            .map((officer) => ({
+                value: String(officer.id),
+                label: `${officer.firstName} ${officer.lastName}`.trim() || `Field Officer ${officer.id}`,
+            }))
+            .sort((left, right) => left.label.localeCompare(right.label));
+    }, [teams]);
+
+    const filteredTeams = useMemo(() => {
+        const normalizedCityFilter = normalizeCityKey(cityFilter);
+        const normalizedSearchQuery = teamSearchQuery.trim().toLowerCase();
+        return teams.filter((team) => {
+            const matchesManager = !managerFilterId || getTeamManagers(team).some(
+                (manager) => String(manager.id) === managerFilterId
+            );
+            const matchesCity = !normalizedCityFilter || getTeamAssignedCities(team).some(
+                (city) => normalizeCityKey(city) === normalizedCityFilter
+            );
+            const matchesFieldOfficer = !fieldOfficerFilterId || team.fieldOfficers.some(
+                (officer) => String(officer.id) === fieldOfficerFilterId
+            );
+            const searchableTeamText = [
+                String(team.id),
+                ...getTeamManagers(team).map((manager) => getManagerName(manager)),
+                ...getTeamAssignedCities(team),
+                ...team.fieldOfficers.map((officer) => `${officer.firstName} ${officer.lastName}`),
+            ].join(" ").toLowerCase();
+            const matchesSearch = !normalizedSearchQuery || searchableTeamText.includes(normalizedSearchQuery);
+            return matchesManager && matchesCity && matchesFieldOfficer && matchesSearch;
+        });
+    }, [cityFilter, fieldOfficerFilterId, managerFilterId, teamSearchQuery, teams]);
+
+    const activeTeamFilterCount = [managerFilterId, cityFilter, fieldOfficerFilterId].filter(Boolean).length;
+
+    const clearTeamFilters = () => {
+        setManagerFilterId("");
+        setCityFilter("");
+        setFieldOfficerFilterId("");
+    };
+
     const handlePageChange = (teamId: number, newPage: number) => {
         setCurrentPage(prev => ({ ...prev, [teamId]: newPage }));
     };
@@ -681,9 +748,54 @@ const Teams: React.FC = () => {
     return (
         <div className="space-y-6">
             <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-4">
-                    <CardTitle className="text-3xl md:text-xl font-semibold text-foreground">Team Management</CardTitle>
-                    <p className="text-lg md:text-sm text-muted-foreground">Manage teams, assign cities, and add field officers to teams</p>
+                <CardHeader className="flex flex-col items-start justify-between gap-4 pb-4 sm:flex-row">
+                    <div className="min-w-0">
+                        <CardTitle className="text-3xl md:text-xl font-semibold text-foreground">Team Management</CardTitle>
+                        <p className="mt-1 text-lg text-muted-foreground md:text-sm">Manage teams, assign cities, and add field officers to teams</p>
+                    </div>
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <div className="relative min-w-0 flex-1 sm:w-72">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                type="search"
+                                value={teamSearchQuery}
+                                onChange={(event) => setTeamSearchQuery(event.target.value)}
+                                placeholder="Search teams..."
+                                aria-label="Search teams"
+                                className="h-9 pl-9 pr-9"
+                                disabled={isLoading || !isDataAvailable}
+                            />
+                            {teamSearchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => setTeamSearchQuery("")}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    aria-label="Clear team search"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            aria-expanded={isTeamFiltersOpen}
+                            aria-controls="team-filters-panel"
+                            onClick={() => setIsTeamFiltersOpen((current) => !current)}
+                            disabled={isLoading || !isDataAvailable}
+                        >
+                            <Filter className="h-4 w-4" />
+                            Filters
+                            {activeTeamFilterCount > 0 && (
+                                <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1.5 text-[10px]">
+                                    {activeTeamFilterCount}
+                                </Badge>
+                            )}
+                            <ChevronDown className={`h-4 w-4 transition-transform ${isTeamFiltersOpen ? 'rotate-180' : ''}`} />
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     {isLoading && (
@@ -716,16 +828,83 @@ const Teams: React.FC = () => {
                     {!isLoading && !error && (
                         <>
                             {isDataAvailable ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {teams.map((team) => {
+                                <>
+                                    {isTeamFiltersOpen && (
+                                    <div id="team-filters-panel" className="rounded-lg border bg-muted/20 p-4">
+                                        <div className="mb-3 flex items-center justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-sm font-semibold text-foreground">Filter teams</h3>
+                                                <p className="text-xs text-muted-foreground">Narrow the list by team assignment.</p>
+                                            </div>
+                                            {activeTeamFilterCount > 0 && (
+                                                <Button type="button" variant="ghost" size="sm" onClick={clearTeamFilters}>
+                                                    Clear filters ({activeTeamFilterCount})
+                                                </Button>
+                                            )}
+                                        </div>
+                                        <div className="grid gap-3 md:grid-cols-3">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="team-manager-filter">Manager</Label>
+                                                <SearchableSelect
+                                                    triggerId="team-manager-filter"
+                                                    options={managerFilterOptions}
+                                                    value={managerFilterId || undefined}
+                                                    onSelect={(option) => setManagerFilterId(option?.value || "")}
+                                                    placeholder="All managers"
+                                                    searchPlaceholder="Search managers..."
+                                                    emptyMessage="No managers available"
+                                                    allowClear
+                                                    triggerClassName="w-full"
+                                                    contentClassName="w-[var(--radix-popover-trigger-width)]"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="team-city-filter">City</Label>
+                                                <SearchableSelect
+                                                    triggerId="team-city-filter"
+                                                    options={cityFilterOptions}
+                                                    value={cityFilter || undefined}
+                                                    onSelect={(option) => setCityFilter(option?.value || "")}
+                                                    placeholder="All cities"
+                                                    searchPlaceholder="Search cities..."
+                                                    emptyMessage="No cities available"
+                                                    allowClear
+                                                    triggerClassName="w-full"
+                                                    contentClassName="w-[var(--radix-popover-trigger-width)]"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="team-field-officer-filter">Field Officer</Label>
+                                                <SearchableSelect
+                                                    triggerId="team-field-officer-filter"
+                                                    options={fieldOfficerFilterOptions}
+                                                    value={fieldOfficerFilterId || undefined}
+                                                    onSelect={(option) => setFieldOfficerFilterId(option?.value || "")}
+                                                    placeholder="All field officers"
+                                                    searchPlaceholder="Search field officers..."
+                                                    emptyMessage="No field officers available"
+                                                    allowClear
+                                                    triggerClassName="w-full"
+                                                    contentClassName="w-[var(--radix-popover-trigger-width)]"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    )}
+
+                                    {filteredTeams.length > 0 ? (
+                                    <div className="grid grid-cols-1 items-stretch gap-6 md:auto-rows-fr md:grid-cols-2 lg:grid-cols-3">
+                                    {filteredTeams.map((team) => {
                                         const visibleOfficers = team.fieldOfficers.slice(0, 3);
                                         const managers = getTeamManagers(team).sort(sortByNameAsc);
                                         const primaryManager = managers[0] ?? null;
                                         const assignedTeamCities = getTeamAssignedCities(team);
+                                        const visibleCities = assignedTeamCities.slice(0, 3);
+                                        const remainingCityCount = assignedTeamCities.length - visibleCities.length;
 
                                         return (
-                                            <Card key={team.id} className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300">
-                                                <CardContent className="p-5 md:p-4">
+                                            <Card key={team.id} className="h-full overflow-hidden shadow-md transition-shadow duration-300 hover:shadow-lg">
+                                                <CardContent className="flex h-full flex-col p-5 md:p-4">
                                                     <div className="flex justify-between items-start mb-4">
                                                         <div className="flex min-w-0 items-center">
                                                             <div
@@ -781,18 +960,23 @@ const Teams: React.FC = () => {
                                                     </div>
                                                     
                                                     <div className="flex flex-wrap gap-2 mb-4">
-                                                        {assignedTeamCities.map((city, index) => (
-                                                            <Badge key={index} variant="secondary" className="flex items-center text-xs md:text-[11px]">
+                                                        {visibleCities.map((city) => (
+                                                            <Badge key={city} variant="secondary" className="flex items-center text-xs md:text-[11px]">
                                                                 <Building2 size={12} className="mr-1 text-foreground" />
                                                                 {city}
                                                             </Badge>
                                                         ))}
+                                                        {remainingCityCount > 0 && (
+                                                            <Badge variant="outline" className="text-xs md:text-[11px]">
+                                                                +{remainingCityCount} more
+                                                            </Badge>
+                                                        )}
                                                         {assignedTeamCities.length === 0 && (
                                                             <Badge variant="outline" className="text-xs">No cities assigned</Badge>
                                                         )}
                                                     </div>
                                                     
-                                                    <div className="space-y-3">
+                                                    <div className="flex-1 space-y-3">
                                                         {visibleOfficers.map((officer) => (
                                                             <div key={officer.id} className="bg-muted/30 p-3 rounded-lg flex items-center justify-between group hover:bg-muted/50 transition-all duration-300">
                                                                 <div className="flex items-center min-w-0">
@@ -841,7 +1025,7 @@ const Teams: React.FC = () => {
                                                         )}
                                                     </div>
 
-                                                    <div className={`${team.fieldOfficers.length > 0 ? 'mt-4 pt-4 border-t' : 'mt-2'}`}> 
+                                                    <div className="mt-4 border-t pt-4">
                                                         <div className="grid grid-cols-3 gap-2">
                                                             <Button
                                                                 variant="outline"
@@ -872,7 +1056,21 @@ const Teams: React.FC = () => {
                                             </Card>
                                         );
                                     })}
-                                </div>
+                                    </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed px-6 py-12 text-center">
+                                            <Users size={40} className="mb-3 text-muted-foreground" />
+                                            <p className="font-semibold text-foreground">No teams match your search or filters</p>
+                                            <p className="mt-1 text-sm text-muted-foreground">Try another search, manager, city, or field officer.</p>
+                                            <Button type="button" variant="outline" className="mt-4" onClick={() => {
+                                                setTeamSearchQuery("");
+                                                clearTeamFilters();
+                                            }}>
+                                                Clear search and filters
+                                            </Button>
+                                        </div>
+                                    )}
+                                </>
                             ) : (
                                 <div className="text-center py-10">
                                     <Users size={48} className="mx-auto text-foreground mb-4" />
