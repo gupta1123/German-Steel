@@ -5,6 +5,7 @@ import "./globals.css";
 import "@/components/custom-calendar.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/auth-provider";
+import { UnsavedChangesProvider } from "@/components/unsaved-changes-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,9 +46,11 @@ export default function RootLayout({
         <ThemeProvider
           defaultTheme="system"
         >
-          <AuthProvider>
-            {children}
-          </AuthProvider>
+          <UnsavedChangesProvider>
+            <AuthProvider>
+              {children}
+            </AuthProvider>
+          </UnsavedChangesProvider>
         </ThemeProvider>
       </body>
     </html>

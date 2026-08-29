@@ -81,10 +81,11 @@ const LiveLocations: React.FC = () => {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = date.toLocaleString('en-GB', { month: 'short' });
-      const yearShort = String(date.getFullYear()).slice(-2);
-      return `${day} ${month} '${yearShort}`;
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric',
+      });
     } catch {
       return dateString;
     }

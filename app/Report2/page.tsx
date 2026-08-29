@@ -37,6 +37,7 @@ import {
 } from "recharts";
 import { AlertCircle, ChevronDown } from "lucide-react";
 import { API } from "@/lib/api";
+import { DATE_RANGE_ERROR_MESSAGE, DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 type ReportRow = {
   employeeName: string;
@@ -223,6 +224,7 @@ export default function Report2Page() {
   const [endDate, setEndDate] = useState<string>(() =>
     format(new Date(), "yyyy-MM-dd"),
   );
+  const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTopPerformers, setShowTopPerformers] = useState(true);
@@ -258,6 +260,12 @@ export default function Report2Page() {
 
   const fetchReportData = useCallback(async () => {
     if (!token || !startDate || !endDate) return;
+    if (dateRangeInvalid) {
+      setIsLoading(false);
+      setError(null);
+      setReportData({});
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
@@ -270,7 +278,7 @@ export default function Report2Page() {
       }
 
       if (start > end) {
-        throw new Error("Start date must be before end date.");
+        throw new Error(DATE_RANGE_ERROR_MESSAGE);
       }
 
       const months = eachMonthOfInterval({ start, end });
@@ -299,7 +307,7 @@ export default function Report2Page() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, startDate, endDate]);
+  }, [token, startDate, endDate, dateRangeInvalid]);
 
   useEffect(() => {
     fetchEmployees();
@@ -486,6 +494,7 @@ export default function Report2Page() {
                   }}
                 />
               </div>
+              <DateRangeError fromDate={startDate} toDate={endDate} />
             </div>
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium text-muted-foreground">

@@ -223,7 +223,7 @@ export default function ApprovalsPage() {
 
     // --- Helpers ---
     const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    const formatDate = (date: string) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const formatDate = (date: string) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 
     if (loading) return <LoadingSkeleton />;
 

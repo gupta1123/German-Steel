@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactSelect, { type SingleValue, type StylesConfig } from 'react-select';
 import { format, subDays, differenceInDays } from 'date-fns';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-provider';
 import { API, type TeamDataDto } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
@@ -25,6 +24,8 @@ import { Pagination, PaginationContent, PaginationLink, PaginationItem, Paginati
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from '@/components/ui/sheet';
 import { CalendarIcon, MoreHorizontal, PlusCircle, Search, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, FileText, Target, Trash2, Calendar as CalendarIcon2, X, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
+import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 
 interface Task {
     id: number;
@@ -83,7 +84,7 @@ const Complaints = () => {
         taskType: 'complaint',
         imageCount: 0
     });
-    const router = useRouter();
+    const router = useGuardedRouter();
     const FILTER_STATE_KEY = 'complaints.filters.v1';
     const [isFiltersHydrated, setIsFiltersHydrated] = useState(false);
     const [activeTab, setActiveTab] = useState('general');
@@ -125,6 +126,7 @@ const Complaints = () => {
     const [teamId, setTeamId] = useState<number | null>(null);
     const [teamIds, setTeamIds] = useState<number[]>([]);
     const [isManager, setIsManager] = useState(false);
+    const dateRangeInvalid = !isManager && isDateRangeInvalid(filters.startDate, filters.endDate);
     const [teamMembers, setTeamMembers] = useState<Employee[]>([]);
     
     // SearchableSelect state variables
@@ -135,6 +137,18 @@ const Complaints = () => {
     const [employeeSearchTerm, setEmployeeSearchTerm] = useState("");
     const [filterEmployeeSearch, setFilterEmployeeSearch] = useState("");
     const [filterEmployeePopoverOpen, setFilterEmployeePopoverOpen] = useState(false);
+
+    const taskDraftIsDirty = isModalOpen && (
+        Boolean(newTask.taskTitle.trim()) ||
+        Boolean(newTask.taskDesciption.trim()) ||
+        Boolean(newTask.dueDate) ||
+        newTask.assignedToId !== 0 ||
+        newTask.storeId !== 0 ||
+        newTask.priority !== 'low' ||
+        newTask.category !== 'Complaint'
+    );
+    const statusDraftIsDirty = isStatusModalOpen && Boolean(selectedTask) && selectedStatus !== selectedTask?.status;
+    const { requestDiscard } = useUnsavedChanges(taskDraftIsDirty || statusDraftIsDirty);
 
     const statusOptions = ['Assigned', 'Work In Progress', 'Complete'] as const;
 
@@ -238,6 +252,10 @@ const Complaints = () => {
 
     const fetchTasks = useCallback(async () => {
         if (!token) return;
+        if (dateRangeInvalid) {
+            setIsLoading(false);
+            return;
+        }
 
         // For managers, wait until we have teamId
         if (isManager && teamIds.length === 0) {
@@ -348,7 +366,7 @@ const Complaints = () => {
             console.error('Error fetching tasks:', error);
             setIsLoading(false);
         }
-    }, [token, userRole, userData, isManager, teamIds, filters.startDate, filters.endDate]);
+    }, [token, userRole, userData, isManager, teamIds, filters.startDate, filters.endDate, dateRangeInvalid]);
 
     const fetchEmployees = useCallback(async () => {
         if (!token) return;
@@ -636,6 +654,10 @@ const Complaints = () => {
         setSelectedTask(null);
     };
 
+    const requestCloseStatusModal = () => {
+        requestDiscard(resetStatusModal, statusDraftIsDirty);
+    };
+
     const confirmStatusUpdate = async () => {
         if (!token || taskToUpdate === null) return;
 
@@ -770,6 +792,13 @@ const Complaints = () => {
         setSelectedStore([]);
         setStores([]);
         setActiveTab('general');
+    };
+
+    const requestCloseCreateModal = () => {
+        requestDiscard(() => {
+            setIsModalOpen(false);
+            resetForm();
+        }, taskDraftIsDirty);
     };
 
     const paginatedTasks = useMemo(() => {
@@ -983,7 +1012,7 @@ const Complaints = () => {
                                             className={`w-[140px] justify-start text-left font-normal ${!filters.startDate && 'text-muted-foreground'}`}
                                         >
                                             <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {filters.startDate ? format(new Date(filters.startDate), 'MMM d, yyyy') : <span>Pick start date</span>}
+                                            {filters.startDate ? format(new Date(filters.startDate), 'MMM dd, yyyy') : <span>Pick start date</span>}
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
@@ -1008,7 +1037,7 @@ const Complaints = () => {
                                             className={`w-[140px] justify-start text-left font-normal ${!filters.endDate && 'text-muted-foreground'}`}
                                         >
                                             <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {filters.endDate ? format(new Date(filters.endDate), 'MMM d, yyyy') : <span>Pick end date</span>}
+                                            {filters.endDate ? format(new Date(filters.endDate), 'MMM dd, yyyy') : <span>Pick end date</span>}
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
@@ -1024,16 +1053,15 @@ const Complaints = () => {
                                     </PopoverContent>
                                 </Popover>
                     </div>
+                    <DateRangeError fromDate={filters.startDate} toDate={filters.endDate} className="w-full" />
                         </>
                     )}
                 </div>
             </div>
 
             <Dialog open={isModalOpen} onOpenChange={(open: boolean) => {
-                setIsModalOpen(open);
-                if (!open) {
-                    resetForm();
-                }
+                if (open) setIsModalOpen(true);
+                else requestCloseCreateModal();
             }}>
                 <DialogContent>
                     <DialogHeader>
@@ -1077,10 +1105,7 @@ const Complaints = () => {
             </Select>
           </div>
                                 <div className="flex justify-between mt-4">
-                                    <Button variant="outline" onClick={() => {
-                                        setIsModalOpen(false);
-                                        resetForm();
-                                    }}>Cancel</Button>
+                                    <Button variant="outline" onClick={requestCloseCreateModal}>Cancel</Button>
                                     <Button onClick={handleNext} disabled={isTabLoading}>
                                         {isTabLoading ? (
                                             <>
@@ -1105,7 +1130,7 @@ const Complaints = () => {
                                                 className={`w-[280px] justify-start text-left font-normal ${!newTask.dueDate && 'text-muted-foreground'}`}
                                             >
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {newTask.dueDate ? format(new Date(newTask.dueDate), 'PPP') : <span>Pick a date</span>}
+                                                {newTask.dueDate ? format(new Date(newTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
                                             </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
@@ -1326,7 +1351,7 @@ const Complaints = () => {
         </div>
                                         <div className="flex items-center space-x-2 text-sm text-white">
                                             <CalendarIcon2 className="w-4 h-4" />
-                                            <span>Due: {format(new Date(task.dueDate), 'MMM d, yyyy')}</span>
+                                            <span>Due: {format(new Date(task.dueDate), 'MMM dd, yyyy')}</span>
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -1434,7 +1459,7 @@ const Complaints = () => {
                     if (open) {
                         setIsStatusModalOpen(true);
                     } else {
-                        resetStatusModal();
+                        requestCloseStatusModal();
                     }
                 }}
             >
@@ -1464,7 +1489,7 @@ const Complaints = () => {
                                     <div>
                                         <p className="text-xs uppercase text-muted-foreground">Due Date</p>
                                         <p className="font-semibold text-card-foreground">
-                                            {selectedTask.dueDate ? format(new Date(selectedTask.dueDate), 'MMM d, yyyy') : 'Not set'}
+                                            {selectedTask.dueDate ? format(new Date(selectedTask.dueDate), 'MMM dd, yyyy') : 'Not set'}
                                         </p>
                                     </div>
                                 </div>
@@ -1493,7 +1518,7 @@ const Complaints = () => {
                             </div>
 
                             <div className="flex justify-end gap-3">
-                                <Button variant="outline" onClick={resetStatusModal}>
+                                <Button variant="outline" onClick={requestCloseStatusModal}>
                                     Cancel
                                 </Button>
                                 <Button
@@ -1577,7 +1602,7 @@ const Complaints = () => {
                                                 className={`w-full justify-start text-left font-normal ${!filters.startDate && 'text-muted-foreground'}`}
                                             >
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {filters.startDate ? format(new Date(filters.startDate), 'MMM d, yyyy') : <span>Pick start date</span>}
+                                                {filters.startDate ? format(new Date(filters.startDate), 'MMM dd, yyyy') : <span>Pick start date</span>}
                                             </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
@@ -1603,7 +1628,7 @@ const Complaints = () => {
                                                 className={`w-full justify-start text-left font-normal ${!filters.endDate && 'text-muted-foreground'}`}
                                             >
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {filters.endDate ? format(new Date(filters.endDate), 'MMM d, yyyy') : <span>Pick end date</span>}
+                                                {filters.endDate ? format(new Date(filters.endDate), 'MMM dd, yyyy') : <span>Pick end date</span>}
                                             </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
@@ -1619,6 +1644,7 @@ const Complaints = () => {
                                         </PopoverContent>
                                     </Popover>
                                 </div>
+                                <DateRangeError fromDate={filters.startDate} toDate={filters.endDate} className="col-span-full" />
                             </>
                         )}
                     </div>
@@ -1635,7 +1661,7 @@ const Complaints = () => {
                         }}>
                             Clear All
                         </Button>
-                        <Button onClick={() => setIsFilterDrawerOpen(false)}>
+                        <Button onClick={() => setIsFilterDrawerOpen(false)} disabled={dateRangeInvalid}>
                             Apply Filters
                         </Button>
                     </SheetFooter>

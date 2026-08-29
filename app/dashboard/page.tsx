@@ -32,6 +32,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { isManagerRoleValue, getCorrectedRoleFlags } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 
 const DEFAULT_MAP_CENTER: [number, number] = [22.5726, 88.3639];
@@ -164,6 +165,7 @@ export default function DashboardPage() {
   const [selectedDateRange, setSelectedDateRange] = useState<DateRangeOption>("today");
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
+  const customDateRangeInvalid = isDateRangeInvalid(customStartDate, customEndDate);
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
   const [isEndDatePopoverOpen, setIsEndDatePopoverOpen] = useState(false);
@@ -527,7 +529,7 @@ export default function DashboardPage() {
   };
 
   const handleCustomDateApply = () => {
-    if (customStartDate && customEndDate) {
+    if (customStartDate && customEndDate && !customDateRangeInvalid) {
       setShowCustomDatePicker(false);
       setIsDateRangeLoading(true);
       // The useEffect will automatically trigger due to dateRange dependency change
@@ -537,7 +539,7 @@ export default function DashboardPage() {
   const dateRange = useMemo<DateRangeValue>(() => {
     const today = new Date();
     
-    if (selectedDateRange === "custom" && customStartDate && customEndDate) {
+    if (selectedDateRange === "custom" && customStartDate && customEndDate && !customDateRangeInvalid) {
       return {
         start: customStartDate,
         end: customEndDate,
@@ -558,7 +560,7 @@ export default function DashboardPage() {
       default:
         return { start: today, end: today };
     }
-  }, [selectedDateRange, customStartDate, customEndDate]);
+  }, [selectedDateRange, customStartDate, customEndDate, customDateRangeInvalid]);
 
   // Load pre-aggregated, role-scoped KPIs from the optimized dashboard endpoint.
   useEffect(() => {
@@ -642,12 +644,12 @@ export default function DashboardPage() {
                 lat: loc.latitude,
                 lng: loc.longitude,
                 // Display date like 11 Aug '25 plus time
-                subtitle: `${format(ts, "dd MMM ''yy")} ${timePart}`.trim(),
+                subtitle: `${format(ts, "MMM dd, yyyy")} ${timePart}`.trim(),
                 type: "live",
                 employeeId: loc.empId,
                 tooltipLines: [
                   `Employee: ${loc.empName}`,
-                  `Last updated: ${format(ts, "dd MMM ''yy, hh:mm a")}`,
+                  `Last updated: ${format(ts, "MMM dd, yyyy, hh:mm a")}`,
                 ],
               });
             }
@@ -877,7 +879,7 @@ export default function DashboardPage() {
         const normalizedTime = time && time.length === 8 ? time : time ? `${time}` : "00:00:00";
         const dateTime = new Date(`${dateStr}T${normalizedTime ?? "00:00:00"}`);
         if (Number.isNaN(dateTime.getTime())) return dateStr;
-        return format(dateTime, "dd MMM yyyy, hh:mm a");
+        return format(dateTime, "MMM dd, yyyy, hh:mm a");
       };
 
       const visitMarkers: MapMarker[] = [];
@@ -997,7 +999,7 @@ export default function DashboardPage() {
         if (Number.isNaN(dateTime.getTime())) {
           return dateStr;
         }
-        return format(dateTime, "dd MMM yyyy, hh:mm a");
+        return format(dateTime, "MMM dd, yyyy, hh:mm a");
       };
 
       console.log('Processing visits:', visits.length, 'visits found');
@@ -1168,7 +1170,7 @@ export default function DashboardPage() {
             </Select>
             
             {showCustomDatePicker && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-[140px] justify-start text-left font-normal">
@@ -1211,9 +1213,10 @@ export default function DashboardPage() {
                   </PopoverContent>
                 </Popover>
                 
+                <DateRangeError fromDate={customStartDate} toDate={customEndDate} className="basis-full" />
                 <Button 
                   onClick={handleCustomDateApply}
-                  disabled={!customStartDate || !customEndDate}
+                  disabled={!customStartDate || !customEndDate || customDateRangeInvalid}
                   size="sm"
                 >
                   Apply

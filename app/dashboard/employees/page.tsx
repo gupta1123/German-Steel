@@ -35,7 +35,8 @@ import { API } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { hasAdminSetupPrivileges, isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 interface User {
   id: number;
@@ -101,7 +102,7 @@ const toSentenceCase = (text: string): string => {
 
 
 function EmployeeList() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
@@ -139,6 +140,14 @@ const [isEditUsernameModalOpen, setIsEditUsernameModalOpen] = useState(false);
 const [editingUsername, setEditingUsername] = useState<{ id: number; username: string } | null>(null);
 const [deleteCandidate, setDeleteCandidate] = useState<User | null>(null);
 const [isDeletingUser, setIsDeletingUser] = useState(false);
+
+  const persistedUsername = editingUsername
+    ? users.find((user) => user.id === editingUsername.id)?.userName ?? ''
+    : '';
+  const resetPasswordDraftIsDirty = isResetPasswordOpen && (newPassword.length > 0 || confirmPassword.length > 0);
+  const usernameDraftIsDirty = isEditUsernameModalOpen && Boolean(editingUsername) && editingUsername?.username !== persistedUsername;
+  const employeeAccountDraftIsDirty = resetPasswordDraftIsDirty || usernameDraftIsDirty;
+  const { requestDiscard } = useUnsavedChanges(employeeAccountDraftIsDirty);
 
   const { token, userRole, userData, currentUser } = useAuth();
   const canManageTeamSetup = hasAdminSetupPrivileges(userRole, currentUser);
@@ -475,6 +484,14 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     setIsResetPasswordOpen(true);
   };
 
+  const closeResetPasswordDialog = () => {
+    requestDiscard(() => {
+      setIsResetPasswordOpen(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    }, resetPasswordDraftIsDirty);
+  };
+
   const handleEditUsername = (userId: number, currentUsername: string) => {
     setEditingUsername({ id: userId, username: currentUsername });
     setIsEditUsernameModalOpen(true);
@@ -493,8 +510,10 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
 
   const closeUsernameDialog = () => {
-    setIsEditUsernameModalOpen(false);
-    setEditingUsername(null);
+    requestDiscard(() => {
+      setIsEditUsernameModalOpen(false);
+      setEditingUsername(null);
+    }, usernameDraftIsDirty);
   };
 
   // Filtering and sorting logic
@@ -914,7 +933,9 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       )}
 
       {/* Reset Password Modal */}
-      <Dialog open={isResetPasswordOpen} onOpenChange={setIsResetPasswordOpen}>
+      <Dialog open={isResetPasswordOpen} onOpenChange={(open) => {
+        if (!open) closeResetPasswordDialog();
+      }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Reset Password</DialogTitle>
@@ -941,7 +962,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsResetPasswordOpen(false)}>
+            <Button variant="outline" onClick={closeResetPasswordDialog}>
               Cancel
             </Button>
             <Button onClick={handleResetPasswordSubmit}>Save</Button>
@@ -1076,7 +1097,9 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       </Dialog>
 
       {/* Edit Username Modal */}
-      <Dialog open={isEditUsernameModalOpen} onOpenChange={closeUsernameDialog}>
+      <Dialog open={isEditUsernameModalOpen} onOpenChange={(open) => {
+        if (!open) closeUsernameDialog();
+      }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Edit Username</DialogTitle>

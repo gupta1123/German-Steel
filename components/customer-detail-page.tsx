@@ -35,7 +35,7 @@ import {
     TabsList,
     TabsTrigger,
 } from "@/components/ui/tabs";
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { AlertCircle, CalendarIcon, Edit, Trash2, Search, Check, MessageSquare, ClipboardList, User, Mail, Phone, Store, Tag, MapPin, Building, Flag, Loader2, Cake } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { SpacedCalendar } from '@/components/ui/spaced-calendar';
@@ -48,6 +48,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateToUserFriendly } from "@/lib/utils";
 import { getApiErrorMessage, getErrorMessage } from '@/lib/api-error';
+import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
+import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 
 const ITEMS_PER_PAGE = 3;
 const JOINING_YEAR_OPTIONS = Array.from(
@@ -115,7 +117,7 @@ interface Task {
 }
 
 export default function CustomerDetailPage({ customer }: { customer: Record<string, unknown> }) {
-    const router = useRouter();
+    const router = useGuardedRouter();
     const params = useParams();
     const storeId = params.id;
     const { token, userData } = useAuth();
@@ -161,6 +163,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         dob: null,
         yearOfJoining: null,
     });
+    const [baselineFormData, setBaselineFormData] = useState<Partial<CustomerData>>({});
     const [isOtherClientType, setIsOtherClientType] = useState(false);
 
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -199,12 +202,15 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         category: 'Complaint',
         storeName: ''
     });
+    const [requirementTaskBaseline, setRequirementTaskBaseline] = useState(requirementTask);
+    const [complaintTaskBaseline, setComplaintTaskBaseline] = useState(complaintTask);
     const [complaintActiveTab, setComplaintActiveTab] = useState('general');
     const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
     const [complaintEmployeeSearch, setComplaintEmployeeSearch] = useState('');
     const [requirementEmployeeSearch, setRequirementEmployeeSearch] = useState('');
     const [startDate, setStartDate] = useState(new Date());
     const [endDate, setEndDate] = useState(addDays(new Date(), 5));
+    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
     const [showSitesTab, setShowSitesTab] = useState(false);
     const [showMore, setShowMore] = useState({
         visits: true,
@@ -214,6 +220,20 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     });
     const [isNoteSaving, setIsNoteSaving] = useState(false);
     const [notePendingDelete, setNotePendingDelete] = useState<Note | null>(null);
+
+    const originalNoteContent = editingNoteId === null
+        ? ''
+        : notesData.find((note) => note.id === editingNoteId)?.content ?? '';
+    const customerFormIsDirty = isEditCustomerModalVisible &&
+        JSON.stringify(formData) !== JSON.stringify(baselineFormData);
+    const noteDraftIsDirty = isModalVisible && noteContent !== originalNoteContent;
+    const complaintDraftIsDirty = isComplaintModalOpen &&
+        JSON.stringify(complaintTask) !== JSON.stringify(complaintTaskBaseline);
+    const requirementDraftIsDirty = isRequirementModalOpen &&
+        JSON.stringify(requirementTask) !== JSON.stringify(requirementTaskBaseline);
+    const { requestDiscard } = useUnsavedChanges(
+        customerFormIsDirty || noteDraftIsDirty || complaintDraftIsDirty || requirementDraftIsDirty
+    );
 
     const [currentPage, setCurrentPage] = useState({
         visits: 1,
@@ -305,6 +325,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     }, [token]);
 
     const fetchTasksData = useCallback(async (id: string, start: Date, end: Date) => {
+        if (isDateRangeInvalid(start, end)) return;
         try {
             const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByStoreAndDate?storeId=${id}&start=${format(start, 'yyyy-MM-dd')}&end=${format(end, 'yyyy-MM-dd')}`, {
                 headers: {
@@ -382,7 +403,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         
         const existingTask = complaintsData[0];
 
-        setComplaintTask({
+        const nextComplaintTask = {
             taskTitle: '',
             taskDesciption: '',
             dueDate: todayString,
@@ -395,7 +416,9 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
             storeId: getNumericStoreId(),
             category: 'Complaint',
             storeName: (customerData?.storeName as string) || existingTask?.storeName || ''
-        });
+        };
+        setComplaintTask(nextComplaintTask);
+        setComplaintTaskBaseline(nextComplaintTask);
         setComplaintEmployeeSearch('');
         setComplaintActiveTab('general');
     }, [complaintsData, customerData?.storeName, customerData?.employeeName, getNumericStoreId, employees]);
@@ -416,7 +439,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         
         const existingTask = requirementsData[0];
 
-        setRequirementTask({
+        const nextRequirementTask = {
             taskTitle: '',
             taskDesciption: '',
             dueDate: todayString,
@@ -429,7 +452,9 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
             storeId: getNumericStoreId(),
             category: 'Requirement',
             storeName: (customerData?.storeName as string) || existingTask?.storeName || ''
-        });
+        };
+        setRequirementTask(nextRequirementTask);
+        setRequirementTaskBaseline(nextRequirementTask);
         setRequirementEmployeeSearch('');
         setRequirementActiveTab('general');
     }, [requirementsData, customerData?.storeName, customerData?.employeeName, getNumericStoreId, employees]);
@@ -451,7 +476,25 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
         setCustomerEditError(null);
         setActiveTab('basic-info');
         setHasUnlockedAddressTab(false);
-    }, []);
+        setFormData(baselineFormData);
+        setIsOtherClientType(baselineFormData.clientType === 'others');
+    }, [baselineFormData]);
+
+    const requestCloseNoteModal = useCallback(() => {
+        requestDiscard(handleCloseNoteModal, noteDraftIsDirty);
+    }, [handleCloseNoteModal, noteDraftIsDirty, requestDiscard]);
+
+    const requestCloseComplaintModal = useCallback(() => {
+        requestDiscard(closeComplaintModal, complaintDraftIsDirty);
+    }, [closeComplaintModal, complaintDraftIsDirty, requestDiscard]);
+
+    const requestCloseRequirementModal = useCallback(() => {
+        requestDiscard(closeRequirementModal, requirementDraftIsDirty);
+    }, [closeRequirementModal, requirementDraftIsDirty, requestDiscard]);
+
+    const requestCloseEditCustomerModal = useCallback(() => {
+        requestDiscard(closeEditCustomerModal, customerFormIsDirty);
+    }, [closeEditCustomerModal, customerFormIsDirty, requestDiscard]);
 
     const handleCustomerTabChange = useCallback((value: string) => {
         if (value === 'address-info' && !hasUnlockedAddressTab) {
@@ -634,7 +677,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
             const date = new Date(dob);
             if (isNaN(date.getTime())) return null;
             
-            return format(date, 'MMMM dd, yyyy');
+            return format(date, 'MMM dd, yyyy');
         } catch (error) {
             console.error('Error formatting date of birth:', error);
             return null;
@@ -648,11 +691,11 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 if (raw) {
                     const saved = JSON.parse(raw);
                     if (saved?.page === 'complaints') {
-                        window.history.back();
+                        router.back();
                         return;
                     }
                     if (saved?.page === 'requirements') {
-                        window.history.back();
+                        router.back();
                         return;
                     }
                 }
@@ -956,10 +999,10 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
     }, [token, storeId, fetchCustomerData, fetchNotesData, fetchIntentData, fetchSalesData]);
 
     useEffect(() => {
-        if (token && storeId) {
+        if (token && storeId && !dateRangeInvalid) {
             fetchTasksData(storeId as string, startDate, endDate);
         }
-    }, [token, storeId, startDate, endDate, fetchTasksData]);
+    }, [token, storeId, startDate, endDate, dateRangeInvalid, fetchTasksData]);
 
     useEffect(() => {
         if (token && storeId) {
@@ -973,7 +1016,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
             const standardClientTypes = ["shop", "site visit", "architect", "engineer"];
             const isStandardType = standardClientTypes.includes(clientType);
 
-            setFormData({
+            const nextFormData: Partial<CustomerData> = {
                 storeId: customerData.storeId as number,
                 storeName: customerData.storeName as string,
                 clientFirstName: customerData.clientFirstName as string,
@@ -995,7 +1038,9 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 yearOfJoining: customerData.yearOfJoining != null && Number.isInteger(Number(customerData.yearOfJoining))
                     ? Number(customerData.yearOfJoining)
                     : null,
-            });
+            };
+            setFormData(nextFormData);
+            setBaselineFormData(nextFormData);
 
             setIsOtherClientType(!isStandardType);
         }
@@ -1575,7 +1620,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 <PopoverTrigger asChild>
                                                     <Button variant="outline" className={`w-[200px] justify-start text-left font-normal ${!startDate && 'text-muted-foreground'}`}>
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                                        {startDate ? format(new Date(startDate), 'PPP') : <span>Start Date</span>}
+                                                        {startDate ? format(new Date(startDate), 'MMM dd, yyyy') : <span>Start Date</span>}
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0">
@@ -1594,7 +1639,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 <PopoverTrigger asChild>
                                                     <Button variant="outline" className={`w-[200px] justify-start text-left font-normal ${!endDate && 'text-muted-foreground'}`}>
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                                        {endDate ? format(new Date(endDate), 'PPP') : <span>End Date</span>}
+                                                        {endDate ? format(new Date(endDate), 'MMM dd, yyyy') : <span>End Date</span>}
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0">
@@ -1607,6 +1652,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 </PopoverContent>
                                             </Popover>
                                         </div>
+                                        <DateRangeError fromDate={startDate} toDate={endDate} />
                                         <div className="space-y-3">
                                             {paginate(complaintsData, currentPage.complaints).map((complaint) => (
                                                 <div key={complaint.id} className="rounded-lg border bg-card p-4">
@@ -1615,7 +1661,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                             <i className="fas fa-exclamation-circle text-muted-foreground"></i>
                                                             <span className="text-sm font-medium">{complaint.taskTitle}</span>
                                                         </div>
-                                                        <span className="text-xs text-muted-foreground">Due: {new Date(complaint.dueDate).toLocaleDateString()}</span>
+                                                        <span className="text-xs text-muted-foreground">Due: {format(new Date(complaint.dueDate), 'MMM dd, yyyy')}</span>
                                                     </div>
                                                     <p className="text-sm text-foreground mb-3">{complaint.taskDescription}</p>
                                                     <div className="flex items-center justify-between">
@@ -1677,7 +1723,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 <PopoverTrigger asChild>
                                                     <Button variant="outline" className={`w-[200px] justify-start text-left font-normal ${!startDate && 'text-muted-foreground'}`}>
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                                        {startDate ? format(new Date(startDate), 'PPP') : <span>Start Date</span>}
+                                                        {startDate ? format(new Date(startDate), 'MMM dd, yyyy') : <span>Start Date</span>}
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0">
@@ -1696,7 +1742,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 <PopoverTrigger asChild>
                                                     <Button variant="outline" className={`w-[200px] justify-start text-left font-normal ${!endDate && 'text-muted-foreground'}`}>
                                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                                        {endDate ? format(new Date(endDate), 'PPP') : <span>End Date</span>}
+                                                        {endDate ? format(new Date(endDate), 'MMM dd, yyyy') : <span>End Date</span>}
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0">
@@ -1709,6 +1755,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 </PopoverContent>
                                             </Popover>
                                         </div>
+                                        <DateRangeError fromDate={startDate} toDate={endDate} />
                                         <div className="space-y-3">
                                             {paginate(requirementsData, currentPage.requirements).map((requirement) => (
                                                 <div key={requirement.id} className="rounded-lg border bg-card p-4">
@@ -1717,7 +1764,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                             <i className="fas fa-tasks text-muted-foreground"></i>
                                                             <span className="text-sm font-medium">{requirement.taskTitle}</span>
                                                         </div>
-                                                        <span className="text-xs text-muted-foreground">Due: {new Date(requirement.dueDate).toLocaleDateString()}</span>
+                                                        <span className="text-xs text-muted-foreground">Due: {format(new Date(requirement.dueDate), 'MMM dd, yyyy')}</span>
                                                     </div>
                                                     <p className="text-sm text-foreground mb-3">{requirement.taskDescription}</p>
                                                     <div className="flex items-center justify-between">
@@ -1782,7 +1829,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 open={isModalVisible}
                 onOpenChange={(open) => {
                     if (!open) {
-                        handleCloseNoteModal();
+                        requestCloseNoteModal();
                     }
                 }}
             >
@@ -1800,7 +1847,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                         className="min-h-[140px]"
                     />
                     <DialogFooter>
-                        <Button variant="outline" onClick={handleCloseNoteModal}>
+                        <Button variant="outline" onClick={requestCloseNoteModal}>
                             Cancel
                         </Button>
                         <Button
@@ -1850,7 +1897,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                 open={isEditCustomerModalVisible}
                 onOpenChange={(open) => {
                     if (!open) {
-                        closeEditCustomerModal();
+                        requestCloseEditCustomerModal();
                     }
                 }}
             >
@@ -2054,7 +2101,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                     </div>
                                 )}
                                 <div className="flex items-center justify-between pt-4 border-t">
-                                    <Button variant="ghost" onClick={closeEditCustomerModal}>
+                                    <Button variant="ghost" onClick={requestCloseEditCustomerModal}>
                                         Cancel
                                     </Button>
                                     <Button
@@ -2171,7 +2218,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                         <Button variant="outline" onClick={() => setActiveTab("basic-info")} className="h-11 px-6">
                                             Back
                                         </Button>
-                                        <Button variant="ghost" onClick={closeEditCustomerModal} className="h-11 px-6">
+                                        <Button variant="ghost" onClick={requestCloseEditCustomerModal} className="h-11 px-6">
                                             Cancel
                                         </Button>
                                     </div>
@@ -2258,7 +2305,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between pt-4 border-t">
-                                            <Button variant="ghost" onClick={closeComplaintModal}>
+                                            <Button variant="ghost" onClick={requestCloseComplaintModal}>
                                                 Cancel
                                             </Button>
                                             <Button onClick={handleComplaintNext} className="h-11 px-6">
@@ -2281,7 +2328,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                             className={`w-full h-11 justify-start text-left font-normal ${!complaintTask.dueDate && 'text-muted-foreground'}`}
                                                         >
                                                             <CalendarIcon className="mr-2 h-4 w-4" />
-                                                            {complaintTask.dueDate ? format(new Date(complaintTask.dueDate), 'PPP') : <span>Select due date</span>}
+                                                            {complaintTask.dueDate ? format(new Date(complaintTask.dueDate), 'MMM dd, yyyy') : <span>Select due date</span>}
                                                         </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent className="w-auto p-0">
@@ -2342,7 +2389,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 Back
                                             </Button>
                                             <div className="flex gap-2">
-                                                <Button variant="ghost" onClick={closeComplaintModal} className="h-11 px-6">
+                                                <Button variant="ghost" onClick={requestCloseComplaintModal} className="h-11 px-6">
                                                     Cancel
                                                 </Button>
                                                 <Button onClick={handleCreateComplaint} disabled={isCreatingTask} className="h-11 px-6">
@@ -2429,7 +2476,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between pt-4 border-t">
-                                            <Button variant="ghost" onClick={closeRequirementModal}>
+                                            <Button variant="ghost" onClick={requestCloseRequirementModal}>
                                                 Cancel
                                             </Button>
                                             <Button onClick={handleRequirementNext} className="h-11 px-6">
@@ -2452,7 +2499,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                             className={`w-full h-11 justify-start text-left font-normal ${!requirementTask.dueDate && 'text-muted-foreground'}`}
                                                         >
                                                             <CalendarIcon className="mr-2 h-4 w-4" />
-                                                            {requirementTask.dueDate ? format(new Date(requirementTask.dueDate), 'PPP') : <span>Select due date</span>}
+                                                            {requirementTask.dueDate ? format(new Date(requirementTask.dueDate), 'MMM dd, yyyy') : <span>Select due date</span>}
                                                         </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent className="w-auto p-0">
@@ -2513,7 +2560,7 @@ export default function CustomerDetailPage({ customer }: { customer: Record<stri
                                                 Back
                                             </Button>
                                             <div className="flex gap-2">
-                                                <Button variant="ghost" onClick={closeRequirementModal} className="h-11 px-6">
+                                                <Button variant="ghost" onClick={requestCloseRequirementModal} className="h-11 px-6">
                                                     Cancel
                                                 </Button>
                                                 <Button onClick={handleCreateRequirement} disabled={isCreatingTask} className="h-11 px-6">

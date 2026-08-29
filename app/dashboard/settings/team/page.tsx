@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState, useEffect } from "react";
 import { Users, Plus, Edit, Save, X, MapPin, User, Building, Crown, Navigation, Loader2 } from "lucide-react";
 import { API } from "@/lib/api";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 type Team = {
   id: number;
@@ -223,6 +224,13 @@ export default function TeamSettings() {
   const [isRemovingCity, setIsRemovingCity] = useState(false);
   const [cityToRemove, setCityToRemove] = useState<{ city: string; employeeId: number } | null>(null);
   const [isRemoveCityDialogOpen, setIsRemoveCityDialogOpen] = useState(false);
+  const savedEditingTeam = teams.find((team) => team.id === editingTeam?.id);
+  const newTeamIsDirty = Boolean(isAddTeamOpen &&
+    (newTeam.name || newTeam.regionalManager || newTeam.cities.length || newTeam.fieldOfficers.length));
+  const editedTeamIsDirty = Boolean(
+    isEditTeamOpen && editingTeam && JSON.stringify(editingTeam) !== JSON.stringify(savedEditingTeam)
+  );
+  const { markSaved, requestDiscard } = useUnsavedChanges(newTeamIsDirty || editedTeamIsDirty);
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
 
@@ -252,6 +260,7 @@ export default function TeamSettings() {
 
   const handleAddTeam = () => {
     if (newTeam.name && newTeam.regionalManager) {
+      markSaved();
       const newTeamObj = {
         id: teams.length + 1,
         name: newTeam.name,
@@ -278,12 +287,27 @@ export default function TeamSettings() {
 
   const handleSaveTeam = () => {
     if (editingTeam) {
+      markSaved();
       setTeams(teams.map(team => 
         team.id === editingTeam.id ? editingTeam : team
       ));
       setIsEditTeamOpen(false);
       setEditingTeam(null);
     }
+  };
+
+  const handleCloseAddTeam = () => {
+    requestDiscard(() => {
+      setIsAddTeamOpen(false);
+      setNewTeam({ name: "", regionalManager: "", cities: [], fieldOfficers: [] });
+    }, newTeamIsDirty);
+  };
+
+  const handleCloseEditTeam = () => {
+    requestDiscard(() => {
+      setIsEditTeamOpen(false);
+      setEditingTeam(null);
+    }, editedTeamIsDirty);
   };
 
   const addCityToNewTeam = (city: string) => {
@@ -398,7 +422,10 @@ export default function TeamSettings() {
       <div className="flex justify-between items-center">
         <div>
         </div>
-        <Dialog open={isAddTeamOpen} onOpenChange={setIsAddTeamOpen}>
+        <Dialog open={isAddTeamOpen} onOpenChange={(open) => {
+          if (open) setIsAddTeamOpen(true);
+          else handleCloseAddTeam();
+        }}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
@@ -507,7 +534,7 @@ export default function TeamSettings() {
               </div>
               
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsAddTeamOpen(false)}>
+                <Button variant="outline" onClick={handleCloseAddTeam}>
                   Cancel
                 </Button>
                 <Button onClick={handleAddTeam}>
@@ -592,7 +619,10 @@ export default function TeamSettings() {
       </div>
 
       {/* Edit Team Dialog */}
-      <Dialog open={isEditTeamOpen} onOpenChange={setIsEditTeamOpen}>
+      <Dialog open={isEditTeamOpen} onOpenChange={(open) => {
+        if (open) setIsEditTeamOpen(true);
+        else handleCloseEditTeam();
+      }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Team</DialogTitle>
@@ -696,7 +726,7 @@ export default function TeamSettings() {
               </div>
               
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsEditTeamOpen(false)}>
+                <Button variant="outline" onClick={handleCloseEditTeam}>
                   Cancel
                 </Button>
                 <Button onClick={handleSaveTeam}>

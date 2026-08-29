@@ -37,7 +37,7 @@ import { useAuth } from "@/components/auth-provider";
 import { isManagerRoleValue, normalizeRoleValue, getCorrectedRoleFlags } from "@/lib/auth";
 import { getTeamIds, getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
 import { formatDateToUserFriendly } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/unsaved-changes-provider";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
 
 const CUSTOMER_LIST_STORAGE_KEY = "customers.list.state.v1";
@@ -183,7 +183,7 @@ const getAllStoresForTeam = async (teamId: number): Promise<StoreDto[]> => {
 };
 
 function CustomerListContent() {
-    const router = useRouter();
+    const router = useGuardedRouter();
     const hasHydratedRef = useRef(false);
     const customerRequestIdRef = useRef(0);
     const [isStateHydrated, setIsStateHydrated] = useState(false);
@@ -689,6 +689,8 @@ function CustomerListContent() {
     };
 
     const handleDesktopFilterChange = (filterName: keyof typeof desktopFilters, value: string) => {
+        if (isModalOpen) return;
+
         if (filterName === 'ownerName') {
             setDesktopFilters((prevFilters) => ({
                 ...prevFilters,
@@ -704,6 +706,8 @@ function CustomerListContent() {
     };
 
     const handleMobileFilterChange = (filterName: keyof typeof mobileFilters, value: string) => {
+        if (isModalOpen) return;
+
         if (filterName === 'ownerName') {
             setMobileFilters((prevFilters) => ({
                 ...prevFilters,
@@ -951,31 +955,41 @@ function CustomerListContent() {
         );
     };
 
-    const renderFilterInput = (name: keyof typeof desktopFilters, label: string, icon: React.ReactNode, isMobile: boolean) => (
-        <div className="space-y-1">
-            <Label htmlFor={name} className="sr-only">{label}</Label>
-            <div className="relative">
-                <Input
-                    id={name}
-                    placeholder={label}
-                    value={isMobile ? mobileFilters[name] : desktopFilters[name]}
-                    onChange={(e) => isMobile ? handleMobileFilterChange(name, e.target.value) : handleDesktopFilterChange(name, e.target.value)}
-                    className="pl-8 pr-8 h-9"
-                />
-                <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-gray-400">
-                    {icon}
+    const renderFilterInput = (name: keyof typeof desktopFilters, label: string, icon: React.ReactNode, isMobile: boolean) => {
+        const filterScope = isMobile ? 'mobile' : 'desktop';
+        const filterInputId = `customer-${filterScope}-filter-${name}`;
+
+        return (
+            <div className="space-y-1">
+                <Label htmlFor={filterInputId} className="sr-only">{label}</Label>
+                <div className="relative">
+                    <Input
+                        id={filterInputId}
+                        name={filterInputId}
+                        type="search"
+                        autoComplete="off"
+                        placeholder={label}
+                        value={isMobile ? mobileFilters[name] : desktopFilters[name]}
+                        disabled={isModalOpen}
+                        onChange={(e) => isMobile ? handleMobileFilterChange(name, e.target.value) : handleDesktopFilterChange(name, e.target.value)}
+                        className="pl-8 pr-8 h-9"
+                    />
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-gray-400">
+                        {icon}
+                    </div>
+                    {!isMobile && desktopFilters[name] && (
+                        <button
+                            type="button"
+                            onClick={() => handleFilterClear(name)}
+                            className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    )}
                 </div>
-                {!isMobile && desktopFilters[name] && (
-                    <button
-                        onClick={() => handleFilterClear(name)}
-                        className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                )}
             </div>
-        </div>
-    );
+        );
+    };
 
   return (
         <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">

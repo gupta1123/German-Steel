@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useNavigationGuard } from "@/components/unsaved-changes-provider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   CreditCard, 
@@ -24,6 +25,7 @@ import StoreTargets from "@/components/StoreTargets";
 function SettingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { requestNavigation } = useNavigationGuard();
   const tabParam = searchParams.get('tab');
   
   // Valid tab values
@@ -42,10 +44,12 @@ function SettingsContent() {
 
   // Update URL when tab changes (optional, for better UX)
   const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    const nextParams = new URLSearchParams(searchParams.toString());
-    nextParams.set("tab", value);
-    router.push(`/dashboard/settings?${nextParams.toString()}`, { scroll: false });
+    requestNavigation(() => {
+      setActiveTab(value);
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set("tab", value);
+      router.push(`/dashboard/settings?${nextParams.toString()}`, { scroll: false });
+    });
   };
 
   return (

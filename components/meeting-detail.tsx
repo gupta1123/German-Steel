@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -25,6 +24,8 @@ import {
 import { endOfMonth, format, startOfMonth } from "date-fns";
 
 import { useAuth } from "@/components/auth-provider";
+import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -199,7 +200,7 @@ const formatDate = (value?: string) => {
   if (!value) return "-";
   const parsed = new Date(`${value}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return value;
-  return format(parsed, "dd MMM yyyy");
+  return format(parsed, "MMM dd, yyyy");
 };
 
 const timeForInput = (value?: string) => (value ? value.slice(0, 5) : "");
@@ -1225,7 +1226,7 @@ function ReportPerformanceTable({
 }
 
 export default function MeetingDetail({ meetingId }: { meetingId: number }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { userRole, currentUser } = useAuth();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [activeTab, setActiveTab] = useState<WorkflowTab>("request");
@@ -1275,6 +1276,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
   const [isExportingReport, setIsExportingReport] = useState(false);
   const [isReportFiltersOpen, setIsReportFiltersOpen] = useState(false);
   const [reportFilters, setReportFilters] = useState<ReportFilterState>(emptyReportFilters);
+  const reportDateRangeInvalid = isDateRangeInvalid(reportFilters.start, reportFilters.end);
   const [reportMeetings, setReportMeetings] = useState<Meeting[]>([]);
 
   const loadConfig = async () => {
@@ -1526,12 +1528,117 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
     isActionAllowed("APPROVE_AND_CLOSE", false) || isActionAllowed("CLOSE", meeting?.status === "REPORT_SUBMITTED");
   const canCancel = isActionAllowed("CANCEL", Boolean(meeting && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(meeting.status)));
 
+  const defaultApprovalDecision: ApprovalDecision = canApprove
+    ? "approve"
+    : canRequestCorrection
+      ? "correction"
+      : canReject
+        ? "reject"
+        : "approve";
+  const baselineAttendees = meeting?.attendees?.length
+    ? meeting.attendees.map((attendee) => ({ ...attendee }))
+    : [attendeeDraft()];
+  const baselineExecutionForm: ExecutionForm | null = meeting
+    ? {
+        actualMeetingDate: meeting.actualMeetingDate || meeting.meetingDate || "",
+        actualMeetingTime: timeForInput(meeting.actualMeetingTime || meeting.meetingTime),
+        actualLocation: meeting.actualLocation || meeting.location || "",
+        executionRemarks: meeting.executionRemarks || "",
+      }
+    : null;
+  const baselineAttendance = (meeting?.attendees || []).reduce<Record<number, { present: boolean; remarks: string }>>(
+    (acc, attendee) => {
+      if (attendee.id != null) {
+        acc[attendee.id] = {
+          present: attendee.present === true,
+          remarks: attendee.remarks || "",
+        };
+      }
+      return acc;
+    },
+    {}
+  );
+  const baselineGifts = meeting?.gifts?.length
+    ? meeting.gifts.map((gift) => ({ ...gift }))
+    : [giftDraft()];
+  const savedEditableExpenses = (meeting?.expenses || []).filter(
+    (expense) => !isGiftExpenseHead(expense.expenseHead)
+  );
+  const baselineExpenses = savedEditableExpenses.length
+    ? savedEditableExpenses.map((expense) => ({ ...expense }))
+    : [expenseDraft(meeting?.actualMeetingDate || meeting?.meetingDate)];
+  const baselineFinalReport: FinalReportPayload | null = meeting
+    ? {
+        meetingSummary: meeting.meetingSummary || "",
+        keyDiscussionPoints: meeting.keyDiscussionPoints || "",
+        leadsGenerated: meeting.leadsGenerated || "",
+        leadCount: meeting.leadCount,
+        leadDetails: meeting.leadDetails || "",
+        interestedCustomers: meeting.interestedCustomers || "",
+        competitorInformation: meeting.competitorInformation || "",
+        actualBusinessOutcome: meeting.actualBusinessOutcome || "",
+      }
+    : null;
+  const meetingPageDraftIsDirty = Boolean(
+    meeting &&
+      requestForm &&
+      (
+        (canEditRequest && JSON.stringify(requestForm) !== JSON.stringify(requestFormFromMeeting(meeting))) ||
+        (canEditRequest && JSON.stringify(attendees) !== JSON.stringify(baselineAttendees)) ||
+        (canExecute && JSON.stringify(executionForm) !== JSON.stringify(baselineExecutionForm)) ||
+        (canMarkAttendance && JSON.stringify(attendance) !== JSON.stringify(baselineAttendance)) ||
+        (canMarkAttendance && JSON.stringify(walkIn) !== JSON.stringify(attendeeDraft())) ||
+        (canIssueGifts && JSON.stringify(gifts) !== JSON.stringify(baselineGifts)) ||
+        (canSubmitExpenses && JSON.stringify(expenses) !== JSON.stringify(baselineExpenses)) ||
+        (canSubmitFinalReport && JSON.stringify(finalReport) !== JSON.stringify(baselineFinalReport))
+      )
+  );
+  const approvalDecisionDraftIsDirty = Boolean(isApprovalDecisionOpen &&
+    (approvalDecision !== defaultApprovalDecision ||
+      approvalRemarks !== "" ||
+      (approvalDecision === "correction" && correctionStage !== "REQUEST")));
+  const finalReviewDraftIsDirty = Boolean(isFinalReviewDecisionOpen && meeting &&
+    ((finalReviewDecision === "correction" && finalCorrectionStage !== "FINAL_REPORT") ||
+      finalReviewDecision !== "approveClose" ||
+      finalApprovalRemarks !== (meeting.finalReportApprovalRemarks || "")));
+  const cancelMeetingDraftIsDirty = isCancelMeetingOpen && cancelRemarks !== "";
+  const hasMeetingDraftChanges = meetingPageDraftIsDirty || approvalDecisionDraftIsDirty ||
+    finalReviewDraftIsDirty || cancelMeetingDraftIsDirty;
+  const { markSaved, requestDiscard } = useUnsavedChanges(hasMeetingDraftChanges);
+
+  const closeApprovalDecision = () => {
+    setIsApprovalDecisionOpen(false);
+    setApprovalDecision(defaultApprovalDecision);
+    setApprovalRemarks("");
+    setCorrectionStage("REQUEST");
+  };
+  const requestCloseApprovalDecision = () => {
+    requestDiscard(closeApprovalDecision, approvalDecisionDraftIsDirty);
+  };
+  const closeFinalReviewDecision = () => {
+    setIsFinalReviewDecisionOpen(false);
+    setFinalReviewDecision("approveClose");
+    setFinalApprovalRemarks(meeting?.finalReportApprovalRemarks || "");
+    setFinalCorrectionStage("FINAL_REPORT");
+  };
+  const requestCloseFinalReviewDecision = () => {
+    requestDiscard(closeFinalReviewDecision, finalReviewDraftIsDirty);
+  };
+  const closeCancelMeeting = () => {
+    setIsCancelMeetingOpen(false);
+    setCancelRemarks("");
+  };
+  const requestCloseCancelMeeting = () => {
+    requestDiscard(closeCancelMeeting, cancelMeetingDraftIsDirty);
+  };
+
   const runAction = async (callback: () => Promise<unknown>, successMessage: string) => {
     setIsSaving(true);
     setError(null);
     setMessage(null);
     try {
       await callback();
+      markSaved();
       setMessage(successMessage);
       await loadMeeting();
       return true;
@@ -1925,25 +2032,25 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
 
   const handleApprovalDecision = async (action: "approve" | "reject" | "correction") => {
     const ok = await approvalAction(action);
-    if (ok) setIsApprovalDecisionOpen(false);
+    if (ok) closeApprovalDecision();
   };
 
   const handleApproveAndClose = async () => {
     const ok = await approveAndCloseMeeting();
     if (ok) {
       setFinalReviewDecision("approveClose");
-      setIsFinalReviewDecisionOpen(false);
+      closeFinalReviewDecision();
     }
   };
 
   const handleFinalReviewCorrection = async () => {
     const ok = await requestFinalReviewCorrection();
-    if (ok) setIsFinalReviewDecisionOpen(false);
+    if (ok) closeFinalReviewDecision();
   };
 
   const handleCancelMeeting = async () => {
     const ok = await cancelMeeting();
-    if (ok) setIsCancelMeetingOpen(false);
+    if (ok) closeCancelMeeting();
   };
 
   const resetReportToMonth = () => {
@@ -1957,7 +2064,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
   };
 
   const exportMeetingReport = async (filters = reportFilters) => {
-    if (!meeting) return;
+    if (!meeting || isDateRangeInvalid(filters.start, filters.end)) return;
     setIsExportingReport(true);
     setError(null);
     setMessage(null);
@@ -2039,11 +2146,11 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
     <Dialog
       open={isApprovalDecisionOpen}
       onOpenChange={(open) => {
-        setIsApprovalDecisionOpen(open);
         if (open) {
+          setIsApprovalDecisionOpen(true);
           setApprovalDecision(selectedApprovalDecision);
         } else {
-          setApprovalRemarks("");
+          requestCloseApprovalDecision();
         }
       }}
     >
@@ -2105,7 +2212,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           )}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="outline" onClick={() => setIsApprovalDecisionOpen(false)}>
+          <Button variant="outline" onClick={requestCloseApprovalDecision}>
             Close
           </Button>
           <div className="flex flex-wrap gap-2">
@@ -2130,11 +2237,11 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
     <Dialog
       open={isFinalReviewDecisionOpen}
       onOpenChange={(open) => {
-        setIsFinalReviewDecisionOpen(open);
         if (open) {
+          setIsFinalReviewDecisionOpen(true);
           setFinalReviewDecision(selectedFinalReviewDecision);
         } else {
-          setFinalApprovalRemarks("");
+          requestCloseFinalReviewDecision();
         }
       }}
     >
@@ -2194,7 +2301,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           </div>
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="outline" onClick={() => setIsFinalReviewDecisionOpen(false)}>
+          <Button variant="outline" onClick={requestCloseFinalReviewDecision}>
             Close
           </Button>
           <div className="flex flex-wrap gap-2">
@@ -2212,7 +2319,10 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
     </Dialog>
   );
   const cancelMeetingDialog = (
-    <Dialog open={isCancelMeetingOpen} onOpenChange={setIsCancelMeetingOpen}>
+    <Dialog open={isCancelMeetingOpen} onOpenChange={(open) => {
+      if (open) setIsCancelMeetingOpen(true);
+      else requestCloseCancelMeeting();
+    }}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Cancel Meeting</DialogTitle>
@@ -2223,7 +2333,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           <Textarea value={cancelRemarks} onChange={(event) => setCancelRemarks(event.target.value)} />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsCancelMeetingOpen(false)}>
+          <Button variant="outline" onClick={requestCloseCancelMeeting}>
             Close
           </Button>
           <Button variant="destructive" onClick={handleCancelMeeting} disabled={isSaving || !cancelRemarks.trim()}>
@@ -2951,7 +3061,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                           <Filter className="h-3.5 w-3.5 mr-1" />
                           {isReportFiltersOpen ? "Hide Filter" : "Filter"}
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportMeetingReport(reportFilters)} disabled={isExportingReport} className="rounded-lg">
+                        <Button variant="outline" size="sm" onClick={() => exportMeetingReport(reportFilters)} disabled={isExportingReport || reportDateRangeInvalid} className="rounded-lg">
                           {isExportingReport ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Download className="h-3.5 w-3.5 mr-1" />}
                           Export CSV
                         </Button>
@@ -3033,6 +3143,8 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                             />
                           </div>
                         </div>
+
+                        <DateRangeError fromDate={reportFilters.start} toDate={reportFilters.end} />
 
                         <div className="flex gap-2">
                           <Button variant="outline" size="sm" onClick={useCurrentMeetingReportFilters} className="text-xs h-7 rounded-md">
@@ -3315,7 +3427,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground font-semibold">{entry.performedByName || entry.performedById || "-"}</TableCell>
                             <TableCell className="pr-5 text-right text-[11px] text-muted-foreground">
-                              {entry.performedAt ? format(new Date(entry.performedAt), "dd MMM yyyy, HH:mm") : "-"}
+                              {entry.performedAt ? format(new Date(entry.performedAt), "MMM dd, yyyy, HH:mm") : "-"}
                             </TableCell>
                           </TableRow>
                         ))}

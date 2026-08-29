@@ -29,7 +29,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen
 } from "lucide-react";
-import Link from "next/link";
+import Link from "@/components/guarded-link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import Topbar from "@/components/topbar";
@@ -39,6 +39,7 @@ import { useAuth } from "@/components/auth-provider";
 import { CurrentUserDto, hasManagerPrivileges, normalizeRoleValue } from "@/lib/auth";
 import MobileBottomNav from "@/components/mobile-bottom-nav";
 import BrandLogo from "@/components/brand-logo";
+import { useNavigationGuard } from "@/components/unsaved-changes-provider";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -125,6 +126,7 @@ export default function DashboardLayout({
   const { userRole, currentUser } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const { requestNavigation } = useNavigationGuard();
   const { logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -200,15 +202,17 @@ export default function DashboardLayout({
     return pathname === path || pathname.startsWith(`${path}/`);
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      router.push("/login");
-    } catch (error) {
-      console.error('Logout error:', error);
-      // Still redirect to login even if logout API fails
-      router.push("/login");
-    }
+  const handleLogout = () => {
+    requestNavigation(async () => {
+      try {
+        await logout();
+        router.push("/login");
+      } catch (error) {
+        console.error('Logout error:', error);
+        // Still redirect to login even if logout API fails
+        router.push("/login");
+      }
+    });
   };
 
   return (
@@ -381,8 +385,10 @@ export default function DashboardLayout({
                     role="menuitem"
                     className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
                     onClick={() => {
-                      setUserMenuOpen(false);
-                      router.push("/dashboard/settings");
+                      requestNavigation(() => {
+                        setUserMenuOpen(false);
+                        router.push("/dashboard/settings");
+                      });
                     }}
                   >
                     <Settings className="h-4 w-4" />

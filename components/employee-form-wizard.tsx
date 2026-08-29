@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useId, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils"; 
@@ -39,6 +38,7 @@ import {
 } from 'lucide-react';
 
 import { API, EmployeeUserDto } from "@/lib/api";
+import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 // --- Types & Initial State ---
 
@@ -136,7 +136,7 @@ const STEPS = [
 ];
 
 export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWizardProps) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const isEditMode = mode === "edit";
   const steps = isEditMode ? STEPS.slice(0, -1) : STEPS;
   const pageTitle = isEditMode ? "Edit Employee" : "Add Employee";
@@ -157,6 +157,12 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [selectedAssignedCities, setSelectedAssignedCities] = useState<string[]>([]);
   const [baselineAssignedCities, setBaselineAssignedCities] = useState<string[]>([]);
   const [isCityAssignmentOpen, setIsCityAssignmentOpen] = useState(false);
+
+  const employeeFormIsDirty = isFormReady && (
+    JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
+    JSON.stringify(selectedAssignedCities) !== JSON.stringify(baselineAssignedCities)
+  );
+  const { markSaved } = useUnsavedChanges(employeeFormIsDirty);
   
   // Validation State
   const [primaryContactError, setPrimaryContactError] = useState<string | null>(null);
@@ -263,8 +269,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   // Check if form has unsaved changes
   const hasFormChanges = (): boolean => {
     return JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
-      JSON.stringify(selectedAssignedCities) !== JSON.stringify(baselineAssignedCities) ||
-      currentStep > 0;
+      JSON.stringify(selectedAssignedCities) !== JSON.stringify(baselineAssignedCities);
   };
 
   // Handle back button click
@@ -279,6 +284,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   // Confirm navigation back
   const handleConfirmBack = () => {
     setShowBackConfirmDialog(false);
+    markSaved();
     router.push('/dashboard/employees');
   };
 
@@ -466,6 +472,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         }
       }
 
+      markSaved();
       router.push('/dashboard/employees');
     } catch (error) {
       console.error('Error saving employee:', error);
@@ -729,7 +736,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 )}
                                             >
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {newEmployee.dateOfJoining ? format(new Date(newEmployee.dateOfJoining), "PPP") : <span>Pick a date</span>}
+                                                {newEmployee.dateOfJoining ? format(new Date(newEmployee.dateOfJoining), "MMM dd, yyyy") : <span>Pick a date</span>}
                                             </Button>
                                             </PopoverTrigger>
                                             <PopoverContent className="w-auto p-0" align="start">

@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect } from "react";
-import Link from "next/link";
+import Link from "@/components/guarded-link";
 import { usePathname } from "next/navigation";
 import { 
   Home, 

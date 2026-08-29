@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 type EmployeeDirectoryEntry = EmployeeUserDto & {
   status?: string;
@@ -75,6 +76,7 @@ export default function DistanceRecalculation() {
 
   const [startDate, setStartDate] = useState(format(firstOfMonth, "yyyy-MM-dd"));
   const [endDate, setEndDate] = useState(format(today, "yyyy-MM-dd"));
+  const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
   const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
   const [isEndDatePopoverOpen, setIsEndDatePopoverOpen] = useState(false);
 
@@ -268,8 +270,7 @@ export default function DistanceRecalculation() {
       return;
     }
 
-    if (startDate > endDate) {
-      setError("Start date cannot be after end date.");
+    if (dateRangeInvalid) {
       return;
     }
 
@@ -404,7 +405,7 @@ export default function DistanceRecalculation() {
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start bg-card text-left font-normal">
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {startDate ? format(new Date(startDate), "MMM d, yyyy") : "Select date"}
+                    {startDate ? format(new Date(startDate), "MMM dd, yyyy") : "Select date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -426,7 +427,7 @@ export default function DistanceRecalculation() {
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start bg-card text-left font-normal">
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {endDate ? format(new Date(endDate), "MMM d, yyyy") : "Select date"}
+                    {endDate ? format(new Date(endDate), "MMM dd, yyyy") : "Select date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -443,10 +444,12 @@ export default function DistanceRecalculation() {
             </div>
           </div>
 
+          <DateRangeError fromDate={startDate} toDate={endDate} />
+
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button
               onClick={handleRecalculate}
-              disabled={isSubmitting || isRefreshingVerification || selectedEmployeeIds.length === 0}
+              disabled={isSubmitting || isRefreshingVerification || selectedEmployeeIds.length === 0 || dateRangeInvalid || !startDate || !endDate}
               className="w-full sm:w-auto sm:min-w-56"
             >
               {isSubmitting ? (

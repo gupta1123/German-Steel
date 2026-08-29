@@ -150,8 +150,8 @@ export default function RequirementComplaintCard({
         </div>
         <div className="flex items-center gap-1.5 truncate">
           <Calendar className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-          <span className="truncate" title={format(new Date(item.createdDate), "MMM d, yyyy")}>
-            {format(new Date(item.createdDate), "MMM d, yyyy")}
+          <span className="truncate" title={format(new Date(item.createdDate), "MMM dd, yyyy")}>
+            {format(new Date(item.createdDate), "MMM dd, yyyy")}
           </span>
         </div>
         <div className="flex items-center gap-1.5">

@@ -38,6 +38,7 @@ import {
 import { buildCityOptions, mergeCityOptions, normalizeCityKey } from '@/lib/city-options';
 import { getPrimaryTeamManager, getTeamAssignedCities, getTeamManagers } from '@/lib/team-access';
 import { API } from '@/lib/api';
+import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 interface Team {
     id: number;
@@ -102,6 +103,20 @@ const Teams: React.FC = () => {
     const [selectedManagerIds, setSelectedManagerIds] = useState<number[]>([]);
     const [managerSearchTerm, setManagerSearchTerm] = useState("");
     const [isLoadingManagers, setIsLoadingManagers] = useState(false);
+
+    const managerBaselineIds = useMemo(() => {
+        const team = teams.find((item) => item.id === selectedTeamId);
+        return team ? getTeamManagers(team).map((manager) => manager.id).sort((a, b) => a - b) : [];
+    }, [selectedTeamId, teams]);
+    const managerDraftIds = useMemo(
+        () => [...selectedManagerIds].sort((a, b) => a - b),
+        [selectedManagerIds]
+    );
+    const managerChangesAreDirty = isManagersModalVisible && JSON.stringify(managerDraftIds) !== JSON.stringify(managerBaselineIds);
+    const cityChangesAreDirty = isManageCitiesModalVisible && selectedCities.length > 0;
+    const fieldOfficerChangesAreDirty = isEditModalVisible && selectedFieldOfficers.length > 0;
+    const teamChangesAreDirty = managerChangesAreDirty || cityChangesAreDirty || fieldOfficerChangesAreDirty;
+    const { requestDiscard } = useUnsavedChanges(teamChangesAreDirty);
 
     // Get auth data from localStorage instead of props
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
@@ -611,6 +626,37 @@ const Teams: React.FC = () => {
         }
     };
 
+    const closeManagersModal = () => {
+        requestDiscard(() => {
+            setIsManagersModalVisible(false);
+            setModalError(null);
+            setSelectedManagerIds([]);
+            setManagerSearchTerm('');
+            setCurrentTeamId(null);
+        }, managerChangesAreDirty);
+    };
+
+    const closeManageCitiesModal = () => {
+        requestDiscard(() => {
+            setIsManageCitiesModalVisible(false);
+            setError(null);
+            setModalError(null);
+            setSelectedCities([]);
+            setCitySearchTerm('');
+            setIsCityPopoverOpen(false);
+            setCurrentTeamId(null);
+        }, cityChangesAreDirty);
+    };
+
+    const closeEditModal = () => {
+        requestDiscard(() => {
+            setIsEditModalVisible(false);
+            setError(null);
+            setModalError(null);
+            setSelectedFieldOfficers([]);
+        }, fieldOfficerChangesAreDirty);
+    };
+
     const currentTeamManagers = useMemo(() => {
         const team = teams.find((item) => item.id === currentTeamId);
         return team ? getTeamManagers(team).sort(sortByNameAsc) : [];
@@ -875,13 +921,8 @@ const Teams: React.FC = () => {
 
             {/* Edit Managers Modal */}
             <Dialog open={isManagersModalVisible} onOpenChange={(open) => {
-                setIsManagersModalVisible(open);
-                if (!open) {
-                    setModalError(null);
-                    setSelectedManagerIds([]);
-                    setManagerSearchTerm('');
-                    setCurrentTeamId(null);
-                }
+                if (open) setIsManagersModalVisible(true);
+                else closeManagersModal();
             }}>
                 <DialogContent className="sm:max-w-[560px]">
                     <DialogHeader>
@@ -970,7 +1011,7 @@ const Teams: React.FC = () => {
                         )}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsManagersModalVisible(false)} disabled={isSaving}>
+                        <Button variant="outline" onClick={closeManagersModal} disabled={isSaving}>
                             Cancel
                         </Button>
                         <Button onClick={handleSaveManagers} disabled={selectedManagerIds.length === 0 || isSaving || isLoadingManagers}>
@@ -989,15 +1030,8 @@ const Teams: React.FC = () => {
 
             {/* Manage Cities Modal */}
             <Dialog open={isManageCitiesModalVisible} onOpenChange={(open) => {
-                setIsManageCitiesModalVisible(open);
-                if (!open) {
-                    setError(null); // Clear errors when modal closes
-                    setModalError(null);
-                    setSelectedCities([]);
-                    setCitySearchTerm('');
-                    setIsCityPopoverOpen(false);
-                    setCurrentTeamId(null);
-                }
+                if (open) setIsManageCitiesModalVisible(true);
+                else closeManageCitiesModal();
             }}>
                 <DialogContent className="sm:max-w-[500px]">
                     <DialogHeader>
@@ -1166,13 +1200,7 @@ const Teams: React.FC = () => {
                     <DialogFooter>
                         <Button 
                             variant="outline" 
-                            onClick={() => {
-                                setIsManageCitiesModalVisible(false);
-                                setModalError(null);
-                                setSelectedCities([]);
-                                setCitySearchTerm('');
-                                setIsCityPopoverOpen(false);
-                            }}
+                            onClick={closeManageCitiesModal}
                             disabled={isSaving}
                         >
                             Close
@@ -1183,11 +1211,8 @@ const Teams: React.FC = () => {
 
             {/* Edit Team Modal - Add Field Officer */}
             <Dialog open={isEditModalVisible} onOpenChange={(open) => {
-                setIsEditModalVisible(open);
-                if (!open) {
-                    setError(null); // Clear errors when modal closes
-                    setModalError(null);
-                }
+                if (open) setIsEditModalVisible(true);
+                else closeEditModal();
             }}>
                 <DialogContent className="sm:max-w-[500px]">
                     <DialogHeader>
@@ -1263,7 +1288,7 @@ const Teams: React.FC = () => {
                         )}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsEditModalVisible(false)}>
+                        <Button variant="outline" onClick={closeEditModal}>
                             Cancel
                         </Button>
                         <Button 

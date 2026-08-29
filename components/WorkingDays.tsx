@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Loader2, Calendar, Clock } from 'lucide-react';
+import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 interface WorkingDaysData {
     fullDayCount: number;
@@ -32,6 +33,11 @@ const WorkingDays: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const workingDaysAreDirty = editMode && (
+        Number(editedData.fullDayCount) !== workingDays.fullDayCount ||
+        Number(editedData.halfDayCount) !== workingDays.halfDayCount
+    );
+    const { requestDiscard } = useUnsavedChanges(workingDaysAreDirty);
 
     // Get auth data from localStorage instead of props
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
@@ -128,11 +134,13 @@ const WorkingDays: React.FC = () => {
     };
 
     const cancelEdit = () => {
-        setEditedData({
-            fullDayCount: workingDays.fullDayCount,
-            halfDayCount: workingDays.halfDayCount
+        requestDiscard(() => {
+            setEditedData({
+                fullDayCount: workingDays.fullDayCount,
+                halfDayCount: workingDays.halfDayCount
+            });
+            setEditMode(false);
         });
-        setEditMode(false);
     };
 
     useEffect(() => {

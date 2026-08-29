@@ -482,7 +482,7 @@ export default function ExpensesPage() {
     const rows = filteredTableExpenses.map((expense) => [
       expense.employeeName,
       expense.employeePosition,
-      format(new Date(expense.date), "MMM d, yyyy"),
+      format(new Date(expense.date), "MMM dd, yyyy"),
       expense.category,
       expense.description ?? "",
       `₹${(expense.amount || 0).toFixed(2)}`,
@@ -737,7 +737,7 @@ export default function ExpensesPage() {
                               {expense.employeePosition}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
-                              {format(new Date(expense.date), "MMM d, yyyy")}
+                              {format(new Date(expense.date), "MMM dd, yyyy")}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
                               {expense.category}

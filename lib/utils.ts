@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { format, isToday, isYesterday, parseISO } from "date-fns"
+import { format, parseISO } from "date-fns"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -28,7 +28,7 @@ export function formatTimeTo12Hour(timeString: string): string {
 }
 
 /**
- * Formats date string to user-friendly format (Today, Yesterday, or 09 Oct 2018)
+ * Formats date strings consistently for display (for example, Oct 09, 2018)
  * @param dateString - Date in yyyy-MM-dd format
  * @returns Formatted date string
  */
@@ -38,13 +38,7 @@ export function formatDateToUserFriendly(dateString: string): string {
   try {
     const date = parseISO(dateString);
     
-    if (isToday(date)) {
-      return 'Today';
-    } else if (isYesterday(date)) {
-      return 'Yesterday';
-    } else {
-      return format(date, 'dd MMM yyyy');
-    }
+    return format(date, 'MMM dd, yyyy');
   } catch (error) {
     console.error('Error formatting date:', error);
     return dateString; // Return original string if formatting fails
@@ -54,7 +48,7 @@ export function formatDateToUserFriendly(dateString: string): string {
 /**
  * Formats last updated field combining date and time formatting
  * @param lastUpdatedString - String in format "yyyy-MM-dd HH:mm" or similar
- * @returns Formatted string like "Today 05:30 PM" or "09 Oct 2018 05:30 PM"
+ * @returns Formatted string like "Oct 09, 2018 05:30 PM"
  */
 export function formatLastUpdated(lastUpdatedString: string): string {
   if (!lastUpdatedString) return '';

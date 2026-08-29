@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Edit, Trash2, CheckCircle, XCircle, Building2, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Heading, Text } from "@/components/ui/typography";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 type Brand = {
     id: number;
@@ -43,6 +44,25 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState<boolean>(false);
     const [brandPendingDelete, setBrandPendingDelete] = useState<Brand | null>(null);
     const [isDeleting, setIsDeleting] = useState<boolean>(false);
+    const emptyBrand: NewBrand = { brandName: "", pros: [], cons: [] };
+    const originalBrand = editingBrandId == null
+        ? emptyBrand
+        : brands.find((brand) => brand.id === editingBrandId) ?? emptyBrand;
+    const brandDraftIsDirty = (isAdding || isEditing) && (
+        newBrand.brandName !== originalBrand.brandName ||
+        JSON.stringify(newBrand.pros) !== JSON.stringify(originalBrand.pros) ||
+        JSON.stringify(newBrand.cons) !== JSON.stringify(originalBrand.cons)
+    );
+    const { requestDiscard } = useUnsavedChanges(brandDraftIsDirty);
+
+    const cancelBrandDraft = () => {
+        requestDiscard(() => {
+            setIsAdding(false);
+            setIsEditing(false);
+            setEditingBrandId(null);
+            setNewBrand({ brandName: "", pros: [], cons: [] });
+        }, brandDraftIsDirty);
+    };
 
     const fetchBrands = useCallback(async () => {
         try {
@@ -310,12 +330,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                         </div>
                         <div className="flex justify-end gap-3 pt-4 border-t border-border">
                             <Button
-                                onClick={() => {
-                                    setIsAdding(false);
-                                    setIsEditing(false);
-                                    setEditingBrandId(null);
-                                    setNewBrand({ brandName: "", pros: [], cons: [] });
-                                }}
+                                onClick={cancelBrandDraft}
                                 variant="outline"
                             >
                                 Cancel

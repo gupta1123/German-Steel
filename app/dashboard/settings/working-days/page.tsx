@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { Calendar, CheckCircle, Save, Pencil } from "lucide-react";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 // Mock data
 const mockWorkingDaysConfig = {
@@ -17,15 +18,23 @@ export default function WorkingDaysSettings() {
   const [workingDaysConfig, setWorkingDaysConfig] = useState(mockWorkingDaysConfig);
   const [tempConfig, setTempConfig] = useState(mockWorkingDaysConfig);
   const [isEditing, setIsEditing] = useState(false);
+  const hasUnsavedChanges = isEditing && (
+    tempConfig.fullDayVisits !== workingDaysConfig.fullDayVisits ||
+    tempConfig.halfDayVisits !== workingDaysConfig.halfDayVisits
+  );
+  const { markSaved, requestDiscard } = useUnsavedChanges(hasUnsavedChanges);
 
   const handleSave = () => {
+    markSaved();
     setWorkingDaysConfig({...tempConfig});
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    setTempConfig({...workingDaysConfig});
-    setIsEditing(false);
+    requestDiscard(() => {
+      setTempConfig({...workingDaysConfig});
+      setIsEditing(false);
+    });
   };
 
   const handleEdit = () => {

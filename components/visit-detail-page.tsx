@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -79,6 +79,7 @@ import { hasManagerPrivileges } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
 import BrandTab from './BrandTab';
+import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 type Priority = 'low' | 'medium' | 'high';
 
@@ -428,7 +429,7 @@ const getBrowserLocation = () =>
   });
 
 export default function VisitDetailPage() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useParams();
   const visitId = params?.id as string;
   const { token, userRole, userData, currentUser } = useAuth();
@@ -558,6 +559,91 @@ export default function VisitDetailPage() {
   const [newCons, setNewCons] = useState<string[]>([]);
   const [currentPro, setCurrentPro] = useState('');
   const [currentCon, setCurrentCon] = useState('');
+
+  const originalNoteContent = isNoteEditMode && editingNoteId !== null
+    ? notes.find((note) => note.id === editingNoteId)?.content ?? ''
+    : '';
+  const noteDraftIsDirty = isNoteModalVisible && noteContent !== originalNoteContent;
+  const checkoutDraftIsDirty = isCheckoutModalOpen && Boolean(visitDetail) && (
+    checkoutOutcome !== (visitDetail?.outcome || 'Interested') ||
+    checkoutFeedback !== (visitDetail?.feedback || '')
+  );
+  const brandDraftIsDirty = isAddBrandModalVisible && (
+    Boolean(newBrandName.trim()) ||
+    newPros.length > 0 ||
+    newCons.length > 0 ||
+    Boolean(currentPro.trim()) ||
+    Boolean(currentCon.trim())
+  );
+  const requirementDraftIsDirty = isRequirementModalOpen && (
+    Boolean(newTask.taskTitle.trim()) ||
+    Boolean(newTask.taskDesciption.trim()) ||
+    Boolean(newTask.dueDate) ||
+    newTask.priority !== 'low'
+  );
+  const complaintDraftIsDirty = isComplaintModalOpen && (
+    Boolean(complaintTask.taskTitle.trim()) ||
+    Boolean(complaintTask.taskDesciption.trim()) ||
+    Boolean(complaintTask.dueDate) ||
+    complaintTask.priority !== 'low'
+  );
+  const { requestDiscard } = useUnsavedChanges(
+    noteDraftIsDirty ||
+    checkoutDraftIsDirty ||
+    brandDraftIsDirty ||
+    requirementDraftIsDirty ||
+    complaintDraftIsDirty
+  );
+
+  const closeNoteModal = () => {
+    setIsNoteModalVisible(false);
+    setNoteContent('');
+    setIsNoteEditMode(false);
+    setEditingNoteId(null);
+    setEditingNoteDetails(null);
+  };
+  const requestCloseNoteModal = () => {
+    requestDiscard(closeNoteModal, noteDraftIsDirty);
+  };
+  const closeCheckoutModal = () => {
+    setIsCheckoutModalOpen(false);
+    setCheckoutError(null);
+    setCheckoutOutcome(visitDetail?.outcome || 'Interested');
+    setCheckoutFeedback(visitDetail?.feedback || '');
+  };
+  const requestCloseCheckoutModal = () => {
+    requestDiscard(closeCheckoutModal, checkoutDraftIsDirty);
+  };
+  const closeRequirementModal = () => {
+    setIsRequirementModalOpen(false);
+    setTaskCreateError(null);
+    setActiveRequirementTab('general');
+    setNewTask((current) => ({
+      ...current,
+      taskTitle: '',
+      taskDesciption: '',
+      dueDate: '',
+      priority: 'low',
+    }));
+  };
+  const requestCloseRequirementModal = () => {
+    requestDiscard(closeRequirementModal, requirementDraftIsDirty);
+  };
+  const closeComplaintModal = () => {
+    setIsComplaintModalOpen(false);
+    setTaskCreateError(null);
+    setActiveComplaintTab('general');
+    setComplaintTask((current) => ({
+      ...current,
+      taskTitle: '',
+      taskDesciption: '',
+      dueDate: '',
+      priority: 'low',
+    }));
+  };
+  const requestCloseComplaintModal = () => {
+    requestDiscard(closeComplaintModal, complaintDraftIsDirty);
+  };
 
   const giftAttachment = useMemo(
     () => visitDetail?.attachmentResponse?.find(
@@ -1057,7 +1143,7 @@ export default function VisitDetailPage() {
     {
       icon: Calendar,
       label: "Date & Time",
-      value: visitDetail ? `${format(new Date(visitDetail.visit_date), "MMM d, yyyy")} at ${visitDetail.checkinTime || "N/A"}` : "N/A",
+      value: visitDetail ? `${format(new Date(visitDetail.visit_date), "MMM dd, yyyy")} at ${visitDetail.checkinTime || "N/A"}` : "N/A",
     },
     { icon: Clock, label: "Duration", value: metrics.find(m => m.title === 'Visit Duration')?.value || "N/A" },
     { icon: User, label: "Visited by", value: visitDetail?.employeeName || "N/A" },
@@ -1104,7 +1190,7 @@ export default function VisitDetailPage() {
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return "N/A";
-      return format(date, "MMM d, yyyy");
+      return format(date, "MMM dd, yyyy");
     } catch {
       return "N/A";
     }
@@ -1740,7 +1826,7 @@ export default function VisitDetailPage() {
                           <div className="text-sm text-muted-foreground">
                             {visitDetail?.checkinDate && visitDetail?.checkinTime ? (
                               <div className="flex flex-col">
-                                <span>{format(new Date(visitDetail.checkinDate), "dd MMM yyyy")}</span>
+                                <span>{format(new Date(visitDetail.checkinDate), "MMM dd, yyyy")}</span>
                                 <span className="text-xs">
                                   {format(parseISO(`1970-01-01T${visitDetail.checkinTime}`), 'h:mm a')}
                                 </span>
@@ -1761,7 +1847,7 @@ export default function VisitDetailPage() {
                           <div className="text-sm text-muted-foreground">
                             {visitDetail?.checkoutDate && visitDetail?.checkoutTime ? (
                               <div className="flex flex-col">
-                                <span>{format(new Date(visitDetail.checkoutDate), "dd MMM yyyy")}</span>
+                                <span>{format(new Date(visitDetail.checkoutDate), "MMM dd, yyyy")}</span>
                                 <span className="text-xs">
                                   {format(parseISO(`1970-01-01T${visitDetail.checkoutTime}`), 'h:mm a')}
                                 </span>
@@ -2033,7 +2119,7 @@ export default function VisitDetailPage() {
                               <div className="text-right">
                                 <p className="text-xs font-medium text-foreground">
                             {visit.checkinDate && visit.checkinTime
-                                    ? format(new Date(visit.checkinDate), "dd MMM ''yy")
+                                    ? format(new Date(visit.checkinDate), "MMM dd, yyyy")
                                     : 'TBD'}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
@@ -2179,7 +2265,7 @@ export default function VisitDetailPage() {
                           </div>
                         </div>
                         <div className="text-xs md:text-sm text-gray-600 space-y-2">
-                          <p>Due: {format(new Date(req.dueDate), "MMM d, yyyy")}</p>
+                          <p>Due: {format(new Date(req.dueDate), "MMM dd, yyyy")}</p>
                           <div className="flex items-center">
                             <div className="avatar w-5 h-5 md:w-6 md:h-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
                               <span className="text-xs">{getInitials(req.assignedTo || 'Unknown')}</span>
@@ -2222,7 +2308,7 @@ export default function VisitDetailPage() {
                           </div>
                         </div>
                         <div className="text-xs md:text-sm text-gray-600 space-y-2">
-                          <p>Reported: {format(new Date(complaint.dueDate), "MMM d, yyyy")}</p>
+                          <p>Reported: {format(new Date(complaint.dueDate), "MMM dd, yyyy")}</p>
                           <div className="flex items-center">
                             <div className="avatar w-5 h-5 md:w-6 md:h-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
                               <span className="text-xs">{getInitials(complaint.assignedTo || 'Unknown')}</span>
@@ -2397,7 +2483,7 @@ export default function VisitDetailPage() {
                 {notes.map((note) => (
                   <div key={note.id} className="rounded-lg border bg-card p-3 md:p-4">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                      <span className="text-xs text-muted-foreground">{format(new Date(note.createdDate), "MMM d, yyyy")}</span>
+                      <span className="text-xs text-muted-foreground">{format(new Date(note.createdDate), "MMM dd, yyyy")}</span>
                         <div className="flex items-center gap-1">
                           <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-7 w-7">
                             <Edit className="h-3 w-3" />
@@ -2419,12 +2505,8 @@ export default function VisitDetailPage() {
       {/* Modals */}
       {/* Notes Modal */}
       <Dialog open={isNoteModalVisible} onOpenChange={(open) => {
-        if (!open) {
-          setIsNoteModalVisible(false);
-          setNoteContent('');
-          setIsNoteEditMode(false);
-          setEditingNoteId(null);
-        }
+        if (open) setIsNoteModalVisible(true);
+        else requestCloseNoteModal();
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2442,7 +2524,7 @@ export default function VisitDetailPage() {
               className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
             <div className="flex flex-col sm:flex-row justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsNoteModalVisible(false)} className="w-full sm:w-auto">
+              <Button variant="outline" onClick={requestCloseNoteModal} className="w-full sm:w-auto">
                 Cancel
               </Button>
               <Button onClick={saveNote} className="w-full sm:w-auto" disabled={isNoteSaving || !noteContent.trim()}>
@@ -2489,12 +2571,9 @@ export default function VisitDetailPage() {
       </Dialog>
 
       <Dialog open={isCheckoutModalOpen} onOpenChange={(open) => {
-        if (!isCheckingOut) {
-          setIsCheckoutModalOpen(open);
-          if (!open) {
-            setCheckoutError(null);
-          }
-        }
+        if (isCheckingOut) return;
+        if (open) setIsCheckoutModalOpen(true);
+        else requestCloseCheckoutModal();
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2537,7 +2616,7 @@ export default function VisitDetailPage() {
             <div className="flex flex-col justify-end gap-2 sm:flex-row">
               <Button
                 variant="outline"
-                onClick={() => setIsCheckoutModalOpen(false)}
+                onClick={requestCloseCheckoutModal}
                 disabled={isCheckingOut}
                 className="w-full sm:w-auto"
               >
@@ -2623,7 +2702,7 @@ export default function VisitDetailPage() {
                       />
                     </div>
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={() => { setTaskCreateError(null); setIsRequirementModalOpen(false); }} className="w-full sm:w-auto">Cancel</Button>
+                      <Button variant="outline" onClick={requestCloseRequirementModal} className="w-full sm:w-auto">Cancel</Button>
                       <Button onClick={() => setActiveRequirementTab('details')} className="w-full sm:w-auto">Next</Button>
                     </div>
                   </div>
@@ -2640,7 +2719,7 @@ export default function VisitDetailPage() {
                             className={`w-full justify-start text-left font-normal ${!newTask.dueDate && 'text-muted-foreground'}`}
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {newTask.dueDate ? format(new Date(newTask.dueDate), 'PPP') : <span>Pick a date</span>}
+                            {newTask.dueDate ? format(new Date(newTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
                       </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
@@ -2681,7 +2760,10 @@ export default function VisitDetailPage() {
                       </div>
                     )}
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={() => setActiveRequirementTab('general')} className="w-full sm:w-auto">Back</Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setActiveRequirementTab('general')} className="w-full sm:w-auto">Back</Button>
+                        <Button variant="ghost" onClick={requestCloseRequirementModal} className="w-full sm:w-auto">Cancel</Button>
+                      </div>
                       <Button onClick={() => createTask('requirement')} disabled={isCreatingTask} className="w-full sm:w-auto">
                         {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Create Requirement
@@ -2753,7 +2835,7 @@ export default function VisitDetailPage() {
                       />
               </div>
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={() => { setTaskCreateError(null); setIsComplaintModalOpen(false); }} className="w-full sm:w-auto">Cancel</Button>
+                      <Button variant="outline" onClick={requestCloseComplaintModal} className="w-full sm:w-auto">Cancel</Button>
                       <Button onClick={() => setActiveComplaintTab('details')} className="w-full sm:w-auto">Next</Button>
                     </div>
                   </div>
@@ -2770,7 +2852,7 @@ export default function VisitDetailPage() {
                             className={`w-full justify-start text-left font-normal ${!complaintTask.dueDate && 'text-muted-foreground'}`}
               >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {complaintTask.dueDate ? format(new Date(complaintTask.dueDate), 'PPP') : <span>Pick a date</span>}
+                            {complaintTask.dueDate ? format(new Date(complaintTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
               </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
@@ -2811,7 +2893,10 @@ export default function VisitDetailPage() {
                       </div>
                     )}
                     <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={() => setActiveComplaintTab('general')} className="w-full sm:w-auto">Back</Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setActiveComplaintTab('general')} className="w-full sm:w-auto">Back</Button>
+                        <Button variant="ghost" onClick={requestCloseComplaintModal} className="w-full sm:w-auto">Cancel</Button>
+                      </div>
                       <Button onClick={() => createTask('complaint')} disabled={isCreatingTask} className="w-full sm:w-auto">
                         {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Create Complaint

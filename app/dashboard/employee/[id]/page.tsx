@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { API } from "@/lib/api";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 const ACTIVITY_TABS = [
   { value: 'visits', label: 'Visits', icon: 'fas fa-map-marked-alt' },
@@ -110,6 +111,8 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
   const [expenseEndDate, setExpenseEndDate] = useState<Date | undefined>(new Date());
   const [pricingStartDate, setPricingStartDate] = useState<Date | undefined>(new Date());
   const [pricingEndDate, setPricingEndDate] = useState<Date | undefined>(new Date());
+  const expenseDateRangeInvalid = isDateRangeInvalid(expenseStartDate, expenseEndDate);
+  const pricingDateRangeInvalid = isDateRangeInvalid(pricingStartDate, pricingEndDate);
   const [visitPage, setVisitPage] = useState(1);
   const [visitPageSize, setVisitPageSize] = useState(5);
   const [visitTotalElements, setVisitTotalElements] = useState(0);
@@ -295,6 +298,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     const fetchExpenses = async () => {
+      if (expenseDateRangeInvalid) return;
       if (token && id) {
         const start = expenseStartDate ? expenseStartDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
         const end = expenseEndDate ? expenseEndDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-30`;
@@ -313,7 +317,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
     };
 
     fetchExpenses();
-  }, [token, id, expenseStartDate, expenseEndDate]);
+  }, [token, id, expenseStartDate, expenseEndDate, expenseDateRangeInvalid]);
 
   useEffect(() => {
     const fetchAttendanceStats = async () => {
@@ -334,6 +338,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     const fetchDailyPricing = async () => {
+      if (pricingDateRangeInvalid) return;
       if (token && id) {
         const start = pricingStartDate ? pricingStartDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
         const end = pricingEndDate ? pricingEndDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-30`;
@@ -352,7 +357,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
     };
 
     fetchDailyPricing();
-  }, [token, id, pricingStartDate, pricingEndDate]);
+  }, [token, id, pricingStartDate, pricingEndDate, pricingDateRangeInvalid]);
 
 
   const paginatedVisits = visits;
@@ -470,7 +475,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground">Joined</p>
                           <p className="text-sm text-muted-foreground">
-                            {format(new Date(employeeData.dateOfJoining), 'MMM d, yyyy')}
+                            {format(new Date(employeeData.dateOfJoining), 'MMM dd, yyyy')}
                           </p>
                         </div>
                       </div>
@@ -738,7 +743,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         <PopoverTrigger asChild>
                           <Button variant="outline" className="w-[200px] justify-start">
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {expenseStartDate ? format(expenseStartDate, 'MMM d, yyyy') : 'Select Start Date'}
+                            {expenseStartDate ? format(expenseStartDate, 'MMM dd, yyyy') : 'Select Start Date'}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
@@ -754,7 +759,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         <PopoverTrigger asChild>
                           <Button variant="outline" className="w-[200px] justify-start">
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {expenseEndDate ? format(expenseEndDate, 'MMM d, yyyy') : 'Select End Date'}
+                            {expenseEndDate ? format(expenseEndDate, 'MMM dd, yyyy') : 'Select End Date'}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
@@ -767,6 +772,8 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         </PopoverContent>
                       </Popover>
                     </div>
+
+                    <DateRangeError fromDate={expenseStartDate} toDate={expenseEndDate} />
 
                     <div className="space-y-3">
                       {expenses.map((expense) => (
@@ -805,7 +812,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         <PopoverTrigger asChild>
                           <Button variant="outline" className="w-[200px] justify-start">
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {pricingStartDate ? format(pricingStartDate, 'MMM d, yyyy') : 'Select Start Date'}
+                            {pricingStartDate ? format(pricingStartDate, 'MMM dd, yyyy') : 'Select Start Date'}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
@@ -821,7 +828,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         <PopoverTrigger asChild>
                           <Button variant="outline" className="w-[200px] justify-start">
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {pricingEndDate ? format(pricingEndDate, 'MMM d, yyyy') : 'Select End Date'}
+                            {pricingEndDate ? format(pricingEndDate, 'MMM dd, yyyy') : 'Select End Date'}
           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
@@ -834,6 +841,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         </PopoverContent>
                       </Popover>
         </div>
+        <DateRangeError fromDate={pricingStartDate} toDate={pricingEndDate} />
         
                     <div className="space-y-3">
                       {dailyPricing.map((pricing) => (

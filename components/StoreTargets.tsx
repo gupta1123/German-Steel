@@ -54,6 +54,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -138,8 +139,8 @@ const getInitials = (name: string) =>
 const getTargetPeriod = (target: SalesTargetDto) => {
   if (target.targetType === "DAILY") {
     if (!target.targetDate) return "Daily target";
-    return parseLocalDate(target.targetDate).toLocaleDateString("en-IN", {
-      day: "2-digit", month: "short", year: "numeric",
+    return parseLocalDate(target.targetDate).toLocaleDateString("en-US", {
+      month: "short", day: "2-digit", year: "numeric",
     });
   }
   const month = Number(target.month);
@@ -344,6 +345,7 @@ export default function StoreTargets() {
   const [searchQuery, setSearchQuery] = useState("");
   const [now, setNow] = useState(today);
   const [form, setForm] = useState<TargetFormState>(() => createEmptyForm());
+  const [baselineForm, setBaselineForm] = useState<TargetFormState>(() => createEmptyForm());
   const [editingTarget, setEditingTarget] = useState<SalesTargetDto | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isLoadingTargets, setIsLoadingTargets] = useState(true);
@@ -353,6 +355,8 @@ export default function StoreTargets() {
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const targetFormIsDirty = isFormOpen && JSON.stringify(form) !== JSON.stringify(baselineForm);
+  const { markSaved, requestDiscard } = useUnsavedChanges(targetFormIsDirty);
 
   const storeOptions = useMemo(() => stores.map((store) => ({
     value: String(store.storeId), label: `${store.storeName}${store.city ? ` · ${store.city}` : ""}`, data: store,
@@ -481,16 +485,17 @@ export default function StoreTargets() {
   }, [form.month, form.targetTons, form.targetType, form.year]);
 
   const openCreateForm = () => {
+    const emptyForm = createEmptyForm(filters);
     setEditingTarget(null);
-    setForm(createEmptyForm(filters));
+    setForm(emptyForm);
+    setBaselineForm(emptyForm);
     setFormError(null);
     setSuccessMessage(null);
     setIsFormOpen(true);
   };
 
   const openEditForm = (target: SalesTargetDto) => {
-    setEditingTarget(target);
-    setForm({
+    const targetForm: TargetFormState = {
       targetType: target.targetType,
       storeId: String(target.storeId),
       employeeId: String(target.employeeId),
@@ -501,7 +506,10 @@ export default function StoreTargets() {
       manualFulfilment: target.fulfilledTons != null,
       fulfilledTons: String(target.fulfilledTons ?? getEffectiveFulfilled(target)),
       remarks: target.remarks || "",
-    });
+    };
+    setEditingTarget(target);
+    setForm(targetForm);
+    setBaselineForm(targetForm);
     setFormError(null);
     setSuccessMessage(null);
     setIsFormOpen(true);
@@ -549,6 +557,7 @@ export default function StoreTargets() {
         const selectedStore = stores.find((store) => String(store.storeId) === form.storeId);
         setSuccessMessage(`Target for ${selectedStore?.storeName || "the selected store"} was created.`);
       }
+      markSaved();
       setIsFormOpen(false);
       setEditingTarget(null);
       await loadTargets();
@@ -576,8 +585,16 @@ export default function StoreTargets() {
 
   const setFormOpen = (open: boolean) => {
     if (isSaving) return;
-    setIsFormOpen(open);
-    if (!open) { setEditingTarget(null); setFormError(null); }
+    if (open) {
+      setIsFormOpen(true);
+      return;
+    }
+    requestDiscard(() => {
+      markSaved();
+      setIsFormOpen(false);
+      setEditingTarget(null);
+      setFormError(null);
+    });
   };
 
   return (

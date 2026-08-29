@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
 import { MapPin, Store, Phone, DollarSign, Users, Filter } from 'lucide-react';
+import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 
 interface SalesData {
   [monthYear: string]: number;
@@ -74,6 +75,13 @@ export default function EnquiriesPage() {
   const [tempStartYear, setTempStartYear] = useState<number | undefined>(undefined);
   const [tempEndMonth, setTempEndMonth] = useState<number | undefined>(undefined);
   const [tempEndYear, setTempEndYear] = useState<number | undefined>(undefined);
+  const tempStartDate = tempStartYear !== undefined && tempStartMonth !== undefined
+    ? `${tempStartYear}-${String(tempStartMonth + 1).padStart(2, '0')}-01`
+    : '';
+  const tempEndDate = tempEndYear !== undefined && tempEndMonth !== undefined
+    ? `${tempEndYear}-${String(tempEndMonth + 1).padStart(2, '0')}-01`
+    : '';
+  const dateRangeInvalid = isDateRangeInvalid(tempStartDate, tempEndDate);
 
   const [tempStoreNameFilter, setTempStoreNameFilter] = useState<string>('');
   const [tempTalukaFilter, setTempTalukaFilter] = useState<string>('');
@@ -161,6 +169,7 @@ export default function EnquiriesPage() {
 
 
   const handleApplyFilters = () => {
+    if (dateRangeInvalid) return;
     setCurrentPage(0);
 
     const sDateStr = formatMonthYearToString(tempStartMonth, tempStartYear);
@@ -576,7 +585,6 @@ export default function EnquiriesPage() {
                     if (value === "NONE_VALUE") setTempEndYear(undefined);
                     else setTempEndYear(parseInt(value));
                   }}
-                  disabled={typeof tempStartYear !== 'number' || typeof tempStartMonth !== 'number'}
                 >
                   <SelectTrigger className="w-full h-14 md:h-10 text-lg md:text-sm">
                     <SelectValue placeholder="Select year" />
@@ -613,6 +621,7 @@ export default function EnquiriesPage() {
                 </Select>
               </div>
             </div>
+            <DateRangeError fromDate={tempStartDate} toDate={tempEndDate} className="mt-4" />
         
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mt-8 pt-6 border-t border-border">
@@ -634,6 +643,7 @@ export default function EnquiriesPage() {
             <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
               <Button 
                 onClick={handleApplyFilters} 
+                disabled={dateRangeInvalid}
                 className="flex-1 sm:flex-none sm:px-6 h-14 text-lg md:h-10 md:text-sm font-medium"
               >
                 Apply Filters
@@ -763,7 +773,6 @@ export default function EnquiriesPage() {
                       if (value === "NONE_VALUE") setTempEndYear(undefined);
                       else setTempEndYear(parseInt(value));
                     }}
-                    disabled={typeof tempStartYear !== 'number' || typeof tempStartMonth !== 'number'}
                   >
                     <SelectTrigger className="w-full h-14 text-lg">
                       <SelectValue placeholder="Select year" />
@@ -800,6 +809,8 @@ export default function EnquiriesPage() {
                   </Select>
                 </div>
 
+                <DateRangeError fromDate={tempStartDate} toDate={tempEndDate} />
+
                 {/* Sort by Store Count */}
                 <div className="flex items-center space-x-3 pt-4">
                   <Switch
@@ -829,6 +840,7 @@ export default function EnquiriesPage() {
                     handleApplyFilters();
                     setIsMobileFilterExpanded(false);
                   }}
+                  disabled={dateRangeInvalid}
                   className="flex-1 h-14 text-lg font-medium"
                 >
                   Apply Filters

@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { Heading, Text } from "@/components/ui/typography";
 import {
   Table,
@@ -229,17 +230,24 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
   const [competitorPrice, setCompetitorPrice] = useState("");
   const [location, setLocation] = useState("");
   const [pricingDate, setPricingDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const defaultPricingDate = format(new Date(), "yyyy-MM-dd");
+  const hasUnsavedPricing = Boolean(
+    brand || product || price || competitorPrice || location || pricingDate !== defaultPricingDate
+  );
+  const { markSaved } = useUnsavedChanges(hasUnsavedPricing);
 
 
   const handleAddPricing = () => {
     // In a real app, this would submit the form data
-    alert(`Pricing added for ${brand} - ${product} on ${pricingDate}`);
+    alert(`Pricing added for ${brand} - ${product} on ${format(new Date(pricingDate), "MMM dd, yyyy")}`);
+    markSaved();
     // Reset form
     setBrand("");
     setProduct("");
     setPrice("");
     setCompetitorPrice("");
     setLocation("");
+    setPricingDate(defaultPricingDate);
   };
 
   return (
@@ -281,7 +289,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                     </Badge>
                   </div>
                   <Text size="xs" tone="muted">
-                    Joined {format(new Date(employee.hireDate), "MMM d, yyyy")}
+                    Joined {format(new Date(employee.hireDate), "MMM dd, yyyy")}
                   </Text>
                 </div>
               </div>
@@ -335,7 +343,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs md:text-sm font-medium truncate">
-                      {format(new Date(employee.hireDate), "MMM d, yyyy")}
+                      {format(new Date(employee.hireDate), "MMM dd, yyyy")}
                     </p>
                     <p className="text-xs text-muted-foreground">Hire Date</p>
                   </div>
@@ -444,7 +452,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                                 <Badge variant="secondary" className="text-xs">{visit.duration}</Badge>
                               </div>
                               <p className="text-xs text-muted-foreground mb-1">
-                                {visit.purpose} on {format(new Date(visit.date), "MMM d, yyyy")}
+                                {visit.purpose} on {format(new Date(visit.date), "MMM dd, yyyy")}
                               </p>
                               <p className="text-xs">{visit.outcome}</p>
                             </div>
@@ -470,7 +478,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                             <Badge variant="secondary" className="text-xs w-fit">{visit.duration}</Badge>
                           </div>
                           <p className="text-xs md:text-sm text-muted-foreground mt-1">
-                            {visit.purpose} on {format(new Date(visit.date), "MMM d, yyyy")}
+                            {visit.purpose} on {format(new Date(visit.date), "MMM dd, yyyy")}
                           </p>
                           <p className="text-xs md:text-sm mt-1 md:mt-2">{visit.outcome}</p>
                         </div>
@@ -501,7 +509,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                           <div className="flex justify-between items-start mb-3">
                             <div>
                               <p className="font-semibold text-sm">
-                                {format(new Date(record.date), "MMM d, yyyy")}
+                                {format(new Date(record.date), "MMM dd, yyyy")}
                               </p>
                               <Badge variant="outline" className="text-xs mt-1.5 capitalize">
                                 {record.status}
@@ -547,7 +555,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                         {mockAttendance.map((record) => (
                           <TableRow key={record.id}>
                             <TableCell className="font-medium text-xs md:text-sm whitespace-nowrap">
-                              {format(new Date(record.date), "MMM d, yyyy")}
+                              {format(new Date(record.date), "MMM dd, yyyy")}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs whitespace-nowrap capitalize">
@@ -603,7 +611,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                                 </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {format(new Date(expense.date), "MMM d, yyyy")}
+                                {format(new Date(expense.date), "MMM dd, yyyy")}
                               </p>
                             </div>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -642,7 +650,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                         {mockExpenses.map((expense) => (
                           <TableRow key={expense.id}>
                             <TableCell className="font-medium text-xs md:text-sm whitespace-nowrap">
-                              {format(new Date(expense.date), "MMM d, yyyy")}
+                              {format(new Date(expense.date), "MMM dd, yyyy")}
                             </TableCell>
                             <TableCell className="text-xs md:text-sm whitespace-nowrap">{expense.category}</TableCell>
                             <TableCell className="text-xs md:text-sm">{expense.description}</TableCell>
@@ -781,7 +789,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                               <p className="font-semibold text-sm mb-1">{pricing.brand}</p>
                               <p className="text-xs text-muted-foreground mb-0.5">{pricing.product}</p>
                               <p className="text-xs text-muted-foreground">
-                                {format(new Date(pricing.date), "MMM d, yyyy")}
+                                {format(new Date(pricing.date), "MMM dd, yyyy")}
                               </p>
                             </div>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -825,7 +833,7 @@ export default function EmployeeDetailPage({ employee }: { employee: Employee })
                         {mockPricing.map((pricing) => (
                           <TableRow key={pricing.id}>
                             <TableCell className="font-medium text-xs md:text-sm whitespace-nowrap">
-                              {format(new Date(pricing.date), "MMM d, yyyy")}
+                              {format(new Date(pricing.date), "MMM dd, yyyy")}
                             </TableCell>
                             <TableCell className="text-xs md:text-sm whitespace-nowrap">{pricing.brand}</TableCell>
                             <TableCell className="text-xs md:text-sm whitespace-nowrap">{pricing.product}</TableCell>

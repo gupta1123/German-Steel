@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import {
   Card,
   CardContent,
@@ -66,18 +67,30 @@ export default function ModernLeaveApprovalCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editedType, setEditedType] = useState<"full" | "half">(request.approvedType);
   const [isViewingReason, setIsViewingReason] = useState(false);
+  const leaveTypeIsDirty = isEditing && editedType !== request.approvedType;
+  const { markSaved, requestDiscard } = useUnsavedChanges(leaveTypeIsDirty);
+
+  const cancelEdit = () => {
+    requestDiscard(() => {
+      setEditedType(request.approvedType);
+      setIsEditing(false);
+    }, leaveTypeIsDirty);
+  };
 
   const handleApprove = () => {
+    markSaved();
     onStatusChange(request.id, "approved", editedType);
     setIsEditing(false);
   };
 
   const handleReject = () => {
+    markSaved();
     onStatusChange(request.id, "rejected");
     setIsEditing(false);
   };
 
   const handleSaveEdit = () => {
+    markSaved();
     onStatusChange(request.id, request.status, editedType);
     setIsEditing(false);
   };
@@ -142,7 +155,7 @@ export default function ModernLeaveApprovalCard({
             <div>
               <h3 className="font-semibold">{request.executiveName}</h3>
               <p className="text-sm text-muted-foreground">
-                Submitted {format(new Date(request.submittedAt), "MMM d, yyyy h:mm a")}
+                Submitted {format(new Date(request.submittedAt), "MMM dd, yyyy, h:mm a")}
               </p>
             </div>
           </div>
@@ -176,7 +189,7 @@ export default function ModernLeaveApprovalCard({
             <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <div>
               <p className="text-sm font-medium">
-                {format(new Date(request.date), "EEEE, MMMM d, yyyy")}
+                {format(new Date(request.date), "MMM dd, yyyy")}
               </p>
               <p className="text-xs text-muted-foreground">Leave Date</p>
             </div>
@@ -243,7 +256,7 @@ export default function ModernLeaveApprovalCard({
           <>
             {isEditing ? (
               <>
-                <Button variant="outline" onClick={() => setIsEditing(false)}>
+                <Button variant="outline" onClick={cancelEdit}>
                   Cancel
                 </Button>
                 <div className="flex gap-2">

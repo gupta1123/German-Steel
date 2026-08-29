@@ -178,7 +178,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                         <Badge variant="outline" className="text-xs">{emoji} {status}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {format(parseISO(visit.date), "dd MMM ''yy")} • {visit.purpose}
+                        {format(parseISO(visit.date), "MMM dd, yyyy")} • {visit.purpose}
                       </p>
                     </div>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewDetails(visit.id)}>
@@ -258,7 +258,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                 return (
                   <tr key={visit.id}>
                     <td className="px-2 md:px-4 py-2 text-xs md:text-sm">{visit.customer}</td>
-                    <td className="px-2 md:px-4 py-2 text-xs md:text-sm whitespace-nowrap">{format(parseISO(visit.date), "dd MMM ''yy")}</td>
+                    <td className="px-2 md:px-4 py-2 text-xs md:text-sm whitespace-nowrap">{format(parseISO(visit.date), "MMM dd, yyyy")}</td>
                     <td className="px-2 md:px-4 py-2 text-xs md:text-sm">{visit.purpose}</td>
                     <td className="px-2 md:px-4 py-2 text-xs md:text-sm capitalize">{visit.employeeState || 'N/A'}</td>
                     <td className="px-2 md:px-4 py-2 text-xs md:text-sm">

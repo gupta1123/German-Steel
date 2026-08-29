@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import Link from "next/link";
+import Link from "@/components/guarded-link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import NewCustomersReport from "@/components/NewCustomersReport";
 import SalesPerformanceReport from "@/components/SalesPerformanceReport";
@@ -44,6 +44,7 @@ import dayjs from 'dayjs';
 import { API } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
+import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 
 interface AttendanceStats {
     absences: number;
@@ -165,6 +166,7 @@ const ReportsPage: React.FC = () => {
     
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
+    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
 
     const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
     const [isEndDatePopoverOpen, setIsEndDatePopoverOpen] = useState(false);
@@ -221,20 +223,21 @@ const ReportsPage: React.FC = () => {
                         return 0;
                     });
                 setFieldOfficers(activeFieldOfficers);
-                if (activeFieldOfficers.length > 0 && (!selectedEmployeeId || !activeFieldOfficers.some(emp => emp.id.toString() === selectedEmployeeId))) {
-                    setSelectedEmployeeId(activeFieldOfficers[0].id.toString());
-                } else if (activeFieldOfficers.length === 0) {
-                    setSelectedEmployeeId('');
-                }
+                setSelectedEmployeeId((currentEmployeeId) =>
+                    activeFieldOfficers.some((employee) => employee.id.toString() === currentEmployeeId)
+                        ? currentEmployeeId
+                        : ''
+                );
             } catch (err) {
                 setEmployeesError((err as Error).message || 'Could not fetch employee data.');
                 setFieldOfficers([]);
+                setSelectedEmployeeId('');
             } finally {
                 setEmployeesLoading(false);
             }
         };
         if (token) fetchAllEmployeeData();
-    }, [token, userRole, currentUser, userData?.employeeId, selectedEmployeeId]);
+    }, [token, userRole, currentUser, userData?.employeeId]);
 
     useEffect(() => {
         const now = new Date();
@@ -263,7 +266,7 @@ const ReportsPage: React.FC = () => {
     };
 
     const fetchCustomerTypeDetails = async (displayCategory: string) => {
-        if (!selectedEmployeeId || !startDate || !endDate) {
+        if (!selectedEmployeeId || !startDate || !endDate || dateRangeInvalid) {
             setDetailsError("Please generate the main report first.");
             return;
         }
@@ -290,6 +293,9 @@ const ReportsPage: React.FC = () => {
     const handleGenerateReport = async () => {
         if (!rangeSelect) {
             setDateRangeError('Please select a Date Range.');
+            return;
+        }
+        if (dateRangeInvalid) {
             return;
         }
         if (!selectedEmployeeId || !startDate || !endDate) {
@@ -537,7 +543,7 @@ const ReportsPage: React.FC = () => {
                                         disabled={rangeSelect !== 'custom' && rangeSelect !== ''}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {startDate ? dayjs(startDate).format('MMM D, YYYY') : <span>Pick a date</span>}
+                                        {startDate ? dayjs(startDate).format('MMM DD, YYYY') : <span>Pick a date</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -562,7 +568,7 @@ const ReportsPage: React.FC = () => {
                                         disabled={rangeSelect !== 'custom' && rangeSelect !== ''}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {endDate ? dayjs(endDate).format('MMM D, YYYY') : <span>Pick a date</span>}
+                                        {endDate ? dayjs(endDate).format('MMM DD, YYYY') : <span>Pick a date</span>}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0" align="start">
@@ -577,11 +583,12 @@ const ReportsPage: React.FC = () => {
               </Popover>
             </div>
             
-            <div className="flex items-end">
+            <div className="flex flex-col justify-end gap-2">
+                            <DateRangeError fromDate={startDate} toDate={endDate} />
                             <Button
                                 onClick={handleGenerateReport}
                                 className="w-full sm:w-auto min-w-[180px] whitespace-nowrap"
-                                disabled={reportLoading || fieldOfficers.length === 0 || !selectedEmployeeId || !startDate || !endDate}
+                                disabled={reportLoading || fieldOfficers.length === 0 || !selectedEmployeeId || !startDate || !endDate || dateRangeInvalid}
                             >
                                 {reportLoading ? (
                                     <>
@@ -652,7 +659,7 @@ const ReportsPage: React.FC = () => {
                                     Visit Details for {selectedCustomerTypeForDetails}
                                 </h3>
                                 <p className="text-sm text-muted-foreground">
-                                    {selectedEmployeeName !== "Select Field Officer" && `Officer: ${selectedEmployeeName} • ${dayjs(startDate).format('MMM D, YYYY')} - ${dayjs(endDate).format('MMM D, YYYY')}`}
+                                    {selectedEmployeeName !== "Select Field Officer" && `Officer: ${selectedEmployeeName} • ${dayjs(startDate).format('MMM DD, YYYY')} - ${dayjs(endDate).format('MMM DD, YYYY')}`}
                                 </p>
                             </div>
                             
@@ -706,7 +713,7 @@ const ReportsPage: React.FC = () => {
                                                             <TableCell>{detail.city}</TableCell>
                                                             <TableCell>{detail.taluka}</TableCell>
                                                             <TableCell>{detail.state}</TableCell>
-                                                            <TableCell>{dayjs(detail.lastVisited).format('MMM D, YYYY')}</TableCell>
+                                                            <TableCell>{dayjs(detail.lastVisited).format('MMM DD, YYYY')}</TableCell>
                                                             <TableCell>{detail.visitCount}</TableCell>
                                                             <TableCell>
                                                                 {(() => {

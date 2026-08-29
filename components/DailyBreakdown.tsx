@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/guarded-link";
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +16,7 @@ import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { API } from "@/lib/api";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 import {
     Dialog,
     DialogContent,
@@ -107,6 +108,7 @@ const DailyBreakdown: React.FC = () => {
     // Filter States
     const [startDate, setStartDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), 'yyyy-MM-dd'));
+    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
     const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
     
     // UI Popover States
@@ -141,7 +143,7 @@ const DailyBreakdown: React.FC = () => {
     }, [token]);
 
     const fetchDailyBreakdown = useCallback(async () => {
-        if (!token || !selectedEmployee) return;
+        if (!token || !selectedEmployee || dateRangeInvalid) return;
         setIsLoading(true);
         setError(null);
         setSelectedRecords(new Set()); // Reset selection on refetch
@@ -160,7 +162,7 @@ const DailyBreakdown: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [token, startDate, endDate, selectedEmployee]);
+    }, [token, startDate, endDate, selectedEmployee, dateRangeInvalid]);
 
     useEffect(() => { if (token) fetchEmployees(); }, [token, fetchEmployees]);
 
@@ -381,7 +383,7 @@ const DailyBreakdown: React.FC = () => {
                             <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                                 <PopoverTrigger asChild>
                                     <Button variant="outline" className="w-full justify-start text-left font-normal bg-card">
-                                        <CalendarIcon className="mr-2 h-4 w-4" />{startDate ? format(new Date(startDate), 'MMM d, yyyy') : "Select"}
+                                        <CalendarIcon className="mr-2 h-4 w-4" />{startDate ? format(new Date(startDate), 'MMM dd, yyyy') : "Select"}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0"><SpacedCalendar mode="single" selected={startDate ? new Date(startDate) : undefined} onSelect={d => {setStartDate(formatDateForFilter(d)); setIsStartDatePopoverOpen(false)}} /></PopoverContent>
@@ -392,7 +394,7 @@ const DailyBreakdown: React.FC = () => {
                             <Popover open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                                 <PopoverTrigger asChild>
                                     <Button variant="outline" className="w-full justify-start text-left font-normal bg-card">
-                                        <CalendarIcon className="mr-2 h-4 w-4" />{endDate ? format(new Date(endDate), 'MMM d, yyyy') : "Select"}
+                                        <CalendarIcon className="mr-2 h-4 w-4" />{endDate ? format(new Date(endDate), 'MMM dd, yyyy') : "Select"}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0"><SpacedCalendar mode="single" selected={endDate ? new Date(endDate) : undefined} onSelect={d => {setEndDate(formatDateForFilter(d)); setIsEndDatePopoverOpen(false)}} /></PopoverContent>
@@ -400,6 +402,8 @@ const DailyBreakdown: React.FC = () => {
                         </div>
 
                     </div>
+
+                    <DateRangeError fromDate={startDate} toDate={endDate} />
 
                     {/* Content Area */}
                     {isLoading ? (
@@ -437,7 +441,7 @@ const DailyBreakdown: React.FC = () => {
                                             <div className="pr-8">
                                                 <div className="font-semibold text-lg">{day.employeeName}</div>
                                                 <div className="text-sm text-muted-foreground flex items-center gap-2 mb-2">
-                                                    {format(new Date(day.date), 'EEE, MMM d')}
+                                                    {format(new Date(day.date), 'MMM dd, yyyy')}
                                                     <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800">{day.dayOfWeek}</span>
                                                 </div>
                                                 <div className="flex flex-wrap gap-2 mb-3">
@@ -494,7 +498,7 @@ const DailyBreakdown: React.FC = () => {
                                                         <Checkbox checked={isSelected} onCheckedChange={() => toggleRecord(day.date, day.employeeId)} />
                                                     </TableCell>
                                                     <TableCell className="font-medium">{day.employeeName}</TableCell>
-                                                    <TableCell>{format(new Date(day.date), 'dd/MM/yyyy')} <span className="text-muted-foreground text-xs ml-1">({day.dayOfWeek.slice(0,3)})</span></TableCell>
+                                                    <TableCell>{format(new Date(day.date), 'MMM dd, yyyy')} <span className="text-muted-foreground text-xs ml-1">({day.dayOfWeek.slice(0,3)})</span></TableCell>
                                                     <TableCell><StatusBadge status={day.dayType} isSunday={day.isSunday} /></TableCell>
                                                     <TableCell className="text-center">{day.completedVisits}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(day.baseEarned)}</TableCell>

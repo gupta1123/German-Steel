@@ -21,6 +21,7 @@ import { Calendar as CalendarIcon, UserCheck, UserX, RefreshCw } from 'lucide-re
 import { API } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
+import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -62,6 +63,7 @@ const NewCustomersReport = () => {
     const [reportData, setReportData] = useState<Record<string, ReportData[]>>({});
     const [startDate, setStartDate] = useState(() => format(subMonths(new Date(), 2), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
     const [showTopPerformers, setShowTopPerformers] = useState(true);
     const [isAutoSelect, setIsAutoSelect] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
@@ -87,10 +89,10 @@ const NewCustomersReport = () => {
     }, [token, userRole, currentUser, userData?.employeeId]);
 
     useEffect(() => {
-        if (token && startDate && endDate) {
+        if (token && startDate && endDate && !dateRangeInvalid) {
             fetchReportData();
         }
-    }, [token, startDate, endDate]);
+    }, [token, startDate, endDate, dateRangeInvalid]);
 
     // --- Data Fetching ---
     const fetchEmployees = async () => {
@@ -124,6 +126,7 @@ const NewCustomersReport = () => {
     };
 
     const fetchReportData = async () => {
+        if (!startDate || !endDate || dateRangeInvalid) return;
         setIsLoading(true);
         try {
             const groupedReport = await API.getReportForEmployeeRange<ReportData>(startDate, endDate);
@@ -336,7 +339,7 @@ const NewCustomersReport = () => {
                         variant="ghost" 
                         size="icon" 
                         onClick={fetchReportData} 
-                        disabled={isLoading}
+                        disabled={isLoading || dateRangeInvalid || !startDate || !endDate}
                         title="Refresh Data"
                     >
                         <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -406,6 +409,7 @@ const NewCustomersReport = () => {
                             />
                         </div>
                     </div>
+                    <DateRangeError fromDate={startDate} toDate={endDate} className="mt-4" />
                 </CardContent>
             </Card>
 

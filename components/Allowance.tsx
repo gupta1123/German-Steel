@@ -23,6 +23,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DollarSign, Truck, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { API } from "@/lib/api";
+import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 interface Employee {
     id: number;
@@ -40,6 +41,21 @@ interface TravelRate {
     bikeRatePerKm: number;
 }
 
+const ALLOWANCE_AMOUNT_FIELDS = [
+    'travelAllowance',
+    'dearnessAllowance',
+    'fullMonthSalary',
+    'carRatePerKm',
+    'bikeRatePerKm',
+] as const;
+
+const isValidAmount = (value: unknown) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string' && value.trim() === '') return false;
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount >= 0;
+};
+
 const Allowance: React.FC = () => {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [editMode, setEditMode] = useState<{ [key: number]: boolean }>({});
@@ -50,6 +66,19 @@ const Allowance: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+
+    const employeeAllowanceIsDirty = (employee: Employee) => {
+        if (!editMode[employee.id] || !editedData[employee.id]) return false;
+        const draft = editedData[employee.id];
+        const travelRate = travelRates.find((rate) => rate.employeeId === employee.id);
+        return Number(draft.travelAllowance ?? 0) !== Number(employee.travelAllowance ?? 0) ||
+            Number(draft.dearnessAllowance ?? 0) !== Number(employee.dearnessAllowance ?? 0) ||
+            Number(draft.fullMonthSalary ?? 0) !== Number(employee.fullMonthSalary ?? 0) ||
+            Number(draft.carRatePerKm ?? 0) !== Number(travelRate?.carRatePerKm ?? 0) ||
+            Number(draft.bikeRatePerKm ?? 0) !== Number(travelRate?.bikeRatePerKm ?? 0);
+    };
+    const allowanceChangesAreDirty = employees.some(employeeAllowanceIsDirty);
+    const { requestDiscard } = useUnsavedChanges(allowanceChangesAreDirty);
 
     // Get auth data from localStorage instead of props
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
@@ -109,9 +138,15 @@ const Allowance: React.FC = () => {
         }));
     };
 
+    const isEmployeeEditValid = (employeeId: number) => {
+        const draft = editedData[employeeId];
+        return Boolean(draft && ALLOWANCE_AMOUNT_FIELDS.every((field) => isValidAmount(draft[field])));
+    };
+
     const updateSalary = async (employeeId: number) => {
         const employee = editedData[employeeId];
-        if (!employee) return;
+        const savedEmployee = employees.find((candidate) => candidate.id === employeeId);
+        if (!employee || !savedEmployee || !isEmployeeEditValid(employeeId) || !employeeAllowanceIsDirty(savedEmployee)) return;
 
         setIsSaving(true);
         try {
@@ -199,15 +234,18 @@ const Allowance: React.FC = () => {
     };
 
     const cancelEdit = (employeeId: number) => {
-        setEditMode(prevMode => ({
-            ...prevMode,
-            [employeeId]: false
-        }));
-        setEditedData(prevData => {
-            const newData = { ...prevData };
-            delete newData[employeeId];
-            return newData;
-        });
+        const employee = employees.find((candidate) => candidate.id === employeeId);
+        requestDiscard(() => {
+            setEditMode(prevMode => ({
+                ...prevMode,
+                [employeeId]: false
+            }));
+            setEditedData(prevData => {
+                const newData = { ...prevData };
+                delete newData[employeeId];
+                return newData;
+            });
+        }, employee ? employeeAllowanceIsDirty(employee) : false);
     };
 
     const indexOfLastRow = currentPage * itemsPerPage;
@@ -225,6 +263,8 @@ const Allowance: React.FC = () => {
             currency: 'INR'
         }).format(amount);
     };
+
+    const formatRatePerKm = (amount: number) => `${formatCurrency(amount)}/km`;
 
     return (
         <div className="space-y-6">
@@ -292,6 +332,8 @@ const Allowance: React.FC = () => {
                                                     {editMode[employee.id] ? (
                                                         <Input
                                                             type="number"
+                                                            min="0"
+                                                            step="0.01"
                                                             value={String(editedData[employee.id]?.dearnessAllowance ?? employee.dearnessAllowance ?? 0)}
                                                             onChange={(e) => handleInputChange(employee.id, 'dearnessAllowance', e.target.value)}
                                                             className="w-32 text-right h-12 text-lg"
@@ -308,6 +350,8 @@ const Allowance: React.FC = () => {
                                                     {editMode[employee.id] ? (
                                                         <Input
                                                             type="number"
+                                                            min="0"
+                                                            step="0.01"
                                                             value={String(editedData[employee.id]?.fullMonthSalary ?? employee.fullMonthSalary ?? 0)}
                                                             onChange={(e) => handleInputChange(employee.id, 'fullMonthSalary', e.target.value)}
                                                             className="w-32 text-right h-12 text-lg"
@@ -324,12 +368,14 @@ const Allowance: React.FC = () => {
                                                     {editMode[employee.id] ? (
                                                         <Input
                                                             type="number"
+                                                            min="0"
+                                                            step="0.01"
                                                             value={String(editedData[employee.id]?.carRatePerKm ?? travelRates.find(rate => rate.employeeId === employee.id)?.carRatePerKm ?? 0)}
                                                             onChange={(e) => handleInputChange(employee.id, 'carRatePerKm', e.target.value)}
                                                             className="w-32 text-right h-12 text-lg"
                                                         />
                                                     ) : (
-                                                        <span className="font-semibold">{travelRates.find(rate => rate.employeeId === employee.id)?.carRatePerKm ?? 0}/km</span>
+                                                        <span className="font-semibold">{formatRatePerKm(travelRates.find(rate => rate.employeeId === employee.id)?.carRatePerKm ?? 0)}</span>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center justify-between">
@@ -340,12 +386,14 @@ const Allowance: React.FC = () => {
                                                     {editMode[employee.id] ? (
                                                         <Input
                                                             type="number"
+                                                            min="0"
+                                                            step="0.01"
                                                             value={String(editedData[employee.id]?.bikeRatePerKm ?? travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0)}
                                                             onChange={(e) => handleInputChange(employee.id, 'bikeRatePerKm', e.target.value)}
                                                             className="w-32 text-right h-12 text-lg"
                                                         />
                                                     ) : (
-                                                        <span className="font-semibold">{travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0}/km</span>
+                                                        <span className="font-semibold">{formatRatePerKm(travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0)}</span>
                                                     )}
                                                 </div>
                                             </div>
@@ -355,7 +403,7 @@ const Allowance: React.FC = () => {
                                                         <Button 
                                                             onClick={() => updateSalary(employee.id)} 
                                                             className="flex-1 h-14 text-lg font-medium" 
-                                                            disabled={isSaving}
+                                                            disabled={isSaving || !isEmployeeEditValid(employee.id) || !employeeAllowanceIsDirty(employee)}
                                                         >
                                                             {isSaving ? (
                                                                 <>
@@ -404,6 +452,8 @@ const Allowance: React.FC = () => {
                                                             {editMode[employee.id] ? (
                                                                 <Input
                                                                     type="number"
+                                                                    min="0"
+                                                                    step="0.01"
                                                                     value={String(editedData[employee.id]?.dearnessAllowance ?? employee.dearnessAllowance ?? 0)}
                                                                     onChange={(e) => handleInputChange(employee.id, 'dearnessAllowance', e.target.value)}
                                                                     className="w-full"
@@ -416,6 +466,8 @@ const Allowance: React.FC = () => {
                                                             {editMode[employee.id] ? (
                                                                 <Input
                                                                     type="number"
+                                                                    min="0"
+                                                                    step="0.01"
                                                                     value={String(editedData[employee.id]?.fullMonthSalary ?? employee.fullMonthSalary ?? 0)}
                                                                     onChange={(e) => handleInputChange(employee.id, 'fullMonthSalary', e.target.value)}
                                                                     className="w-full"
@@ -428,24 +480,28 @@ const Allowance: React.FC = () => {
                                                             {editMode[employee.id] ? (
                                                                 <Input
                                                                     type="number"
+                                                                    min="0"
+                                                                    step="0.01"
                                                                     value={String(editedData[employee.id]?.carRatePerKm ?? travelRates.find(rate => rate.employeeId === employee.id)?.carRatePerKm ?? 0)}
                                                                     onChange={(e) => handleInputChange(employee.id, 'carRatePerKm', e.target.value)}
                                                                     className="w-full"
                                                                 />
                                                             ) : (
-                                                                `${travelRates.find(rate => rate.employeeId === employee.id)?.carRatePerKm ?? 0}/km`
+                                                                formatRatePerKm(travelRates.find(rate => rate.employeeId === employee.id)?.carRatePerKm ?? 0)
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
                                                             {editMode[employee.id] ? (
                                                                 <Input
                                                                     type="number"
+                                                                    min="0"
+                                                                    step="0.01"
                                                                     value={String(editedData[employee.id]?.bikeRatePerKm ?? travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0)}
                                                                     onChange={(e) => handleInputChange(employee.id, 'bikeRatePerKm', e.target.value)}
                                                                     className="w-full"
                                                                 />
                                                             ) : (
-                                                                `${travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0}/km`
+                                                                formatRatePerKm(travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0)
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
@@ -454,7 +510,7 @@ const Allowance: React.FC = () => {
                                                                     <Button 
                                                                         onClick={() => updateSalary(employee.id)} 
                                                                         className="flex-1" 
-                                                                        disabled={isSaving}
+                                                                        disabled={isSaving || !isEmployeeEditValid(employee.id) || !employeeAllowanceIsDirty(employee)}
                                                                     >
                                                                         {isSaving ? (
                                                                             <>

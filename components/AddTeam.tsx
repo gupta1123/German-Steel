@@ -17,6 +17,7 @@ import { hasAdminSetupPrivileges } from "@/lib/auth";
 import { buildCityOptions, mergeCityOptions, normalizeCityKey } from "@/lib/city-options";
 import { getTeamManagers } from "@/lib/team-access";
 import { API } from "@/lib/api";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 interface Employee {
     id: number;
@@ -101,6 +102,13 @@ const AddTeam = () => {
     const [assigningEmployeeCities, setAssigningEmployeeCities] = useState<string[]>([]);
     const [modalError, setModalError] = useState<string | null>(null);
 
+    const teamDraftIsDirty = isModalOpen && (
+        selectedOfficeManager.length > 0 ||
+        selectedCities.length > 0 ||
+        selectedEmployees.length > 0
+    );
+    const { requestDiscard } = useUnsavedChanges(teamDraftIsDirty);
+
     const canManageTeamSetup = hasAdminSetupPrivileges(userRole, currentUser);
     const token = authToken ?? (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
 
@@ -129,6 +137,10 @@ const AddTeam = () => {
         setCitySearchTerm("");
         setAssigningEmployeeCities([]);
         setModalError(null);
+    };
+
+    const requestCloseModal = () => {
+        requestDiscard(() => setIsModalOpen(false), teamDraftIsDirty);
     };
 
     const fetchOfficeManagers = useCallback(async () => {
@@ -503,7 +515,10 @@ const AddTeam = () => {
                 });
                 setIsModalOpen(true);
             }}>Add Team</Button>
-            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            <Dialog open={isModalOpen} onOpenChange={(open) => {
+                if (open) setIsModalOpen(true);
+                else requestCloseModal();
+            }}>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[1100px]">
                     <DialogHeader>
                         <DialogTitle>Add New Team</DialogTitle>
@@ -814,7 +829,7 @@ const AddTeam = () => {
                         </div>
                     )}
                     <div className="flex justify-end space-x-2 mt-4">
-                        <Button variant="outline" onClick={() => setIsModalOpen(false)}>
+                        <Button variant="outline" onClick={requestCloseModal}>
                             Cancel
                         </Button>
                         <Button

@@ -5,7 +5,7 @@ import { CheckedState } from "@radix-ui/react-checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CalendarIcon, Search, Users, ChevronDown, Download, MoreHorizontal } from "lucide-react";
+import { Loader2, CalendarIcon, Search, Users, ChevronDown, Download, MoreHorizontal, RotateCcw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from 'framer-motion';
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { API } from "@/lib/api";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { DateRangeError, getDateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 interface SummaryData {
     employeeName: string;
@@ -56,6 +58,11 @@ const toFiniteNumber = (value: number | string | null | undefined): number => {
     return Number.isFinite(numericValue) ? numericValue : 0;
 };
 
+const getDefaultSummaryDateRange = () => ({
+    start: '',
+    end: '',
+});
+
 const getFullCalendarMonthRange = (dateValue: string) => {
     const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) return null;
@@ -75,6 +82,8 @@ const getFullCalendarMonthRange = (dateValue: string) => {
 };
 
 const getFullMonthError = (startDate: string, endDate: string) => {
+    const dateRangeError = getDateRangeError(startDate, endDate);
+    if (dateRangeError) return dateRangeError;
     const monthRange = getFullCalendarMonthRange(startDate);
     if (!monthRange) {
         return "Please select a valid month.";
@@ -88,12 +97,14 @@ const getFullMonthError = (startDate: string, endDate: string) => {
 };
 
 const EmployeeSummary: React.FC = () => {
+    const defaultDateRange = useMemo(getDefaultSummaryDateRange, []);
     const [summaryData, setSummaryData] = useState<SummaryData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [summaryLoading, setSummaryLoading] = useState(false);
-    const [startDate, setStartDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), 'yyyy-MM-dd'));
+    const [startDate, setStartDate] = useState(defaultDateRange.start);
+    const [endDate, setEndDate] = useState(defaultDateRange.end);
+    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
     const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
     const [isEndDatePopoverOpen, setIsEndDatePopoverOpen] = useState(false);
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -106,6 +117,13 @@ const EmployeeSummary: React.FC = () => {
     const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false);
     const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
     const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
+    const savedAdjustmentInput = adjustmentEmployee
+        ? toFiniteNumber(adjustmentEmployee.salaryAdjustmentAmount) === 0
+            ? ""
+            : String(toFiniteNumber(adjustmentEmployee.salaryAdjustmentAmount))
+        : "";
+    const hasUnsavedAdjustment = isAdjustmentModalOpen && adjustmentAmountInput !== savedAdjustmentInput;
+    const { markSaved, requestDiscard } = useUnsavedChanges(hasUnsavedAdjustment);
 
     const handleClearEmployeeSelection = () => {
         setSelectedEmployeeIds([]);
@@ -145,12 +163,18 @@ const EmployeeSummary: React.FC = () => {
         return format(date, 'yyyy-MM-dd');
     };
 
-    const fetchSummaryData = async () => {
+    const fetchSummaryData = async (
+        requestedStartDate = startDate,
+        requestedEndDate = endDate,
+    ) => {
         setError(null);
         try {
+            if (isDateRangeInvalid(requestedStartDate, requestedEndDate)) {
+                return;
+            }
             setSummaryLoading(true);
             
-            if (!startDate || !endDate) {
+            if (!requestedStartDate || !requestedEndDate) {
                 throw new Error('Please select a valid date range');
             }
 
@@ -159,7 +183,7 @@ const EmployeeSummary: React.FC = () => {
             }
 
             const response = await fetch(
-                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/salary-calculation/manual-summary-range?startDate=${startDate}&endDate=${endDate}`,
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/salary-calculation/manual-summary-range?startDate=${requestedStartDate}&endDate=${requestedEndDate}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -182,6 +206,24 @@ const EmployeeSummary: React.FC = () => {
         } finally {
             setSummaryLoading(false);
         }
+    };
+
+    const filtersAreAtDefaults =
+        selectedEmployeeIds.length === 0 &&
+        employeeSearchTerm === "" &&
+        startDate === defaultDateRange.start &&
+        endDate === defaultDateRange.end;
+
+    const handleResetFilters = () => {
+        setSelectedEmployeeIds([]);
+        setEmployeeSearchTerm("");
+        setStartDate(defaultDateRange.start);
+        setEndDate(defaultDateRange.end);
+        setIsEmployeePopoverOpen(false);
+        setIsStartDatePopoverOpen(false);
+        setIsEndDatePopoverOpen(false);
+        setError(null);
+        setSummaryData([]);
     };
 
     // Remove automatic data fetching - only fetch on Apply Filter
@@ -265,7 +307,7 @@ const EmployeeSummary: React.FC = () => {
 
     const closeAdjustmentModal = () => {
         if (isApplyingAdjustment) return;
-        resetAdjustmentModal();
+        requestDiscard(resetAdjustmentModal);
     };
 
     const handleApplySalaryAdjustment = async () => {
@@ -312,6 +354,7 @@ const EmployeeSummary: React.FC = () => {
             }
 
             await fetchSummaryData();
+            markSaved();
             resetAdjustmentModal();
         } catch (error) {
             setAdjustmentError(error instanceof Error ? error.message : 'Failed to apply TA adjustment.');
@@ -520,7 +563,7 @@ const EmployeeSummary: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-6 bg-muted/30 rounded-lg">
                         <div className="space-y-3">
                             <div className="flex items-center justify-between">
-                                <Label className="text-lg md:text-sm font-medium text-foreground">Search Employees</Label>
+                                <Label className="text-lg md:text-sm font-medium text-foreground">Employees (optional)</Label>
                                 {selectedEmployeeIds.length > 0 && (
                                     <button
                                         type="button"
@@ -543,7 +586,7 @@ const EmployeeSummary: React.FC = () => {
                                         <span className="flex items-center gap-2 truncate">
                                             <Users className="h-5 w-5 text-primary" />
                                             {selectedEmployeeIds.length === 0
-                                                ? "Select employees..."
+                                                ? "All Employees"
                                                 : `${selectedEmployeeIds.length} employee${selectedEmployeeIds.length > 1 ? "s" : ""} selected`}
                                         </span>
                                         <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -641,7 +684,7 @@ const EmployeeSummary: React.FC = () => {
                                         className={`w-full h-14 md:h-10 text-lg md:text-sm justify-start text-left font-normal ${!startDate && 'text-muted-foreground'}`}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {startDate ? format(new Date(startDate), 'MMM d, yyyy') : <span>Pick start date</span>}
+                                        {startDate ? format(new Date(startDate), 'MMM dd, yyyy') : <span>Pick start date</span>}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0">
@@ -666,7 +709,7 @@ const EmployeeSummary: React.FC = () => {
                                         className={`w-full h-14 md:h-10 text-lg md:text-sm justify-start text-left font-normal ${!endDate && 'text-muted-foreground'}`}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {endDate ? format(new Date(endDate), 'MMM d, yyyy') : <span>Pick end date</span>}
+                                        {endDate ? format(new Date(endDate), 'MMM dd, yyyy') : <span>Pick end date</span>}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0">
@@ -682,17 +725,30 @@ const EmployeeSummary: React.FC = () => {
                                 </PopoverContent>
                             </Popover>
                         </div>
-                        <div className="flex items-end">
-                            <Button onClick={fetchSummaryData} className="w-full h-14 text-lg md:h-10 md:text-sm font-medium" disabled={summaryLoading}>
-                                {summaryLoading ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-6 w-6 md:h-4 md:w-4 animate-spin" />
-                                        Loading...
-                                    </>
-                                ) : (
-                                    'Apply Filter'
-                                )}
-                            </Button>
+                        <div className="flex flex-col justify-end gap-2">
+                            <DateRangeError fromDate={startDate} toDate={endDate} />
+                            <div className="flex items-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={handleResetFilters}
+                                    className="h-14 flex-1 text-lg md:h-10 md:text-sm font-medium"
+                                    disabled={summaryLoading || filtersAreAtDefaults}
+                                >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Reset Filters
+                                </Button>
+                                <Button onClick={() => void fetchSummaryData()} className="h-14 flex-1 text-lg md:h-10 md:text-sm font-medium" disabled={summaryLoading || dateRangeInvalid || !startDate || !endDate}>
+                                    {summaryLoading ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-6 w-6 md:h-4 md:w-4 animate-spin" />
+                                            Loading...
+                                        </>
+                                    ) : (
+                                        'Apply Filter'
+                                    )}
+                                </Button>
+                            </div>
                         </div>
                     </div>
 
@@ -758,7 +814,7 @@ const EmployeeSummary: React.FC = () => {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    onClick={fetchSummaryData}
+                                    onClick={() => void fetchSummaryData()}
                                     disabled={summaryLoading}
                                 >
                                     Try Again

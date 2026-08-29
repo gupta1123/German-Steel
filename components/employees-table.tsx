@@ -28,7 +28,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import Link from "next/link";
+import Link from "@/components/guarded-link";
 import { API, type EmployeeDto } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 

@@ -385,7 +385,7 @@ const PricingPage = () => {
                                         className={`w-full justify-start text-left font-normal ${!selectedDate && 'text-muted-foreground'}`}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {selectedDate ? format(new Date(selectedDate), 'PPP') : <span>Pick a date</span>}
+                                        {selectedDate ? format(new Date(selectedDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0" align="start">

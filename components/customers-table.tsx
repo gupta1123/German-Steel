@@ -18,7 +18,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import Link from "next/link";
+import Link from "@/components/guarded-link";
 import { format } from "date-fns";
 
 interface Customer {
@@ -102,7 +102,7 @@ export default function CustomersTable({ customers }: CustomersTableProps) {
                       <TableCell className="break-words">{customer.fieldOfficer}</TableCell>
                       <TableCell className="break-words">{customer.clientType}</TableCell>
                       <TableCell className="break-words">
-                        {`${format(new Date(customer.lastVisitDate), "d MMM")} (${customer.totalVisits})`}
+                        {`${format(new Date(customer.lastVisitDate), "MMM dd, yyyy")} (${customer.totalVisits})`}
                       </TableCell>
                       <TableCell className="break-words">
                         <DropdownMenu>

@@ -12,6 +12,7 @@ import { isManagerRoleValue } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AlertCircle, Search, Check, Loader2, ChevronDown } from 'lucide-react';
+import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 interface CustomerData {
   id?: number;
@@ -186,8 +187,6 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   );
   const [activeTab, setActiveTab] = useState<string>('basic');
   const [employees, setEmployees] = useState<EmployeeUserDto[]>([]);
-  const [primaryContactError, setPrimaryContactError] = useState<string | null>(null);
-  const [secondaryContactError, setSecondaryContactError] = useState<string | null>(null);
   const [isFieldOfficerPopoverOpen, setIsFieldOfficerPopoverOpen] = useState(false);
   const [fieldOfficerSearchTerm, setFieldOfficerSearchTerm] = useState("");
   const [dobDisplayValue, setDobDisplayValue] = useState<string>('');
@@ -205,6 +204,17 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [clientTypeError, setClientTypeError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasUserChanges, setHasUserChanges] = useState(false);
+  const { markSaved, requestDiscard } = useUnsavedChanges(isOpen && hasUserChanges);
+
+  const primaryContactDigits = String(customerData.primaryContact ?? '').replace(/\D/g, '');
+  const secondaryContactDigits = String(customerData.secondaryContact ?? '').replace(/\D/g, '');
+  const primaryContactError = primaryContactDigits.length > 0 && primaryContactDigits.length !== 10
+    ? 'Primary contact must be exactly 10 digits'
+    : null;
+  const secondaryContactError = secondaryContactDigits.length > 0 && secondaryContactDigits.length !== 10
+    ? 'Secondary contact must be exactly 10 digits'
+    : null;
 
   const fieldOfficerOptions = useMemo(() => {
     return employees
@@ -261,6 +271,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   }, [clientTypeOptions]);
 
   const handleCustomerStateChange = (state: LocationMasterDto) => {
+    setHasUserChanges(true);
     setSelectedStateId(state.id);
     setSelectedDistrictId(null);
     setLocationDistricts([]);
@@ -274,6 +285,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   };
 
   const handleCustomerDistrictChange = (district: LocationMasterDto) => {
+    setHasUserChanges(true);
     setSelectedDistrictId(district.id);
     setLocationCities([]);
     setCustomerData((previous) => ({
@@ -284,6 +296,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   };
 
   const handleCustomerCityChange = (city: LocationMasterDto) => {
+    setHasUserChanges(true);
     setCustomerData((previous) => ({
       ...previous,
       city: city.name,
@@ -291,6 +304,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   };
 
   const handleFieldOfficerSelect = (id: number) => {
+    setHasUserChanges(true);
     setCustomerData((previous) => ({
       ...previous,
       fieldOfficerId: id,
@@ -362,8 +376,6 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       country: 'India',
     });
     setActiveTab('basic');
-    setPrimaryContactError(null);
-    setSecondaryContactError(null);
     setSelectedStateId(null);
     setSelectedDistrictId(null);
     setLocationDistricts([]);
@@ -371,6 +383,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     setLocationError(null);
     setSubmitError(null);
     setIsSubmitting(false);
+    setHasUserChanges(false);
     setFieldOfficerSearchTerm('');
     setIsFieldOfficerPopoverOpen(false);
   }, [isOpen, existingData]);
@@ -515,45 +528,18 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   }, [isOpen, selectedDistrictId]);
 
   const handleInputChange = (field: keyof CustomerData, value: string | number) => {
+    setHasUserChanges(true);
     setSubmitError(null);
     let parsedValue: string | number = value;
-    const numberFields: (keyof CustomerData)[] = ['pincode', 'monthlySale', 'primaryContact', 'secondaryContact', 'fieldOfficerId', 'yearOfJoining'];
+    const numberFields: (keyof CustomerData)[] = ['pincode', 'monthlySale', 'fieldOfficerId', 'yearOfJoining'];
     
     // Validate contact fields
     if (field === 'primaryContact') {
-      const stringValue = value.toString();
-      // Only allow digits and limit to 10 characters
-      const digitsOnly = stringValue.replace(/\D/g, '');
-      if (digitsOnly.length > 10) {
-        return; // Don't update if more than 10 digits
-      }
-      
-      if (digitsOnly.length > 0 && digitsOnly.length < 10) {
-        setPrimaryContactError('Primary contact must be exactly 10 digits');
-      } else if (digitsOnly.length === 10) {
-        setPrimaryContactError(null);
-      } else {
-        setPrimaryContactError(null);
-      }
-      
-      parsedValue = digitsOnly === '' ? '' : parseInt(digitsOnly, 10);
+      // Keep contact values as strings while editing so leading zeroes and the
+      // validation state always match what the user sees in the input.
+      parsedValue = value.toString().replace(/\D/g, '').slice(0, 10);
     } else if (field === 'secondaryContact') {
-      const stringValue = value.toString();
-      // Only allow digits and limit to 10 characters
-      const digitsOnly = stringValue.replace(/\D/g, '');
-      if (digitsOnly.length > 10) {
-        return; // Don't update if more than 10 digits
-      }
-      
-      if (digitsOnly.length > 0 && digitsOnly.length < 10) {
-        setSecondaryContactError('Secondary contact must be exactly 10 digits');
-      } else if (digitsOnly.length === 10) {
-        setSecondaryContactError(null);
-      } else {
-        setSecondaryContactError(null);
-      }
-      
-      parsedValue = digitsOnly === '' ? '' : parseInt(digitsOnly, 10);
+      parsedValue = value.toString().replace(/\D/g, '').slice(0, 10);
     } else if (numberFields.includes(field)) {
       parsedValue = value === '' ? '' : parseInt(value.toString(), 10);
     }
@@ -565,7 +551,10 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || primaryContactError || secondaryContactError) {
+      if (primaryContactError || secondaryContactError) setActiveTab('contact');
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -620,6 +609,8 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       });
 
       if (response.ok) {
+        setHasUserChanges(false);
+        markSaved();
         onClose(); // Close the modal after successful submission
         if (onCustomerAdded) {
           onCustomerAdded(); // Refresh the customers list
@@ -643,6 +634,14 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleCloseRequest = () => {
+    requestDiscard(() => {
+      setHasUserChanges(false);
+      markSaved();
+      onClose();
+    });
   };
 
   const handleNext = () => {
@@ -740,7 +739,9 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   }, [isOpen, existingData]);
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) handleCloseRequest();
+    }}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Add Customer</DialogTitle>
@@ -869,12 +870,16 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   <Input 
                     id="primaryContact" 
                     type="tel" 
-                    value={customerData.primaryContact || ''} 
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={customerData.primaryContact ?? ''}
                     className={primaryContactError ? 'border-red-500' : ''}
+                    aria-invalid={!!primaryContactError}
+                    aria-describedby={primaryContactError ? 'primaryContact-error' : undefined}
                     onChange={(e) => handleInputChange('primaryContact', e.target.value)} 
                   />
                   {primaryContactError && (
-                    <p className="text-sm text-red-600 mt-1">{primaryContactError}</p>
+                    <p id="primaryContact-error" className="text-sm text-red-600 mt-1">{primaryContactError}</p>
                   )}
                 </div>
               </div>
@@ -886,12 +891,16 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   <Input 
                     id="secondaryContact" 
                     type="tel" 
-                    value={customerData.secondaryContact || ''} 
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={customerData.secondaryContact ?? ''}
                     className={secondaryContactError ? 'border-red-500' : ''}
+                    aria-invalid={!!secondaryContactError}
+                    aria-describedby={secondaryContactError ? 'secondaryContact-error' : undefined}
                     onChange={(e) => handleInputChange('secondaryContact', e.target.value)} 
                   />
                   {secondaryContactError && (
-                    <p className="text-sm text-red-600 mt-1">{secondaryContactError}</p>
+                    <p id="secondaryContact-error" className="text-sm text-red-600 mt-1">{secondaryContactError}</p>
                   )}
                 </div>
               </div>
@@ -1053,7 +1062,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
           </TabsContent>
         </Tabs>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={handleCloseRequest}>
             Cancel
           </Button>
           {activeTab !== 'basic' && (

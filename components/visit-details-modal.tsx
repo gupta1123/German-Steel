@@ -48,17 +48,20 @@ const getOutcomeStatus = (visit: Record<string, unknown>): { emoji: React.ReactN
 const formatDateTime = (dateString: string, timeString: string) => {
     if (!dateString || !timeString) return '';
     const date = new Date(`${dateString}T${timeString}`);
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const day = date.getDate();
-    const year = date.getFullYear().toString().slice(-2);
     const time = date.toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
     });
-    // Format like "Aug 1 '25 04:01 PM"
-    return `${month} ${day} '${year} ${time}`;
+    return `${formatDisplayDate(date)} ${time}`;
 };
+
+const formatDisplayDate = (value: string | Date) =>
+    new Date(value).toLocaleDateString('en-US', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric'
+    });
 
 const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, visitData, selectedDate, employeeName }) => {
     const [selectedVisit, setSelectedVisit] = useState<Record<string, unknown> | null>(null);
@@ -98,7 +101,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, 
                     {/* Accessibility title (visually hidden) */}
                     <DialogHeader className="sr-only">
                         <DialogTitle>
-                            Visits for {employeeName} on {new Date(selectedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                            Visits for {employeeName} on {formatDisplayDate(selectedDate)}
                         </DialogTitle>
                     </DialogHeader>
                   
@@ -115,12 +118,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, 
                                     Visits for {employeeName}
                                 </h2>
                                 <p className="text-sm text-gray-300">
-                                    {new Date(selectedDate).toLocaleDateString('en-US', {
-                                        weekday: 'long',
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric'
-                                    })}
+                                    {formatDisplayDate(selectedDate)}
                                 </p>
                             </div>
                             <div className="flex-shrink-0 flex items-center space-x-3">
@@ -175,11 +173,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, 
                                                             {employeeName || ''}
                                                         </TableCell>
                                                         <TableCell className="text-center px-3 py-3 w-[10%]">
-                                                            {new Date(selectedDate).toLocaleDateString('en-US', {
-                                                                month: 'short',
-                                                                day: 'numeric',
-                                                                year: 'numeric'
-                                                            })}
+                                                            {formatDisplayDate(selectedDate)}
                                                         </TableCell>
                                                         <TableCell className="text-center px-3 py-3 w-[12%]">
                                                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${color}`}>

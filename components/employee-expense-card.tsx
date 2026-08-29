@@ -201,7 +201,7 @@ export default function EmployeeExpenseCard({ employee, showExpenses, onToggleEx
                       <div className="flex items-center gap-1">
                         <Calendar className="h-3 w-3 text-muted-foreground" />
                         <Text size="xs" tone="muted">
-                          {format(new Date(expense.date), "MMM d, yyyy")}
+                          {format(new Date(expense.date), "MMM dd, yyyy")}
                         </Text>
                       </div>
                     </div>

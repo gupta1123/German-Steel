@@ -215,7 +215,7 @@ export default function EmployeeAttendanceCard({ employee, selectedMonth, select
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5" />
-              Visits on {selectedDate ? format(parseISO(selectedDate), "MMMM d, yyyy") : ""}
+              Visits on {selectedDate ? format(parseISO(selectedDate), "MMM dd, yyyy") : ""}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 max-h-96 overflow-y-auto">

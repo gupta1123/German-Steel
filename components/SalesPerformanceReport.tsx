@@ -24,6 +24,7 @@ import axios from 'axios';
 import moment from 'moment';
 import { useAuth } from '@/components/auth-provider';
 import './SalesPerformanceReport.css';
+import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 
 ChartJS.register(
     CategoryScale,
@@ -67,6 +68,7 @@ const SalesPerformanceReport: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [startDate, setStartDate] = useState(moment().subtract(3, 'months').format('YYYY-MM-DD'));
     const [endDate, setEndDate] = useState(moment().format('YYYY-MM-DD'));
+    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
     const [storeNameFilter, setStoreNameFilter] = useState('');
     const [cityFilter, setCityFilter] = useState('');
     const [storeSearchQuery, setStoreSearchQuery] = useState('');
@@ -125,6 +127,7 @@ const SalesPerformanceReport: React.FC = () => {
     }, [token]);
 
     const fetchReportData = useCallback(async () => {
+        if (!startDate || !endDate || dateRangeInvalid) return;
         if (!selectedStore) {
             setError('Please select a store');
             return;
@@ -168,7 +171,7 @@ const SalesPerformanceReport: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [selectedStore, startDate, endDate, fetchMonthData]);
+    }, [selectedStore, startDate, endDate, dateRangeInvalid, fetchMonthData]);
 
     const chartData = {
         labels: monthlyData.map(data => data.month),
@@ -463,9 +466,10 @@ const SalesPerformanceReport: React.FC = () => {
                             />
                         </div>
                     </div>
+                    <DateRangeError fromDate={startDate} toDate={endDate} className="mt-4" />
                     <div className="flex flex-col md:flex-row justify-end space-y-2 md:space-y-0 md:space-x-2 mt-4">
                         <Button onClick={fetchStores} className="w-full md:w-auto">Apply Filters</Button>
-                        <Button onClick={fetchReportData} disabled={loading || !selectedStore} className="w-full md:w-auto">
+                        <Button onClick={fetchReportData} disabled={loading || !selectedStore || dateRangeInvalid || !startDate || !endDate} className="w-full md:w-auto">
                             Generate Report
                         </Button>
                     </div>

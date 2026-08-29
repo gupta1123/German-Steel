@@ -23,6 +23,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useState } from "react";
 import { DollarSign, Plus, Edit, Save, X } from "lucide-react";
+import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 type Employee = {
   id: number;
@@ -33,6 +34,13 @@ type Employee = {
   carRatePerKm: number;
   bikeRatePerKm: number;
   status: string;
+};
+
+type EmployeeDraft = Omit<Employee, "da" | "salary" | "carRatePerKm" | "bikeRatePerKm"> & {
+  da: number | "";
+  salary: number | "";
+  carRatePerKm: number | "";
+  bikeRatePerKm: number | "";
 };
 
 // Mock data
@@ -79,10 +87,21 @@ const mockEmployees: Employee[] = [
   }
 ];
 
+const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+}).format(amount);
+
+const formatRatePerKm = (amount: number) => `${formatCurrency(amount)}/km`;
+
+const parseAmountInput = (value: string): number | "" => value === "" ? "" : Number(value);
+
+const isValidAmount = (value: number | "") => value !== "" && Number.isFinite(value) && value >= 0;
+
 export default function AllowanceSettings() {
   const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
-  const [tempEmployeeData, setTempEmployeeData] = useState<Employee | null>(null);
+  const [tempEmployeeData, setTempEmployeeData] = useState<EmployeeDraft | null>(null);
   const [isAddAllowanceOpen, setIsAddAllowanceOpen] = useState(false);
   const [newAllowance, setNewAllowance] = useState({
     name: "",
@@ -90,6 +109,29 @@ export default function AllowanceSettings() {
     amount: "",
     applicableTo: ""
   });
+  const savedEmployee = employees.find((employee) => employee.id === editingEmployeeId);
+  const employeeAllowanceIsDirty = Boolean(
+    editingEmployeeId != null && tempEmployeeData && JSON.stringify(tempEmployeeData) !== JSON.stringify(savedEmployee)
+  );
+  const newAllowanceIsDirty = isAddAllowanceOpen && Object.values(newAllowance).some((value) => value !== "");
+  const { markSaved, requestDiscard } = useUnsavedChanges(employeeAllowanceIsDirty || newAllowanceIsDirty);
+  const employeeDraftIsValid = Boolean(
+    tempEmployeeData &&
+    tempEmployeeData.name.trim() &&
+    tempEmployeeData.role &&
+    isValidAmount(tempEmployeeData.da) &&
+    isValidAmount(tempEmployeeData.salary) &&
+    isValidAmount(tempEmployeeData.carRatePerKm) &&
+    isValidAmount(tempEmployeeData.bikeRatePerKm)
+  );
+  const newAllowanceIsValid = Boolean(
+    newAllowance.name.trim() &&
+    newAllowance.type &&
+    newAllowance.applicableTo &&
+    newAllowance.amount.trim() &&
+    Number.isFinite(Number(newAllowance.amount)) &&
+    Number(newAllowance.amount) > 0
+  );
 
   const handleEditEmployee = (employee: Employee) => {
     setEditingEmployeeId(employee.id);
@@ -97,20 +139,39 @@ export default function AllowanceSettings() {
   };
 
   const handleSaveEmployee = () => {
+    if (!tempEmployeeData || !employeeDraftIsValid || !employeeAllowanceIsDirty) return;
+    const savedDraft: Employee = {
+      ...tempEmployeeData,
+      da: Number(tempEmployeeData.da),
+      salary: Number(tempEmployeeData.salary),
+      carRatePerKm: Number(tempEmployeeData.carRatePerKm),
+      bikeRatePerKm: Number(tempEmployeeData.bikeRatePerKm),
+    };
+    markSaved();
     setEmployees(employees.map(emp => 
-      emp.id === editingEmployeeId && tempEmployeeData ? tempEmployeeData : emp
+      emp.id === editingEmployeeId ? savedDraft : emp
     ));
     setEditingEmployeeId(null);
     setTempEmployeeData(null);
   };
 
   const handleCancelEdit = () => {
-    setEditingEmployeeId(null);
-    setTempEmployeeData(null);
+    requestDiscard(() => {
+      setEditingEmployeeId(null);
+      setTempEmployeeData(null);
+    }, employeeAllowanceIsDirty);
+  };
+
+  const handleCloseAddAllowance = () => {
+    requestDiscard(() => {
+      setIsAddAllowanceOpen(false);
+      setNewAllowance({ name: "", type: "", amount: "", applicableTo: "" });
+    }, newAllowanceIsDirty);
   };
 
   const handleAddAllowance = () => {
-    if (newAllowance.name && newAllowance.type && newAllowance.amount) {
+    if (newAllowanceIsValid) {
+      markSaved();
       // In a real app, this would make an API call to add the allowance
       console.log("Adding new allowance:", newAllowance);
       setIsAddAllowanceOpen(false);
@@ -127,7 +188,10 @@ export default function AllowanceSettings() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
 
-        <Dialog open={isAddAllowanceOpen} onOpenChange={setIsAddAllowanceOpen}>
+        <Dialog open={isAddAllowanceOpen} onOpenChange={(open) => {
+          if (open) setIsAddAllowanceOpen(true);
+          else handleCloseAddAllowance();
+        }}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
@@ -173,6 +237,8 @@ export default function AllowanceSettings() {
                   <Input
                     id="amount"
                     type="number"
+                    min="0.01"
+                    step="0.01"
                     placeholder="0"
                     value={newAllowance.amount}
                     onChange={(e) => setNewAllowance({...newAllowance, amount: e.target.value})}
@@ -199,10 +265,10 @@ export default function AllowanceSettings() {
               </div>
               
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsAddAllowanceOpen(false)}>
+                <Button variant="outline" onClick={handleCloseAddAllowance}>
                   Cancel
                 </Button>
-                <Button onClick={handleAddAllowance}>
+                <Button onClick={handleAddAllowance} disabled={!newAllowanceIsValid}>
                   Add Allowance
                 </Button>
               </div>
@@ -302,32 +368,40 @@ export default function AllowanceSettings() {
                         <TableCell>
                           <Input
                             type="number"
-                            value={tempEmployeeData?.da || 0}
-                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, da: parseInt(e.target.value) || 0})}
+                            min="0"
+                            step="0.01"
+                            value={tempEmployeeData?.da ?? ""}
+                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, da: parseAmountInput(e.target.value)})}
                             className="w-24"
                           />
                         </TableCell>
                         <TableCell>
                           <Input
                             type="number"
-                            value={tempEmployeeData?.salary || 0}
-                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, salary: parseInt(e.target.value) || 0})}
+                            min="0"
+                            step="0.01"
+                            value={tempEmployeeData?.salary ?? ""}
+                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, salary: parseAmountInput(e.target.value)})}
                             className="w-24"
                           />
                         </TableCell>
                         <TableCell>
                           <Input
                             type="number"
-                            value={tempEmployeeData?.carRatePerKm || 0}
-                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, carRatePerKm: parseInt(e.target.value) || 0})}
+                            min="0"
+                            step="0.01"
+                            value={tempEmployeeData?.carRatePerKm ?? ""}
+                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, carRatePerKm: parseAmountInput(e.target.value)})}
                             className="w-24"
                           />
                         </TableCell>
                         <TableCell>
                           <Input
                             type="number"
-                            value={tempEmployeeData?.bikeRatePerKm || 0}
-                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, bikeRatePerKm: parseInt(e.target.value) || 0})}
+                            min="0"
+                            step="0.01"
+                            value={tempEmployeeData?.bikeRatePerKm ?? ""}
+                            onChange={(e) => tempEmployeeData && setTempEmployeeData({...tempEmployeeData, bikeRatePerKm: parseAmountInput(e.target.value)})}
                             className="w-24"
                           />
                         </TableCell>
@@ -336,7 +410,7 @@ export default function AllowanceSettings() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={handleSaveEmployee}>
+                            <Button variant="ghost" size="sm" onClick={handleSaveEmployee} disabled={!employeeDraftIsValid || !employeeAllowanceIsDirty}>
                               <Save className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
@@ -349,10 +423,10 @@ export default function AllowanceSettings() {
                       <>
                         <TableCell className="font-medium">{employee.name}</TableCell>
                         <TableCell>{employee.role}</TableCell>
-                        <TableCell>₹{employee.da.toLocaleString()}</TableCell>
-                        <TableCell>₹{employee.salary.toLocaleString()}</TableCell>
-                        <TableCell>₹{employee.carRatePerKm}/km</TableCell>
-                        <TableCell>₹{employee.bikeRatePerKm}/km</TableCell>
+                        <TableCell>{formatCurrency(employee.da)}</TableCell>
+                        <TableCell>{formatCurrency(employee.salary)}</TableCell>
+                        <TableCell>{formatRatePerKm(employee.carRatePerKm)}</TableCell>
+                        <TableCell>{formatRatePerKm(employee.bikeRatePerKm)}</TableCell>
                         <TableCell>
                           <Badge variant="secondary">{employee.status}</Badge>
                         </TableCell>

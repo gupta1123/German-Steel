@@ -32,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 export interface PerformanceOfficerOption {
   id: number;
@@ -57,6 +58,13 @@ const formatDate = (date: Date) => {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+
+const formatDisplayDate = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
 
 const getPresetRange = (preset: DatePreset, today: Date) => {
   if (preset === "LAST_MONTH") {
@@ -123,6 +131,7 @@ export default function FieldOfficerPerformanceReport({
   const [preset, setPreset] = useState<DatePreset>("THIS_MONTH");
   const [startDate, setStartDate] = useState(initialRange.startDate);
   const [endDate, setEndDate] = useState(initialRange.endDate);
+  const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
   const [employeeId, setEmployeeId] = useState("");
   const [city, setCity] = useState("ALL");
   const [teamId, setTeamId] = useState("ALL");
@@ -192,8 +201,7 @@ export default function FieldOfficerPerformanceReport({
       setError("Select both start and end dates.");
       return;
     }
-    if (startDate > endDate) {
-      setError("Start date cannot be after end date.");
+    if (dateRangeInvalid) {
       return;
     }
 
@@ -296,7 +304,7 @@ export default function FieldOfficerPerformanceReport({
               </Select>
             </div>
 
-            <Button type="submit" disabled={isLoading} className="h-10 w-full font-semibold">
+            <Button type="submit" disabled={isLoading || dateRangeInvalid || !startDate || !endDate} className="h-10 w-full font-semibold">
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
               {isLoading ? "Generating..." : "Generate report"}
             </Button>
@@ -329,6 +337,7 @@ export default function FieldOfficerPerformanceReport({
               </div>
             </div>
           )}
+          <DateRangeError fromDate={startDate} toDate={endDate} />
         </form>
 
         {error && (
@@ -370,7 +379,7 @@ export default function FieldOfficerPerformanceReport({
                     <h3 className="font-semibold">Officer Performance Benchmarking</h3>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Target achievement versus visit completion for {startDate} to {endDate}.
+                    Target achievement versus visit completion for {formatDisplayDate(startDate)} to {formatDisplayDate(endDate)}.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-muted-foreground">

@@ -40,6 +40,7 @@ import { hasManagerPrivileges, getCorrectedRoleFlags } from "@/lib/auth";
 import { getTeamIds, getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
 import { formatTimeTo12Hour, formatDateToUserFriendly, formatLastUpdated } from "@/lib/utils";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 const VISITS_TABLE_STORAGE_KEY = "visits.table.state.v1";
 
@@ -115,6 +116,7 @@ export default function VisitsTable() {
   
   const [startDate, setStartDate] = useState<Date | undefined>(defaultStartDate);
   const [endDate, setEndDate] = useState<Date | undefined>(defaultEndDate);
+  const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
   const [selectedPurpose, setSelectedPurpose] = useState<string>("all");
   const [selectedExecutive, setSelectedExecutive] = useState<string>("all");
   const [customerName, setCustomerName] = useState<string>("");
@@ -460,7 +462,7 @@ export default function VisitsTable() {
 
   useEffect(() => {
     if (!isStateHydrated) return;
-    if (!startDate || !endDate) return;
+    if (!startDate || !endDate || dateRangeInvalid) return;
     
     // For managers, wait until we have teamId
     if (isManager && managerTeamIds.length === 0) {
@@ -591,7 +593,7 @@ export default function VisitsTable() {
       }
     };
     run();
-  }, [isStateHydrated, startDate, endDate, selectedPurpose, customerName, currentPage, pageSize, isManager, managerTeamIds, selectedExecutive, employees, teamMembers]);
+  }, [isStateHydrated, startDate, endDate, dateRangeInvalid, selectedPurpose, customerName, currentPage, pageSize, isManager, managerTeamIds, selectedExecutive, employees, teamMembers]);
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -673,9 +675,9 @@ export default function VisitsTable() {
   };
 
   const handleExport = async () => {
+    if (!startDate || !endDate || dateRangeInvalid) return;
     try {
       setIsExporting(true);
-      if (!startDate || !endDate) return;
       const startStr = formatDate(startDate, 'yyyy-MM-dd');
       const endStr = formatDate(endDate, 'yyyy-MM-dd');
 
@@ -809,6 +811,7 @@ export default function VisitsTable() {
         {error && (
           <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">{error}</div>
         )}
+        <DateRangeError fromDate={startDate} toDate={endDate} className="mb-4" />
         
         {/* Status indicator */}
         {!startDate || !endDate ? (
@@ -837,7 +840,7 @@ export default function VisitsTable() {
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {startDate ? (
-                    format(startDate, "LLL dd, y")
+                    format(startDate, "MMM dd, yyyy")
                   ) : (
                     <span>Select start date</span>
                   )}
@@ -865,7 +868,7 @@ export default function VisitsTable() {
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {endDate ? (
-                    format(endDate, "LLL dd, y")
+                    format(endDate, "MMM dd, yyyy")
                   ) : (
                     <span>Select end date</span>
                   )}
@@ -930,7 +933,7 @@ export default function VisitsTable() {
           </div>
           
           <div className="flex items-end">
-            <Button onClick={handleExport} className="w-full" disabled={isExporting}>
+            <Button onClick={handleExport} className="w-full" disabled={isExporting || dateRangeInvalid || !startDate || !endDate}>
               {isExporting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

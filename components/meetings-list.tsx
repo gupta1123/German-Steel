@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   CheckCircle2,
@@ -62,6 +61,8 @@ import {
 } from "@/lib/meetings-api";
 import { hasAdminSetupPrivileges } from "@/lib/auth";
 import { formatTimeTo12Hour } from "@/lib/utils";
+import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 
 const ALL_VALUE = "all";
 
@@ -168,7 +169,7 @@ const formatDate = (value?: string) => {
   if (!value) return "-";
   const parsed = new Date(`${value}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return value;
-  return format(parsed, "dd MMM yyyy");
+  return format(parsed, "MMM dd, yyyy");
 };
 
 const statusBadgeClass = (status?: string) => {
@@ -332,13 +333,15 @@ function NewMeetingDialog({
   onCreated: () => void;
   meetingTypes: string[];
 }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { userData, userRole, currentUser } = useAuth();
   const [step, setStep] = useState<NewMeetingStep>("request");
   const [form, setForm] = useState<MeetingRequestForm>(() => emptyRequestForm());
   const [attendees, setAttendees] = useState<MeetingAttendee[]>([emptyAttendee()]);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasUserChanges, setHasUserChanges] = useState(false);
+  const { markSaved, requestDiscard } = useUnsavedChanges(open && hasUserChanges);
 
   const creatorId = userData?.employeeId;
   const canCreateOnBehalf = hasAdminSetupPrivileges(userRole, currentUser);
@@ -361,15 +364,24 @@ function NewMeetingDialog({
     setAttendees([emptyAttendee()]);
     setError(null);
     setIsSaving(false);
+    setHasUserChanges(false);
+    markSaved();
   };
 
   const close = (nextOpen: boolean) => {
     if (isSaving) return;
-    onOpenChange(nextOpen);
-    if (!nextOpen) reset();
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
+    }
+    requestDiscard(() => {
+      onOpenChange(false);
+      reset();
+    });
   };
 
   const updateForm = <K extends keyof MeetingRequestForm>(key: K, value: MeetingRequestForm[K]) => {
+    setHasUserChanges(true);
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -378,6 +390,7 @@ function NewMeetingDialog({
     key: K,
     value: MeetingAttendee[K]
   ) => {
+    setHasUserChanges(true);
     setAttendees((prev) =>
       prev.map((attendee, currentIndex) =>
         currentIndex === index ? { ...attendee, [key]: value } : attendee
@@ -473,7 +486,10 @@ function NewMeetingDialog({
       }
 
       onCreated();
-      close(false);
+      setHasUserChanges(false);
+      markSaved();
+      onOpenChange(false);
+      reset();
       router.push(`/dashboard/meetings/${meetingId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create meeting.");
@@ -616,7 +632,10 @@ function NewMeetingDialog({
                   {validAttendees.length} attendee{validAttendees.length === 1 ? "" : "s"} will be saved on the request.
                 </p>
               </div>
-              <Button type="button" size="sm" variant="outline" onClick={() => setAttendees((prev) => [...prev, emptyAttendee()])}>
+              <Button type="button" size="sm" variant="outline" onClick={() => {
+                setHasUserChanges(true);
+                setAttendees((prev) => [...prev, emptyAttendee()]);
+              }}>
                 <Plus className="h-4 w-4" />
                 Add
               </Button>
@@ -631,7 +650,10 @@ function NewMeetingDialog({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => setAttendees((prev) => prev.filter((_, currentIndex) => currentIndex !== index))}
+                      onClick={() => {
+                        setHasUserChanges(true);
+                        setAttendees((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+                      }}
                     >
                       Remove
                     </Button>
@@ -724,7 +746,7 @@ function NewMeetingDialog({
 }
 
 export default function MeetingsList() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { userRole, currentUser } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [pageInfo, setPageInfo] = useState<MeetingPage<Meeting> | null>(null);
@@ -740,6 +762,7 @@ export default function MeetingsList() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const dateRangeInvalid = isDateRangeInvalid(filters.start, filters.end);
   const isAdmin = hasAdminSetupPrivileges(userRole, currentUser);
 
   const backendFiltersFor = (appliedFilters = filters) => ({
@@ -752,6 +775,7 @@ export default function MeetingsList() {
   });
 
   const loadMeetings = async (appliedFilters = filters, page = 0, size = pageSize) => {
+    if (isDateRangeInvalid(appliedFilters.start, appliedFilters.end)) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -902,6 +926,7 @@ export default function MeetingsList() {
   };
 
   const exportCsv = async () => {
+    if (dateRangeInvalid) return;
     setIsExporting(true);
     setError(null);
     try {
@@ -938,7 +963,7 @@ export default function MeetingsList() {
           <Button variant="outline" size="icon" onClick={openWorkflowGuide} aria-label="Meeting workflow guide">
             <Info className="h-4 w-4" />
           </Button>
-          <Button variant="outline" onClick={exportCsv} disabled={isExporting}>
+          <Button variant="outline" onClick={exportCsv} disabled={isExporting || dateRangeInvalid}>
             {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export CSV
           </Button>
@@ -979,6 +1004,7 @@ export default function MeetingsList() {
               <Label>End</Label>
               <Input type="date" value={filters.end} onChange={(event) => setFilters((prev) => ({ ...prev, end: event.target.value }))} />
             </div>
+            <DateRangeError fromDate={filters.start} toDate={filters.end} className="md:col-span-6" />
             <div className="space-y-2">
               <Label>Status</Label>
               <Select value={filters.status} onValueChange={(value) => {
@@ -1051,7 +1077,7 @@ export default function MeetingsList() {
               <Input value={filters.state} onChange={(event) => setFilters((prev) => ({ ...prev, state: event.target.value }))} />
             </div>
             <div className="flex flex-wrap items-end gap-2 md:col-span-6">
-              <Button onClick={() => loadMeetings(filters, 0, pageSize)} disabled={isLoading}>
+              <Button onClick={() => loadMeetings(filters, 0, pageSize)} disabled={isLoading || dateRangeInvalid}>
                 Apply Filters
               </Button>
               <Button variant="outline" onClick={clearFilters} disabled={isLoading || activeFilterCount === 0}>
