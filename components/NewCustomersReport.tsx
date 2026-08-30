@@ -286,14 +286,15 @@ const NewCustomersReport = () => {
             borderColor: 'hsl(var(--input))',
             color: 'hsl(var(--foreground))',
             borderRadius: '0.375rem',
-            minHeight: '2.5rem',
+            minHeight: '2.25rem',
         }),
         menu: (base) => ({
             ...base,
             backgroundColor: 'hsl(var(--popover))',
-            zIndex: 50,
+            zIndex: 80,
             border: '1px solid hsl(var(--border))'
         }),
+        menuList: (base) => ({ ...base, maxHeight: 240, paddingBlock: 4 }),
         option: (base, state) => ({
             ...base,
             backgroundColor: state.isFocused ? 'hsl(var(--accent))' : 'transparent',
@@ -312,78 +313,56 @@ const NewCustomersReport = () => {
     };
 
     return (
-        <div className="container mx-auto p-6 max-w-7xl space-y-6">
-            
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">New Customers Report</h1>
-                    <p className="text-muted-foreground">Analyze field officer acquisition trends over time.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button 
-                        variant={showTopPerformers && isAutoSelect ? "default" : "outline"}
-                        onClick={() => { setShowTopPerformers(true); setIsAutoSelect(true); }}
-                        size="sm"
-                    >
-                        Top 5
-                    </Button>
-                    <Button 
-                        variant={!showTopPerformers && isAutoSelect ? "default" : "outline"}
-                        onClick={() => { setShowTopPerformers(false); setIsAutoSelect(true); }}
-                        size="sm"
-                    >
-                        Bottom 5
-                    </Button>
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={fetchReportData} 
-                        disabled={isLoading || dateRangeInvalid || !startDate || !endDate}
-                        title="Refresh Data"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                    </Button>
-                </div>
-            </div>
+        <div className="space-y-5">
 
             {/* Filters Section */}
-            <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">Report Settings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <section className="space-y-3 border-b pb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">Compare acquisition totals for selected field officers.</p>
+                        <div className="flex items-center gap-1 rounded-md border bg-background p-0.5">
+                            <Button variant={showTopPerformers && isAutoSelect ? "default" : "ghost"} onClick={() => { setShowTopPerformers(true); setIsAutoSelect(true); }} size="sm" className="h-7 px-2.5">Top 5</Button>
+                            <Button variant={!showTopPerformers && isAutoSelect ? "default" : "ghost"} onClick={() => { setShowTopPerformers(false); setIsAutoSelect(true); }} size="sm" className="h-7 px-2.5">Bottom 5</Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchReportData} disabled={isLoading || dateRangeInvalid || !startDate || !endDate} title="Refresh data" aria-label="Refresh data">
+                                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2 xl:grid-cols-[minmax(150px,.75fr)_minmax(150px,.75fr)_minmax(240px,1.25fr)_minmax(240px,1.25fr)] xl:items-end">
                         {/* Start Date */}
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                                <CalendarIcon className="w-3 h-3" /> Start Date
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="new-customers-start" className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                <CalendarIcon className="h-3 w-3" /> Start date
                             </Label>
                             <Input 
+                                id="new-customers-start"
                                 type="date" 
                                 value={startDate} 
                                 onChange={(e) => setStartDate(e.target.value)} 
+                                className="h-9"
                             />
                         </div>
 
                         {/* End Date */}
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                                <CalendarIcon className="w-3 h-3" /> End Date
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="new-customers-end" className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                <CalendarIcon className="h-3 w-3" /> End date
                             </Label>
                             <Input 
+                                id="new-customers-end"
                                 type="date" 
                                 value={endDate} 
                                 onChange={(e) => setEndDate(e.target.value)} 
+                                className="h-9"
                             />
                         </div>
 
                         {/* Include Employees */}
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-2 text-xs uppercase tracking-wide text-green-600 dark:text-green-400 font-semibold">
-                                <UserCheck className="w-3 h-3" /> Include Employees
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="new-customers-include" className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                <UserCheck className="h-3 w-3" /> Include employees
                             </Label>
                             <Select
+                                inputId="new-customers-include"
                                 isMulti
                                 options={employees.filter(emp => !excludedEmployees.some(ex => ex.value === emp.value))}
                                 value={selectedEmployees}
@@ -394,11 +373,12 @@ const NewCustomersReport = () => {
                         </div>
 
                         {/* Exclude Employees */}
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-2 text-xs uppercase tracking-wide text-red-600 dark:text-red-400 font-semibold">
-                                <UserX className="w-3 h-3" /> Exclude Employees
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="new-customers-exclude" className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                <UserX className="h-3 w-3" /> Exclude employees
                             </Label>
                             <Select
+                                inputId="new-customers-exclude"
                                 isMulti
                                 options={employees}
                                 value={excludedEmployees}
@@ -409,26 +389,25 @@ const NewCustomersReport = () => {
                             />
                         </div>
                     </div>
-                    <DateRangeError fromDate={startDate} toDate={endDate} className="mt-4" />
-                </CardContent>
-            </Card>
+                    <DateRangeError fromDate={startDate} toDate={endDate} />
+            </section>
 
             {/* Chart Section */}
-            <Card className="shadow-sm border">
-                <CardHeader className="border-b bg-muted/20 py-4">
-                    <CardTitle className="text-base font-medium">Performance Trend</CardTitle>
+            <Card className="border-border/80 shadow-sm">
+                <CardHeader className="border-b bg-muted/10 px-4 py-3">
+                    <CardTitle className="text-sm font-semibold">Performance trend</CardTitle>
                 </CardHeader>
-                <CardContent className="p-6">
-                    <div className="h-[400px] w-full">
+                <CardContent className="p-4">
+                    <div className="h-[320px] w-full md:h-[400px]">
                         <Line data={chartData} options={chartOptions} />
                     </div>
                 </CardContent>
             </Card>
 
             {/* Data Table */}
-            <Card>
-                <CardHeader className="py-4">
-                    <CardTitle className="text-base font-medium">Summary Totals</CardTitle>
+            <Card className="border-border/80 shadow-sm">
+                <CardHeader className="border-b bg-muted/10 px-4 py-3">
+                    <CardTitle className="text-sm font-semibold">Summary totals</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="overflow-x-auto">
@@ -442,7 +421,7 @@ const NewCustomersReport = () => {
                             </thead>
                             <tbody>
                                 {selectedEmployees.length > 0 ? (
-                                    selectedEmployees
+                                    selectedEmployees.slice()
                                         .sort((a, b) => getTotalNewCustomers(b.label) - getTotalNewCustomers(a.label))
                                         .map((employee, index) => (
                                             <tr key={employee.value} className="border-b last:border-0 hover:bg-muted/30 transition-colors">

@@ -256,7 +256,7 @@ export default function AllowanceSettings() {
                     <SelectValue placeholder="Select roles" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="All Employees">All Employees</SelectItem>
+                    <SelectItem value="All Employees">All employees</SelectItem>
                     <SelectItem value="Field Officers">Field Officers</SelectItem>
                     <SelectItem value="Sales Managers">Sales Managers</SelectItem>
                     <SelectItem value="Managers">All Managers</SelectItem>

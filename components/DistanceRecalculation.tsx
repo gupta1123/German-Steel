@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
+import { isAdminEmployeeRole } from "@/lib/employee-role";
 
 type EmployeeDirectoryEntry = EmployeeUserDto & {
   status?: string;
@@ -91,7 +92,7 @@ export default function DistanceRecalculation() {
     setIsLoadingEmployees(true);
     try {
       const data = await API.getAllEmployees();
-      const sorted = [...data].sort((a, b) =>
+      const sorted = data.filter((employee) => !isAdminEmployeeRole(employee.role)).sort((a, b) =>
         getEmployeeDisplayName(a as EmployeeDirectoryEntry).localeCompare(getEmployeeDisplayName(b as EmployeeDirectoryEntry))
       );
       setEmployees(sorted as EmployeeDirectoryEntry[]);
@@ -289,11 +290,11 @@ export default function DistanceRecalculation() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="border-0 shadow-sm bg-background">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl md:text-2xl font-semibold">Distance Recalculation</CardTitle>
-          <p className="text-sm text-muted-foreground">
+    <div className="space-y-4">
+      <Card className="border-border/70 bg-background shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Distance recalculation</CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Recalculate stored travelled distance using Ola Maps for a selected employee batch and date range.
           </p>
         </CardHeader>

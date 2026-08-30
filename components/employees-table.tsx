@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DownloadIcon, MoreHorizontal } from "lucide-react";
+import { formatCityLabel } from "@/lib/city-options";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -149,10 +150,10 @@ export default function EmployeesTable() {
                 <SelectValue placeholder="Select city" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Cities</SelectItem>
+                <SelectItem value="all">All cities</SelectItem>
                 {cities.map((city) => (
                   <SelectItem key={city} value={city}>
-                    {city}
+                    {formatCityLabel(city)}
                   </SelectItem>
                 ))}
               </SelectContent>

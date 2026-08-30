@@ -6,6 +6,7 @@ import "@/components/custom-calendar.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/auth-provider";
 import { UnsavedChangesProvider } from "@/components/unsaved-changes-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,16 +41,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen text-sm antialiased`}
         suppressHydrationWarning
       >
         <ThemeProvider
-          defaultTheme="system"
+          defaultTheme="light"
         >
           <UnsavedChangesProvider>
             <AuthProvider>
               {children}
             </AuthProvider>
+            <Toaster />
           </UnsavedChangesProvider>
         </ThemeProvider>
       </body>

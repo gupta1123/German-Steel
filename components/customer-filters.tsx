@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { XIcon, SlidersHorizontal } from "lucide-react";
+import { formatCityLabel } from "@/lib/city-options";
 
 // Mock data for filters (passed as props)
 const cities = ["New York", "Los Angeles", "Chicago", "Houston", "Miami"];
@@ -105,10 +106,10 @@ export default function CustomerFilters({
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Cities</SelectItem>
+                    <SelectItem value="all">All cities</SelectItem>
                     {cities.map((city) => (
                       <SelectItem key={city} value={city}>
-                        {city}
+                        {formatCityLabel(city)}
                       </SelectItem>
                     ))}
                   </SelectContent>

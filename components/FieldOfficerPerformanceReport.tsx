@@ -4,7 +4,6 @@ import { type FormEvent, useMemo, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
-  FileBarChart,
   Loader2,
   RefreshCw,
   Users,
@@ -13,7 +12,6 @@ import {
 import { API, type FieldOfficerPerformanceDto } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select2";
@@ -33,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
+import { formatCityLabel } from "@/lib/city-options";
 
 export interface PerformanceOfficerOption {
   id: number;
@@ -227,30 +226,15 @@ export default function FieldOfficerPerformanceReport({
   };
 
   return (
-    <Card className="overflow-hidden rounded-2xl shadow-sm">
-      <CardHeader className="border-b bg-muted/10 px-5 py-5 md:px-8">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-background">
-            <FileBarChart className="h-5 w-5 text-foreground" />
-          </div>
-          <div>
-            <CardTitle className="text-lg font-semibold">Field Officer Performance</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Compare target achievement and visit completion across active field officers.
-            </p>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-7 p-5 md:p-8">
-        <form onSubmit={generateReport} className="space-y-4 border-b pb-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="performance-range" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="space-y-6">
+        <form onSubmit={generateReport} className="space-y-3 border-b pb-4">
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-[minmax(145px,.8fr)_minmax(220px,1.2fr)_minmax(145px,.8fr)_minmax(145px,.8fr)_minmax(180px,1fr)] xl:items-end">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="performance-range" className="text-xs font-medium text-foreground">
                 Date range
               </Label>
               <Select value={preset} onValueChange={(value: DatePreset) => handlePresetChange(value)}>
-                <SelectTrigger id="performance-range" className="h-10"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="performance-range" className="h-9 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="THIS_MONTH">This month</SelectItem>
                   <SelectItem value="LAST_MONTH">Last month</SelectItem>
@@ -260,11 +244,12 @@ export default function FieldOfficerPerformanceReport({
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="performance-officer" className="text-xs font-medium text-foreground">
                 Field officer
               </Label>
               <SearchableSelect
+                triggerId="performance-officer"
                 options={officerOptions}
                 value={employeeId || undefined}
                 onSelect={(option) => setEmployeeId(option?.value || "")}
@@ -273,30 +258,30 @@ export default function FieldOfficerPerformanceReport({
                 emptyMessage={officersError || "No officers available"}
                 allowClear
                 loading={officersLoading}
-                triggerClassName="h-10 w-full"
+                triggerClassName="h-9 w-full"
                 contentClassName="w-[min(400px,calc(100vw-2rem))]"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="performance-city" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="performance-city" className="text-xs font-medium text-foreground">
                 City
               </Label>
               <Select value={city} onValueChange={setCity} disabled={officersLoading || cityOptions.length === 0}>
-                <SelectTrigger id="performance-city" className="h-10"><SelectValue placeholder="All cities" /></SelectTrigger>
+                <SelectTrigger id="performance-city" className="h-9 w-full"><SelectValue placeholder="All cities" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All cities</SelectItem>
-                  {cityOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                  {cityOptions.map((option) => <SelectItem key={option} value={option}>{formatCityLabel(option)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="performance-team" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="performance-team" className="text-xs font-medium text-foreground">
                 Team
               </Label>
               <Select value={teamId} onValueChange={setTeamId} disabled={officersLoading || teamOptions.length === 0}>
-                <SelectTrigger id="performance-team" className="h-10"><SelectValue placeholder="All teams" /></SelectTrigger>
+                <SelectTrigger id="performance-team" className="h-9 w-full"><SelectValue placeholder="All teams" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All teams</SelectItem>
                   {teamOptions.map((option) => <SelectItem key={option} value={option}>Team {option}</SelectItem>)}
@@ -304,16 +289,16 @@ export default function FieldOfficerPerformanceReport({
               </Select>
             </div>
 
-            <Button type="submit" disabled={isLoading || dateRangeInvalid || !startDate || !endDate} className="h-10 w-full font-semibold">
+            <Button type="submit" disabled={isLoading || dateRangeInvalid || !startDate || !endDate} className="h-9 w-full whitespace-nowrap font-semibold sm:col-span-2 xl:col-span-1">
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
               {isLoading ? "Generating..." : "Generate report"}
             </Button>
           </div>
 
           {preset === "CUSTOM" && (
-            <div className="grid max-w-xl gap-4 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="performance-start-date" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="grid max-w-xl gap-3 border-t pt-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5">
+                <Label htmlFor="performance-start-date" className="text-xs font-medium text-foreground">
                   From
                 </Label>
                 <Input
@@ -323,8 +308,8 @@ export default function FieldOfficerPerformanceReport({
                   onChange={(event) => setStartDate(event.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="performance-end-date" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="min-w-0 space-y-1.5">
+                <Label htmlFor="performance-end-date" className="text-xs font-medium text-foreground">
                   To
                 </Label>
                 <Input
@@ -561,7 +546,6 @@ export default function FieldOfficerPerformanceReport({
             </p>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+    </div>
   );
 }

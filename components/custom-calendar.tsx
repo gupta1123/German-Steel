@@ -78,6 +78,21 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
       const isSunday = dateObj.getDay() === 0;
       const isFutureDate = dateObj > today;
 
+      // Sundays are paid leave by policy, regardless of whether an attendance
+      // record exists for that date.
+      if (isSunday) {
+        daysArray.push({
+          type: 'day',
+          key: dateKey,
+          dayNumber: i,
+          className: 'paid',
+          tooltipText: formatStatusLabel('paid'),
+          dateKey,
+          isSunday,
+        });
+        continue;
+      }
+
       // Find attendance
       const attendanceRecord = attendanceData.find((data) => {
         return normalizeDate(data.checkinDate) === dateKey;
@@ -92,9 +107,8 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
       if (attendanceStatus) {
         const normalizedStatus = attendanceStatus.toLowerCase().trim();
 
-        // Keep Sunday visual style, but do not force full-day counting.
-        className = isSunday ? 'sunday' : normalizedStatus.replace(/\s+/g, '-');
-        tooltipText = isSunday ? formatStatusLabel('sunday') : formatStatusLabel(normalizedStatus);
+        className = normalizedStatus.replace(/\s+/g, '-');
+        tooltipText = formatStatusLabel(normalizedStatus);
 
         if (normalizedStatus === 'full day') fullDays++;
         else if (normalizedStatus === 'half day') halfDays++;
@@ -104,11 +118,9 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
           className = 'future';
           tooltipText = 'Upcoming';
         } else {
-          className = isSunday ? 'sunday' : 'absent';
-          tooltipText = isSunday ? formatStatusLabel('sunday') : formatStatusLabel('absent');
-          if (!isSunday) {
-            absentDays++;
-          }
+          className = 'absent';
+          tooltipText = formatStatusLabel('absent');
+          absentDays++;
         }
       }
 

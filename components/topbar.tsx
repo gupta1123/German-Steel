@@ -10,12 +10,13 @@ interface TopbarProps {
   heading?: string;
   subheading?: string;
   backHref?: string;
+  onBack?: () => void;
 }
 
-export default function Topbar({ heading, subheading, backHref }: TopbarProps) {
+export default function Topbar({ heading, subheading, backHref, onBack }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-30 flex w-full flex-wrap items-center justify-between gap-4 border-b border-border/60 bg-background/95 pl-4 pr-12 py-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sm:pl-6 sm:pr-16">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+    <header className="sticky top-0 z-30 flex h-14 w-full items-center gap-3 border-b border-border/60 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:backdrop-blur sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         {backHref && (
           <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
             <Link href={backHref}>
@@ -24,23 +25,28 @@ export default function Topbar({ heading, subheading, backHref }: TopbarProps) {
             </Link>
           </Button>
         )}
+        {!backHref && onBack && (
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+            <span className="sr-only">Back</span>
+          </Button>
+        )}
         {(heading || subheading) && (
-          <div className="flex flex-col gap-0.5">
+          <div className="flex min-w-0 flex-col justify-center gap-0.5">
           {heading && (
             <Heading as="h1" size="lg" className="truncate leading-tight" weight="semibold">
               {heading}
             </Heading>
           )}
           {subheading && (
-              <Text as="p" size="sm" tone="muted" className="truncate leading-tight">
+              <Text as="p" size="xs" tone="muted" className="truncate leading-tight">
               {subheading}
             </Text>
           )}
         </div>
         )}
       </div>
-      
-      <div className="flex w-full items-center justify-end gap-2 pr-2 sm:w-auto sm:pr-4">
+      <div className="flex shrink-0 items-center">
         <ThemeToggle />
       </div>
     </header>

@@ -120,15 +120,15 @@ export default function LoginPage() {
           {/* Subtle overlay for better contrast */}
           <div className="absolute inset-0 bg-white/5 dark:bg-black/20" />
 
-          {/* Centered logo treatment matched to the GajKesari login */}
+          {/* Centered German TMT brand mark */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="rounded-full bg-white/90 p-3 shadow-2xl backdrop-blur-md dark:bg-zinc-800/90">
+            <div className="rounded-2xl bg-white/95 px-4 py-3 shadow-2xl backdrop-blur-md dark:bg-white/90">
               <Image
-                src="/GermanSteelMark.png"
-                alt="German Steel Logo"
-                width={70}
-                height={70}
-                className="object-contain grayscale-0 dark:grayscale transition-all duration-500 drop-shadow-lg"
+                src="/GermanTmtLogo.png"
+                alt="German TMT logo"
+                width={1190}
+                height={388}
+                className="h-auto w-[min(70vw,280px)] object-contain drop-shadow-sm"
                 priority
               />
             </div>

@@ -46,6 +46,7 @@ interface DashboardLayoutProps {
   heading?: string;
   subheading?: string;
   backHref?: string;
+  onBack?: () => void;
 }
 
 // Define sidebar categories and items
@@ -121,7 +122,8 @@ export default function DashboardLayout({
   children, 
   heading,
   subheading,
-  backHref
+  backHref,
+  onBack,
 }: DashboardLayoutProps) {
   const { userRole, currentUser } = useAuth();
   const pathname = usePathname();
@@ -216,17 +218,17 @@ export default function DashboardLayout({
   };
 
   return (
-    <div className={`min-h-screen w-full grid ${sidebarCollapsed ? "md:grid-cols-[64px_1fr]" : "md:grid-cols-[220px_1fr] lg:grid-cols-[240px_1fr]"}`}>
+    <div className={`min-h-screen w-full grid ${sidebarCollapsed ? "md:grid-cols-[64px_1fr]" : "md:grid-cols-[184px_1fr] lg:grid-cols-[200px_1fr]"}`}>
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav sidebarCategories={sidebarCategories} isManager={isManager || false} />
 
       {/* Desktop sidebar */}
       <div className="hidden border-r bg-background md:block sticky top-0 h-screen">
         <div className="flex h-full max-h-screen flex-col">
-          <div className={`flex h-10 items-center border-b ${sidebarCollapsed ? "justify-center px-2" : "justify-between px-4 lg:px-4"}`}>
+          <div className={`flex h-14 items-center border-b ${sidebarCollapsed ? "justify-center px-2" : "justify-between px-2.5"}`}>
             {!sidebarCollapsed && (
               <Link href="/dashboard" className="flex min-w-0 items-center" aria-label="German Steels dashboard">
-                <BrandLogo className="h-7 w-auto max-w-[138px] object-contain" priority />
+                <BrandLogo className="h-6 w-auto max-w-[100px] object-contain" priority />
               </Link>
             )}
             <Button
@@ -245,13 +247,13 @@ export default function DashboardLayout({
             </Button>
           </div>
           <div className="flex-1 overflow-y-auto py-4">
-            <nav className="grid gap-1 px-2">
+            <nav className="grid gap-1 px-1.5">
               {/* Dashboard link (no category) */}
               <Link
                 href="/dashboard"
                 title="Dashboard"
                 className={`flex items-center rounded-lg py-2 transition-all ${
-                  sidebarCollapsed ? "justify-center px-2" : "gap-2 px-3"
+                  sidebarCollapsed ? "justify-center px-2" : "gap-2 px-2.5"
                 } ${
                   pathname === "/dashboard"
                     ? "bg-primary text-primary-foreground"
@@ -268,7 +270,7 @@ export default function DashboardLayout({
                   href="/dashboard/settings"
                   title="Settings"
                   className={`flex items-center rounded-lg py-2 transition-all ${
-                    sidebarCollapsed ? "justify-center px-2" : "gap-2 px-3"
+                    sidebarCollapsed ? "justify-center px-2" : "gap-2 px-2.5"
                   } ${
                     pathname.startsWith("/dashboard/settings")
                       ? "bg-primary text-primary-foreground"
@@ -314,7 +316,7 @@ export default function DashboardLayout({
                   <div key={category.name} className="flex flex-col">
                     <Button
                       variant="ghost"
-                      className="justify-between px-3 py-2 h-auto"
+                      className="justify-between px-2.5 py-2 h-auto"
                       onClick={() => toggleCategory(category.name)}
                     >
                       <div className="flex items-center gap-2">
@@ -329,14 +331,14 @@ export default function DashboardLayout({
                     </Button>
                     
                     {isOpen && (
-                      <div className="pl-4 py-1 space-y-1">
+                      <div className="space-y-1 py-1 pl-2">
                         {category.items.map((item) => {
                           const ItemIcon = item.icon;
                           return (
                             <Link
                               key={item.name}
                               href={item.href}
-                              className={`flex items-center gap-2 rounded-lg px-3 py-2 transition-all ${
+                              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 transition-all ${
                                 isActive(item.href)
                                   ? "bg-primary text-primary-foreground"
                                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -354,20 +356,22 @@ export default function DashboardLayout({
               })}
             </nav>
           </div>
-          <div className={`relative border-t ${sidebarCollapsed ? "p-2" : "p-4"}`}>
+          <div className="relative border-t p-1.5">
             <Button
               variant="ghost"
-              className={`w-full gap-2 px-2 h-auto ${sidebarCollapsed ? "justify-center py-2" : "justify-start"}`}
+              className={`h-9 w-full gap-1.5 ${sidebarCollapsed ? "justify-center px-0" : "justify-start px-1.5"}`}
               onClick={() => setUserMenuOpen((open) => !open)}
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
               title={currentUser?.username || "User"}
             >
-              <CircleUser className="h-4 w-4" />
+              <CircleUser className="h-4 w-4 shrink-0" />
               {!sidebarCollapsed && (
-                <div className="flex min-w-0 flex-col items-start">
-                  <span className="max-w-full truncate font-medium text-xs">{currentUser?.username || "User"}</span>
-                  <span className="text-xs text-muted-foreground">{getDisplayRole()}</span>
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">{currentUser?.username || "User"}</span>
+                  <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {getDisplayRole()}
+                  </span>
                 </div>
               )}
             </Button>
@@ -417,7 +421,7 @@ export default function DashboardLayout({
       {/* Main content area */}
       <div className="flex min-w-0 flex-col">
         {/* Topbar */}
-        <Topbar heading={heading} subheading={subheading} backHref={backHref} />
+        <Topbar heading={heading} subheading={subheading} backHref={backHref} onBack={onBack} />
         
         {/* Page content */}
         <main className="flex min-w-0 flex-1 flex-col gap-4 p-3 lg:gap-6 lg:p-4 pb-24 md:pb-6">

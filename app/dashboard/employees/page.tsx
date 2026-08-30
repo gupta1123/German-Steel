@@ -1,21 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Phone, Mail, MapPin, Calendar, Building, User, ArrowLeft, ChevronLeft, ChevronRight, Archive, Settings, Plus, Loader2, XCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { ArrowLeft, ChevronLeft, ChevronRight, Archive, Settings, Plus, Loader2, XCircle, Filter, MoreHorizontal } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
@@ -26,17 +16,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import AddTeam from "@/components/AddTeam";
+import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { API } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
-import { hasAdminSetupPrivileges, isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
+import { isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
+import { getEmployeeRoleCategory, getEmployeeRoleLabel } from "@/lib/employee-role";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { toast } from "sonner";
 
 interface User {
   id: number;
@@ -100,6 +90,11 @@ const toSentenceCase = (text: string): string => {
   return text.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+function Ellipsis({ value }: { value: string | number | null | undefined }) {
+  const displayValue = value === null || value === undefined || value === '' ? '—' : String(value);
+  return <span className="block min-w-0 truncate" title={displayValue}>{displayValue}</span>;
+}
+
 
 function EmployeeList() {
   const router = useGuardedRouter();
@@ -113,10 +108,12 @@ function EmployeeList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<'all' | 'regional-manager' | 'field-officer'>('all');
   const STATE_KEY = 'employees.list.state.v1';
   const [isHydrated, setIsHydrated] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [areFiltersVisible, setAreFiltersVisible] = useState(true);
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState(['name', 'email', 'city', 'state', 'role', 'department', 'userName', 'dateOfJoining', 'primaryContact', 'actions']);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
@@ -150,7 +147,6 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const { requestDiscard } = useUnsavedChanges(employeeAccountDraftIsDirty);
 
   const { token, userRole, userData, currentUser } = useAuth();
-  const canManageTeamSetup = hasAdminSetupPrivileges(userRole, currentUser);
   const employeeId = userData?.employeeId ? String(userData.employeeId) : (typeof window !== 'undefined' ? localStorage.getItem('employeeId') : null);
   const officeManagerId = typeof window !== 'undefined' ? localStorage.getItem('officeManagerId') : null;
   const normalizedRole = normalizeRoleValue(userRole);
@@ -201,7 +197,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   useEffect(() => {
     if (isHydrated) return;
 
-    let saved: { searchQuery?: string; currentPage?: number; itemsPerPage?: number } = {};
+    let saved: { searchQuery?: string; selectedRoleFilter?: string; currentPage?: number; itemsPerPage?: number } = {};
     try {
       const raw = sessionStorage.getItem(STATE_KEY);
       if (raw) {
@@ -210,10 +206,13 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     } catch {}
 
     const querySearch = searchParams.get('q');
+    const queryRole = searchParams.get('role');
     const queryPage = Number(searchParams.get('page'));
     const querySize = Number(searchParams.get('size'));
 
     const initialSearch = typeof querySearch === 'string' ? querySearch : saved.searchQuery ?? '';
+    const savedRole = queryRole ?? saved.selectedRoleFilter;
+    const initialRole = savedRole === 'regional-manager' || savedRole === 'field-officer' ? savedRole : 'all';
     const initialPage = !Number.isNaN(queryPage) && queryPage > 0
       ? queryPage
       : typeof saved.currentPage === 'number' && saved.currentPage > 0
@@ -226,6 +225,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
         : 10;
 
     setSearchQuery(initialSearch);
+    setSelectedRoleFilter(initialRole);
     setCurrentPage(initialPage);
     setItemsPerPage(initialSize);
     setIsHydrated(true);
@@ -236,7 +236,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     if (!isHydrated) return;
 
     try {
-      sessionStorage.setItem(STATE_KEY, JSON.stringify({ searchQuery, currentPage, itemsPerPage }));
+      sessionStorage.setItem(STATE_KEY, JSON.stringify({ searchQuery, selectedRoleFilter, currentPage, itemsPerPage }));
     } catch {}
 
     const params = new URLSearchParams(searchParamsString);
@@ -244,6 +244,11 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       params.set('q', searchQuery.trim());
     } else {
       params.delete('q');
+    }
+    if (selectedRoleFilter !== 'all') {
+      params.set('role', selectedRoleFilter);
+    } else {
+      params.delete('role');
     }
     if (currentPage > 1) {
       params.set('page', currentPage.toString());
@@ -263,7 +268,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
     const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
     router.replace(nextUrl, { scroll: false });
-  }, [searchQuery, currentPage, itemsPerPage, isHydrated, pathname, router, searchParamsString]);
+  }, [searchQuery, selectedRoleFilter, currentPage, itemsPerPage, isHydrated, pathname, router, searchParamsString]);
 
   const fetchArchivedEmployees = async () => {
     try {
@@ -289,6 +294,30 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   const deleteUserById = async (userId: number) => {
     try {
+      const employeeTeams = await API.getTeamByEmployee(userId).catch(() => []);
+      const assignedTeams = (employeeTeams as unknown as TeamData[]).filter((team) =>
+        team.fieldOfficers?.some((officer) => officer.id === userId)
+      );
+
+      for (const team of assignedTeams) {
+        const removeResponse = await fetch(
+          `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/deleteFieldOfficer?id=${team.id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ fieldOfficers: [userId] }),
+          }
+        );
+
+        if (!removeResponse.ok) {
+          const message = await removeResponse.text().catch(() => '');
+          throw new Error(message || 'Could not remove the employee from their team.');
+        }
+      }
+
       const response = await fetch(
         `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/delete?id=${userId}`,
         {
@@ -303,11 +332,19 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       if (response.ok) {
         API.invalidateEmployeeDirectory();
         setUsers((prevUsers) => prevUsers.filter((user) => user.id !== userId));
+        setTeamData((current) => current?.map((team) => ({
+          ...team,
+          fieldOfficers: team.fieldOfficers.filter((officer) => officer.id !== userId),
+        })) ?? current);
+        toast.success('Employee archived', { duration: 3000 });
       } else {
-        console.error('Failed to delete employee');
+        const message = await response.text().catch(() => '');
+        throw new Error(message || 'Failed to archive employee');
       }
     } catch (error) {
       console.error('Error deleting employee:', error);
+      toast.error(error instanceof Error ? error.message : 'Could not archive employee', { duration: 3000 });
+      throw error;
     }
   };
 
@@ -317,6 +354,8 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     try {
       await deleteUserById(deleteCandidate.id);
       setDeleteCandidate(null);
+    } catch {
+      // Keep the dialog open so the user can retry after the toast explains the failure.
     } finally {
       setIsDeletingUser(false);
     }
@@ -429,15 +468,9 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
   };
 
-  const transformRole = (role: string) => {
-    return role === 'Manager' ? 'Regional Manager' : 
-           role === 'Office Manager' ? 'Regional Manager' : 
-           role;
-  };
-
   // Function to generate role tags with pastel colors
   const getRoleTag = (role: string) => {
-    const transformedRole = transformRole(role);
+    const transformedRole = getEmployeeRoleLabel(role);
     
     if (transformedRole === 'Regional Manager') {
       return (
@@ -518,12 +551,18 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   // Filtering and sorting logic
   const filteredUsers = useMemo(() => {
-    return users.filter((user) =>
-      (`${user.firstName} ${user.lastName}`).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.role.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [users, searchQuery]);
+    const query = searchQuery.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const matchesRole = selectedRoleFilter === 'all' || getEmployeeRoleCategory(user.role) === selectedRoleFilter;
+      if (!matchesRole) return false;
+      if (!query) return true;
+
+      return (`${user.firstName ?? ''} ${user.lastName ?? ''}`).toLowerCase().includes(query) ||
+        String(user.email ?? '').toLowerCase().includes(query) ||
+        getEmployeeRoleLabel(user.role).toLowerCase().includes(query);
+    });
+  }, [users, searchQuery, selectedRoleFilter]);
 
   const sortedUsers = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
@@ -551,50 +590,32 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   }, [archivedEmployees, archiveSearchQuery]);
 
   return (
-    <div className="container-employee mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      {/* Search and Filters Section */}
-      <div className="mb-8 space-y-4">
-        {/* Search Bar */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <Input
-                type="text"
-                placeholder="Search users..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pr-10"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute inset-y-0 right-2 flex items-center justify-center text-muted-foreground hover:text-foreground"
-                  aria-label="Clear search"
-                >
-                  <XCircle className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-2">
-            <Button 
-              variant="outline"
+    <div className="mx-auto w-full max-w-none py-4">
+      <div className="mb-4 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
               onClick={() => {
-                setIsArchivedModalOpen(true);
-                fetchArchivedEmployees();
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem('addEmployee.navigation', 'fromEmployeesList');
+                }
+                router.push('/dashboard/employees/add');
               }}
               className="flex items-center gap-2"
             >
-              <Archive className="h-4 w-4" />
-              Archived
+              <Plus className="h-4 w-4" />
+              Add Employee
             </Button>
-            
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAreFiltersVisible((visible) => !visible)}>
+              <Filter className="mr-2 h-4 w-4" />
+              {areFiltersVisible ? 'Hide Filters' : 'Show Filters'}
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="flex items-center gap-2">
                   <Settings className="h-4 w-4" />
                   Columns
                 </Button>
@@ -617,25 +638,63 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            
-            {canManageTeamSetup && <AddTeam />}
-            
             <Button 
+              variant="outline"
+              size="sm"
               onClick={() => {
-                // Set flag to reset form when navigating to add page
-                if (typeof window !== 'undefined') {
-                  sessionStorage.setItem('addEmployee.navigation', 'fromEmployeesList');
-                }
-                router.push('/dashboard/employees/add');
-              }} 
+                setIsArchivedModalOpen(true);
+                fetchArchivedEmployees();
+              }}
               className="flex items-center gap-2"
             >
-              <Plus className="h-4 w-4" />
-              Add Employee
+              <Archive className="h-4 w-4" />
+              Archived
             </Button>
           </div>
-        </div>
       </div>
+
+      {areFiltersVisible && (
+        <div className="mb-4 rounded-xl border border-border/70 bg-muted/20 p-3">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,28rem)_180px]">
+            <div className="relative">
+              <Label htmlFor="employee-search" className="sr-only">Search employees</Label>
+              <Input
+                id="employee-search"
+                type="search"
+                autoComplete="off"
+                placeholder="Search name, email, or role"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setCurrentPage(1);
+                }}
+                className="h-8 bg-background pr-8 text-xs shadow-none"
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 flex items-center pr-2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                  <XCircle className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <Select
+              value={selectedRoleFilter}
+              onValueChange={(value: 'all' | 'regional-manager' | 'field-officer') => {
+                setSelectedRoleFilter(value);
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="h-8 bg-background text-xs shadow-none" aria-label="Filter by role">
+                <SelectValue placeholder="All roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All roles</SelectItem>
+                <SelectItem value="regional-manager">Regional Manager</SelectItem>
+                <SelectItem value="field-officer">Field Officer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
 
       {isLoading && (
         <div className="space-y-4">
@@ -690,92 +749,59 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       {!isLoading && !error && (
         <>
           {/* Mobile view */}
-          <div className="md:hidden space-y-4">
-            {currentUsers.map((user, index) => (
-              <motion.div
-                key={user.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-              >
-                <Card className="overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center space-x-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="bg-gray-200 text-gray-700 font-semibold">
-                          {getInitials(user.firstName, user.lastName)}
-                        </AvatarFallback>
+          <div className="space-y-3 md:hidden">
+            {currentUsers.map((user) => (
+              <Card key={user.id} className="overflow-hidden shadow-none">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarFallback className="bg-muted text-xs font-semibold">{getInitials(user.firstName, user.lastName)}</AvatarFallback>
                       </Avatar>
-                      <div>
-                        <CardTitle className="text-lg font-bold">{`${user.firstName} ${user.lastName}`}</CardTitle>
-                        <div className="text-sm">{getRoleTag(user.role)}</div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold" title={`${user.firstName} ${user.lastName}`}>{`${user.firstName} ${user.lastName}`}</p>
+                        <p className="truncate text-xs text-muted-foreground" title={user.userName}>{user.userName || 'No username'}</p>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-3">
-                      {selectedColumns.includes('userName') && (
-                        <div className="flex items-center space-x-2">
-                          <User className="h-5 w-5 text-blue-500" />
-                          <span className="text-sm">{user.userName}</span>
-                        </div>
-                      )}
-                      {selectedColumns.includes('primaryContact') && (
-                        <div className="flex items-center space-x-2">
-                          <Phone className="h-5 w-5 text-green-500" />
-                          <span className="text-sm">{user.primaryContact}</span>
-                        </div>
-                      )}
-                      {selectedColumns.includes('email') && (
-                        <div className="flex items-center space-x-2">
-                          <Mail className="h-5 w-5 text-red-500" />
-                          <span className="text-sm">{user.email}</span>
-                        </div>
-                      )}
-                      {selectedColumns.includes('city') && (
-                        <div className="flex items-center space-x-2">
-                          <MapPin className="h-5 w-5 text-yellow-500" />
-                          <span className="text-sm">{toSentenceCase(user.city)}</span>
-                        </div>
-                      )}
-                      {selectedColumns.includes('state') && (
-                        <div className="flex items-center space-x-2">
-                          <Building className="h-5 w-5 text-purple-500" />
-                          <span className="text-sm">{user.state}</span>
-                        </div>
-                      )}
-                      {selectedColumns.includes('dateOfJoining') && (
-                        <div className="flex items-center space-x-2">
-                          <Calendar className="h-5 w-5 text-indigo-500" />
-                          <span className="text-sm">{format(new Date(user.dateOfJoining), 'MMM dd, yyyy')}</span>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                  <div className="px-6 py-3 bg-gray-50 flex justify-end space-x-2">
-                    <Button variant="ghost" size="sm" onClick={() => handleGoToEdit(user.id)}>
-                      Edit
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => handleViewUser(user.id)}>
-                      View
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeleteCandidate(user)}>
-                      Delete
-                    </Button>
+                    <div className="shrink-0">{getRoleTag(user.role)}</div>
                   </div>
-                </Card>
-              </motion.div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs">
+                    <div className="min-w-0"><span className="text-muted-foreground">Phone</span><Ellipsis value={user.primaryContact} /></div>
+                    <div className="min-w-0"><span className="text-muted-foreground">Location</span><Ellipsis value={[toSentenceCase(user.city), user.state].filter(Boolean).join(', ')} /></div>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleGoToEdit(user.id)}>Edit</Button>
+                    <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={() => handleViewUser(user.id)}>View details</Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="More employee actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName)}>Edit Username</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>Reset Password</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
 
           {/* Desktop view */}
-          <div className="hidden md:block">
-            <div className="rounded-md border overflow-hidden">
-              <Table className="w-full">
+          <div className="hidden min-w-0 md:block">
+              <Table className="table-fixed text-xs font-poppins">
+              <colgroup>
+                {selectedColumns.includes('name') && <col className="w-[22%]" />}
+                {selectedColumns.includes('role') && <col className="w-[16%]" />}
+                {selectedColumns.includes('userName') && <col className="w-[16%]" />}
+                {selectedColumns.includes('primaryContact') && <col className="w-[14%]" />}
+                {selectedColumns.includes('city') && <col className="w-[12%]" />}
+                {selectedColumns.includes('state') && <col className="w-[14%]" />}
+                {selectedColumns.includes('actions') && <col className="w-[6%]" />}
+              </colgroup>
               <TableHeader>
                 <TableRow>
                   {selectedColumns.includes('name') && (
-                    <TableHead className="cursor-pointer px-6 py-3" onClick={() => handleSort('firstName')}>
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('firstName')}>
                       Name
                       {sortColumn === 'firstName' && (
                         <span className="ml-2">
@@ -785,7 +811,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     </TableHead>
                   )}
                   {selectedColumns.includes('role') && (
-                    <TableHead className="cursor-pointer px-6 py-3" onClick={() => handleSort('role')}>
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('role')}>
                       Role
                       {sortColumn === 'role' && (
                         <span className="ml-2">
@@ -795,7 +821,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     </TableHead>
                   )}
                   {selectedColumns.includes('userName') && (
-                    <TableHead className="cursor-pointer px-6 py-3" onClick={() => handleSort('userName')}>
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('userName')}>
                       User Name
                       {sortColumn === 'userName' && (
                         <span className="ml-2">
@@ -805,7 +831,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     </TableHead>
                   )}
                   {selectedColumns.includes('primaryContact') && (
-                    <TableHead className="cursor-pointer px-6 py-3" onClick={() => handleSort('primaryContact')}>
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('primaryContact')}>
                       Phone
                       {sortColumn === 'primaryContact' && (
                         <span className="ml-2">
@@ -815,7 +841,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     </TableHead>
                   )}
                   {selectedColumns.includes('city') && (
-                    <TableHead className="cursor-pointer px-6 py-3" onClick={() => handleSort('city')}>
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('city')}>
                       City
                       {sortColumn === 'city' && (
                         <span className="ml-2">
@@ -825,7 +851,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     </TableHead>
                   )}
                   {selectedColumns.includes('state') && (
-                    <TableHead className="cursor-pointer px-6 py-3" onClick={() => handleSort('state')}>
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('state')}>
                       State
                       {sortColumn === 'state' && (
                         <span className="ml-2">
@@ -835,7 +861,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     </TableHead>
                   )}
                   {selectedColumns.includes('actions') && (
-                    <TableHead className="text-right px-6 py-3">Actions</TableHead>
+                    <TableHead className="overflow-hidden text-ellipsis text-right whitespace-nowrap">Actions</TableHead>
                   )}
                 </TableRow>
               </TableHeader>
@@ -843,20 +869,20 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 {currentUsers.map((user) => (
                   <TableRow key={user.id}>
                     {selectedColumns.includes('name') && (
-                      <TableCell className="font-medium px-6 py-3">{`${user.firstName} ${user.lastName}`}</TableCell>
+                      <TableCell className="font-medium"><Ellipsis value={`${user.firstName} ${user.lastName}`} /></TableCell>
                     )}
-                    {selectedColumns.includes('role') && <TableCell className="px-6 py-3">{getRoleTag(user.role)}</TableCell>}
-                    {selectedColumns.includes('userName') && <TableCell className="px-6 py-3">{user.userName}</TableCell>}
-                    {selectedColumns.includes('primaryContact') && <TableCell className="px-6 py-3">{user.primaryContact}</TableCell>}
-                    {selectedColumns.includes('city') && <TableCell className="px-6 py-3">{toSentenceCase(user.city)}</TableCell>}
-                    {selectedColumns.includes('state') && <TableCell className="px-6 py-3">{user.state}</TableCell>}
+                    {selectedColumns.includes('role') && <TableCell className="overflow-hidden">{getRoleTag(user.role)}</TableCell>}
+                    {selectedColumns.includes('userName') && <TableCell><Ellipsis value={user.userName} /></TableCell>}
+                    {selectedColumns.includes('primaryContact') && <TableCell><Ellipsis value={user.primaryContact} /></TableCell>}
+                    {selectedColumns.includes('city') && <TableCell><Ellipsis value={toSentenceCase(user.city)} /></TableCell>}
+                    {selectedColumns.includes('state') && <TableCell><Ellipsis value={user.state} /></TableCell>}
                     {selectedColumns.includes('actions') && (
-                      <TableCell className="text-right px-6 py-3">
+                      <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
                               <span className="sr-only">Open menu</span>
-                              <span>•••</span>
+                              <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -883,15 +909,14 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 ))}
               </TableBody>
             </Table>
-            </div>
           </div>
 
           {/* Pagination Controls */}
-          <div className="flex items-center justify-between mt-4">
-            <div className="flex items-center space-x-2">
-              <Label htmlFor="pageSize">Rows per page:</Label>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="pageSize" className="text-xs">Rows per page:</Label>
               <Select value={itemsPerPage.toString()} onValueChange={(value) => setItemsPerPage(parseInt(value))}>
-                <SelectTrigger className="w-20">
+                <SelectTrigger className="h-8 w-20 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -903,7 +928,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               </Select>
             </div>
             
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -911,11 +936,11 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 disabled={currentPage === 1}
               >
                 <ChevronLeft className="h-4 w-4" />
-                Previous
+                <span className="hidden sm:inline">Previous</span>
               </Button>
               
-              <span className="text-sm text-muted-foreground">
-                Page {currentPage} of {Math.ceil(sortedUsers.length / itemsPerPage)}
+              <span className="text-xs text-muted-foreground">
+                Page {currentPage} of {Math.max(Math.ceil(sortedUsers.length / itemsPerPage), 1)}
               </span>
               
               <Button
@@ -924,7 +949,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 onClick={() => setCurrentPage(Math.min(Math.ceil(sortedUsers.length / itemsPerPage), currentPage + 1))}
                 disabled={currentPage >= Math.ceil(sortedUsers.length / itemsPerPage)}
               >
-                Next
+                <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>

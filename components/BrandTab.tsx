@@ -238,43 +238,61 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
 
     return (
         <>
-        <div className="w-full">
+        <section className="w-full space-y-3" aria-labelledby="brand-insights-heading">
+            {!isAdding && !isEditing && brands.length > 0 && (
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <h2 id="brand-insights-heading" className="text-sm font-semibold text-foreground">Brand insights</h2>
+                        <p className="text-xs text-muted-foreground">{brands.length} {brands.length === 1 ? "brand" : "brands"} discussed during this visit</p>
+                    </div>
+                    <Button onClick={() => setIsAdding(true)} size="sm" className="h-9 shrink-0">
+                        <Plus className="mr-1.5 h-4 w-4" />
+                        Add brand
+                    </Button>
+                </div>
+            )}
             {!isAdding && !isEditing && brands && brands.length === 0 && (
-                <div className="text-center py-8">
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                            <Building2 className="h-6 w-6 text-muted-foreground" />
+                <div className="rounded-lg border border-dashed bg-muted/15 px-4 py-10 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                            <Building2 className="h-5 w-5 text-muted-foreground" />
                         </div>
-                        <div className="space-y-2">
-                            <Heading size="md" weight="medium">No brands available</Heading>
-                            <Text size="sm" tone="muted">Add brand information to track pros and cons</Text>
+                        <div>
+                            <p className="text-sm font-semibold text-foreground">No brand insights yet</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Record strengths and concerns mentioned during this visit.</p>
                         </div>
-                        <Button onClick={() => setIsAdding(true)} className="mt-2">
-                            <Plus className="mr-2 h-4 w-4" />
-                            Add Brand
+                        <Button onClick={() => setIsAdding(true)} size="sm" className="mt-1 h-9">
+                            <Plus className="mr-1.5 h-4 w-4" />
+                            Add brand
                         </Button>
                     </div>
                 </div>
             )}
 
             {(isAdding || isEditing) && (
-                <Card className="w-full mb-4 border border-border bg-card shadow-sm">
+                <Card className="w-full gap-0 rounded-lg border-border bg-card py-0 shadow-none">
                     <CardContent className="p-4">
+                        <div className="mb-4 flex items-start justify-between gap-3 border-b pb-3">
+                            <div>
+                                <h2 id="brand-insights-heading" className="text-sm font-semibold text-foreground">{isEditing ? "Edit brand insight" : "Add brand insight"}</h2>
+                                <p className="mt-0.5 text-xs text-muted-foreground">Capture what is working and what needs attention.</p>
+                            </div>
+                        </div>
                         <div className="mb-4">
-                            <Label className="text-sm font-medium text-foreground mb-2 block">Brand Name</Label>
+                            <Label className="mb-1.5 block text-xs font-medium text-foreground">Brand name</Label>
                             <Input
                                 name="brandName"
                                 value={newBrand.brandName}
                                 onChange={handleInputChange}
                                 placeholder="Enter brand name"
-                                className="w-full"
+                                className="h-9 w-full shadow-none"
                             />
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div className="space-y-2">
+                        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div className="space-y-2 rounded-md bg-emerald-50/60 p-3 dark:bg-emerald-950/20">
                                 <div className="flex items-center gap-2">
-                                    <CheckCircle className="h-3 w-3 text-green-600" />
-                                    <Label className="text-sm font-medium text-foreground">Pros</Label>
+                                    <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    <Label className="text-xs font-semibold text-foreground">Strengths</Label>
                                 </div>
                                 <div className="space-y-1">
                                     {newBrand.pros.map((pro, index) => (
@@ -283,7 +301,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                             value={pro}
                                             onChange={(e) => handleProConChange("pros", index, e.target.value)}
                                             placeholder={`Pro ${index + 1}`}
-                                            className="w-full"
+                                            className="h-9 w-full bg-background shadow-none"
                                         />
                                     ))}
                                 </div>
@@ -292,17 +310,17 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                         onClick={() => handleAddProCon("pros")}
                                         variant="outline"
                                         size="sm"
-                                        className="w-full"
+                                        className="h-8 w-full bg-background text-xs shadow-none"
                                     >
                                         <Plus className="mr-2 h-3 w-3" />
-                                        Add Pro
+                                        Add strength
                                     </Button>
                                 )}
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2 rounded-md bg-rose-50/60 p-3 dark:bg-rose-950/20">
                                 <div className="flex items-center gap-2">
-                                    <XCircle className="h-3 w-3 text-red-600" />
-                                    <Label className="text-sm font-medium text-foreground">Cons</Label>
+                                    <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                                    <Label className="text-xs font-semibold text-foreground">Concerns</Label>
                                 </div>
                                 <div className="space-y-1">
                                     {newBrand.cons.map((con, index) => (
@@ -311,7 +329,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                             value={con}
                                             onChange={(e) => handleProConChange("cons", index, e.target.value)}
                                             placeholder={`Con ${index + 1}`}
-                                            className="w-full"
+                                            className="h-9 w-full bg-background shadow-none"
                                         />
                                     ))}
                                 </div>
@@ -320,24 +338,26 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                         onClick={() => handleAddProCon("cons")}
                                         variant="outline"
                                         size="sm"
-                                        className="w-full"
+                                        className="h-8 w-full bg-background text-xs shadow-none"
                                     >
                                         <Plus className="mr-2 h-3 w-3" />
-                                        Add Con
+                                        Add concern
                                     </Button>
                                 )}
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                        <div className="flex justify-end gap-2 border-t border-border pt-3">
                             <Button
                                 onClick={cancelBrandDraft}
                                 variant="outline"
+                                size="sm"
                             >
                                 Cancel
                             </Button>
                             <Button
                                 onClick={isEditing ? handleUpdateBrand : handleAddBrand}
                                 variant="default"
+                                size="sm"
                                 disabled={isSaving}
                             >
                                 {isSaving ? (
@@ -346,7 +366,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                         {isEditing ? "Updating..." : "Adding..."}
                                     </>
                                 ) : (
-                                    isEditing ? "Update Brand" : "Add Brand"
+                                    isEditing ? "Update brand" : "Add brand"
                                 )}
                             </Button>
                         </div>
@@ -355,23 +375,22 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
             )}
 
             {brands.length > 0 && (
-                <div className="space-y-3">
+                <div className="grid gap-3">
                     {brands.map((brand) => (
                         <Card
                             key={brand.id}
-                            className="w-full border border-border bg-card shadow-sm hover:shadow-md transition-all duration-200"
+                            className="w-full gap-0 overflow-hidden rounded-lg border-border bg-card py-0 shadow-none transition-colors hover:border-foreground/20"
                         >
-                            <CardContent className="p-4">
+                            <CardContent className="p-0">
                                 {/* Header Section */}
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center justify-between border-b px-4 py-3">
                                     <div className="flex items-center gap-2">
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
-                                            <Building2 className="h-4 w-4 text-primary" />
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                                            <Building2 className="h-4 w-4" />
                                         </div>
                                         <div>
-                                            <Heading size="md" weight="semibold" className="text-foreground">
-                                                {brand.brandName}
-                                            </Heading>
+                                            <p className="text-sm font-semibold text-foreground">{brand.brandName}</p>
+                                            <p className="text-[11px] text-muted-foreground">{brand.pros.length + brand.cons.length} observations</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1">
@@ -379,7 +398,8 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                             onClick={() => handleEditBrand(brand.id)}
                                             variant="ghost"
                                             size="icon"
-                                            className="h-7 w-7"
+                                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                            aria-label={`Edit ${brand.brandName}`}
                                         >
                                             <Edit className="h-3 w-3" />
                                         </Button>
@@ -387,7 +407,8 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                             onClick={() => { setBrandPendingDelete(brand); setConfirmDeleteOpen(true); }}
                                             variant="ghost"
                                             size="icon"
-                                            className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                            aria-label={`Delete ${brand.brandName}`}
                                         >
                                             <Trash2 className="h-3 w-3" />
                                         </Button>
@@ -395,26 +416,20 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                 </div>
 
                                 {/* Pros and Cons Section */}
-                                {(brand.pros.length > 0 || brand.cons.length > 0) && (
-                                    <div className={`grid gap-4 ${brand.pros.length > 0 && brand.cons.length > 0 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+                                {(brand.pros.length > 0 || brand.cons.length > 0) ? (
+                                    <div className={`grid ${brand.pros.length > 0 && brand.cons.length > 0 ? 'grid-cols-1 md:grid-cols-2 md:divide-x' : 'grid-cols-1'}`}>
                                         {/* Pros */}
                                         {brand.pros.length > 0 && (
-                                            <div className="space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100">
-                                                        <CheckCircle className="h-3 w-3 text-green-600" />
-                                                    </div>
-                                                    <Heading size="sm" weight="medium" className="text-foreground">
-                                                        Pros
-                                                    </Heading>
+                                            <div className="bg-emerald-50/35 p-4 dark:bg-emerald-950/10">
+                                                <div className="mb-2 flex items-center gap-2">
+                                                    <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                                    <p className="text-xs font-semibold text-foreground">Strengths</p>
                                                 </div>
-                                                <ul className="space-y-1">
+                                                <ul className="space-y-1.5">
                                                     {brand.pros.map((pro, index) => (
-                                                        <li key={index} className="flex items-start gap-2">
-                                                            <div className="flex h-1 w-1 rounded-full bg-green-500 mt-1.5 flex-shrink-0" />
-                                                            <Text size="sm" className="text-foreground">
-                                                                {pro}
-                                                            </Text>
+                                                        <li key={index} className="flex items-start gap-2 text-xs leading-5 text-foreground">
+                                                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                                                            <span>{pro}</span>
                                                         </li>
                                                     ))}
                                                 </ul>
@@ -423,28 +438,24 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
 
                                         {/* Cons */}
                                         {brand.cons.length > 0 && (
-                                            <div className="space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100">
-                                                        <XCircle className="h-3 w-3 text-red-600" />
-                                                    </div>
-                                                    <Heading size="sm" weight="medium" className="text-foreground">
-                                                        Cons
-                                                    </Heading>
+                                            <div className="bg-rose-50/35 p-4 dark:bg-rose-950/10">
+                                                <div className="mb-2 flex items-center gap-2">
+                                                    <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                                                    <p className="text-xs font-semibold text-foreground">Concerns</p>
                                                 </div>
-                                                <ul className="space-y-1">
+                                                <ul className="space-y-1.5">
                                                     {brand.cons.map((con, index) => (
-                                                        <li key={index} className="flex items-start gap-2">
-                                                            <div className="flex h-1 w-1 rounded-full bg-red-500 mt-1.5 flex-shrink-0" />
-                                                            <Text size="sm" className="text-foreground">
-                                                                {con}
-                                                            </Text>
+                                                        <li key={index} className="flex items-start gap-2 text-xs leading-5 text-foreground">
+                                                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-rose-500" />
+                                                            <span>{con}</span>
                                                         </li>
                                                     ))}
                                                 </ul>
                                             </div>
                                         )}
                                     </div>
+                                ) : (
+                                    <div className="px-4 py-6 text-center text-xs text-muted-foreground">No strengths or concerns recorded.</div>
                                 )}
                             </CardContent>
                         </Card>
@@ -452,15 +463,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                 </div>
             )}
 
-            {!isAdding && !isEditing && brands.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-border">
-                    <Button onClick={() => setIsAdding(true)} className="w-full md:w-auto">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Brand
-                    </Button>
-                </div>
-            )}
-        </div>
+        </section>
         {/* Delete Confirmation Modal */}
         <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
             <DialogContent>

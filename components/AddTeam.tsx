@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Loader2, Search, X } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Search, UsersRound, X } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { buildCityOptions, mergeCityOptions, normalizeCityKey } from "@/lib/city
 import { getTeamManagers } from "@/lib/team-access";
 import { API } from "@/lib/api";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { toast } from "sonner";
 
 interface Employee {
     id: number;
@@ -85,7 +86,11 @@ const getTeamManagersFromSummaries = (teams: TeamSummary[]) => {
     return Array.from(byId.values());
 };
 
-const AddTeam = () => {
+interface AddTeamProps {
+    onCreated?: () => void | Promise<void>;
+}
+
+const AddTeam = ({ onCreated }: AddTeamProps) => {
     const { token: authToken, userRole, currentUser } = useAuth();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedOfficeManager, setSelectedOfficeManager] = useState<string[]>([]);
@@ -457,16 +462,19 @@ const AddTeam = () => {
             console.log('Team creation response status:', response.status);
 
             if (response.ok) {
-                console.log('Team created successfully');
+                await onCreated?.();
                 setIsModalOpen(false);
                 resetForm();
+                toast.success('Team created', { duration: 3000 });
             } else {
                 const errorText = await response.text();
                 throw new Error(errorText || `Team creation failed (${response.status})`);
             }
         } catch (error) {
             console.error("Error creating team:", error);
-            setModalError(error instanceof Error ? error.message : 'Failed to create team');
+            const message = error instanceof Error ? error.message : 'Failed to create team';
+            setModalError(message);
+            toast.error(message, { duration: 3000 });
         } finally {
             setIsCreatingTeam(false);
         }
@@ -480,8 +488,6 @@ const AddTeam = () => {
                 ? prev.filter((value) => value !== cityValue)
                 : [...prev, cityValue]
         );
-        // Close the popover after selection/deselection for better UX
-        setIsCityPopoverOpen(false);
     };
 
     const handleEmployeeToggle = (employeeId: number) => {
@@ -505,7 +511,7 @@ const AddTeam = () => {
 
     return (
         <>
-            <Button onClick={() => {
+            <Button size="sm" className="gap-2" onClick={() => {
                 console.log('=== ADD TEAM BUTTON CLICKED ===');
                 console.log('Current state:', {
                     selectedOfficeManager,
@@ -514,25 +520,35 @@ const AddTeam = () => {
                     citiesCount: cities.length
                 });
                 setIsModalOpen(true);
-            }}>Add Team</Button>
-            <Dialog open={isModalOpen} onOpenChange={(open) => {
+            }}><UsersRound className="h-4 w-4" />Add team</Button>
+            <Sheet open={isModalOpen} onOpenChange={(open) => {
                 if (open) setIsModalOpen(true);
                 else requestCloseModal();
             }}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[1100px]">
-                    <DialogHeader>
-                        <DialogTitle>Add New Team</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-6 md:grid-cols-2">
+                <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-xl">
+                    <SheetHeader className="sticky top-0 z-10 border-b bg-background px-5 py-4 pr-12">
+                        <SheetTitle className="text-lg">Create team</SheetTitle>
+                        <SheetDescription className="text-xs">Build the team by assigning ownership, coverage, and members.</SheetDescription>
+                    </SheetHeader>
+                    <div className="space-y-4 p-5 pb-0">
+                    <div className="space-y-4">
                         {/* Left Pane: Manager and Cities */}
-                        <div className="space-y-6">
-                            <div>
-                                <Label htmlFor="officeManager">Managers</Label>
-                                <div className="mt-2 rounded-md border">
-                                    <ScrollArea className="h-44">
+                        <div className="space-y-4">
+                            <section className="rounded-xl border bg-card p-4">
+                                <div className="flex items-start gap-3">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">1</span>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-foreground">Regional managers</h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">Choose the regional managers who will own and coordinate this team.</p>
+                                    </div>
+                                </div>
+                                <div className="mt-3 rounded-lg border">
+                                    <ScrollArea className="h-36">
                                         {officeManagers.length === 0 ? (
-                                            <div className="p-4 text-sm text-muted-foreground">
-                                                No available managers
+                                            <div className="flex h-36 flex-col items-center justify-center px-5 text-center">
+                                                <UsersRound className="mb-2 h-5 w-5 text-muted-foreground" />
+                                                <p className="text-sm font-medium text-foreground">No regional managers available</p>
+                                                <p className="mt-1 text-xs text-muted-foreground">Every eligible regional manager is already assigned to a team.</p>
                                             </div>
                                         ) : (
                                             <div className="space-y-1 p-2">
@@ -569,18 +585,24 @@ const AddTeam = () => {
                                             const manager = officeManagers.find((item) => item.value === managerId);
                                             return (
                                                 <Badge key={managerId} variant="secondary" className="text-xs">
-                                                    {manager?.label ?? `Manager ${managerId}`}
+                                                    {manager?.label ?? `Regional Manager ${managerId}`}
                                                 </Badge>
                                             );
                                         })}
                                     </div>
                                 )}
-                            </div>
+                            </section>
 
-                            <div>
-                                <Label htmlFor="city">Cities</Label>
+                            <section className="rounded-xl border bg-card p-4">
+                                <div className="flex items-start gap-3">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">2</span>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-foreground">City coverage</h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">Select the cities this team will be responsible for.</p>
+                                    </div>
+                                </div>
                                 {selectedCities.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
+                                    <div className="mt-3 flex flex-wrap gap-2">
                                         {selectedCities.map((city) => (
                                             <Badge key={city} variant="secondary" className="text-xs">
                                                 {toSentenceCase(city)}
@@ -592,7 +614,7 @@ const AddTeam = () => {
                                     <PopoverTrigger asChild>
                                         <Button
                                             variant="outline"
-                                            className="mt-2 w-full justify-between text-left font-normal"
+                                            className="mt-3 w-full justify-between text-left font-normal"
                                         >
                                             <span className={selectedCities.length === 0 ? "text-muted-foreground" : ""}>
                                                 {cityTriggerLabel}
@@ -600,7 +622,7 @@ const AddTeam = () => {
                                             <Search className="h-4 w-4 text-muted-foreground" />
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-[calc(100vw-3rem)] p-0 sm:w-[620px] lg:w-[720px]" align="start">
+                                    <PopoverContent className="w-[calc(100vw-3rem)] p-0 sm:w-[520px]" align="start">
                                         <div className="border-b p-3 space-y-2">
                                             <div className="relative">
                                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -624,7 +646,7 @@ const AddTeam = () => {
                                                 </Button>
                                             )}
                                         </div>
-                                        <div className="max-h-64 overflow-y-auto overscroll-contain">
+                                        <ScrollArea className="h-64 pr-2">
                                             {cities.length === 0 ? (
                                                 <div className="p-4 text-sm text-muted-foreground">
                                                     No cities available
@@ -664,24 +686,30 @@ const AddTeam = () => {
                                                     })}
                                                 </div>
                                             )}
-                                        </div>
+                                        </ScrollArea>
                                     </PopoverContent>
                                 </Popover>
                                 <p className="mt-2 text-xs text-muted-foreground">
-                                    City assignment is saved only when you create the team.
+                                    Coverage is saved when the team is created.
                                 </p>
-                            </div>
+                            </section>
                         </div>
 
                         {/* Right Pane: Employees (Shown after selecting cities) */}
-                        <div className="space-y-3">
-                            <label>Team Members</label>
+                        <section className="space-y-3 rounded-xl border bg-card p-4">
+                            <div className="flex items-start gap-3">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">3</span>
+                                <div>
+                                    <h3 className="text-sm font-semibold text-foreground">Field officers</h3>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">Choose active, unassigned officers from the selected cities.</p>
+                                </div>
+                            </div>
                             {selectedCities.length === 0 ? (
-                                <div className="h-60 border rounded-md flex items-center justify-center text-sm text-muted-foreground">
-                                    Select one or more cities to view eligible field officers
+                                <div className="flex h-28 items-center justify-center rounded-lg border border-dashed bg-muted/15 px-6 text-center text-sm text-muted-foreground">
+                                    Select city coverage first to see eligible field officers.
                                 </div>
                             ) : isLoadingEmployees ? (
-                                <div className="max-h-[420px] overflow-y-auto space-y-3">
+                                <div className="max-h-72 space-y-3 overflow-y-auto">
                                     {Array.from({ length: 6 }).map((_, i) => (
                                         <div key={i} className="flex items-center justify-between p-2 rounded-md">
                                             <div className="flex items-center gap-2">
@@ -693,7 +721,7 @@ const AddTeam = () => {
                                     ))}
                                 </div>
                             ) : (
-                                <div className="max-h-[420px] overflow-y-auto space-y-4">
+                                <div className="max-h-72 space-y-4 overflow-y-auto pr-1">
                                     {(() => {
                                         const fullName = (e: Employee) => `${e.firstName} ${e.lastName}`.trim().toLowerCase();
                                         const activeAvailable = employees
@@ -821,14 +849,18 @@ const AddTeam = () => {
                                     })()}
                                 </div>
                             )}
-                        </div>
+                        </section>
                     </div>
                     {modalError && (
                         <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                             {modalError}
                         </div>
                     )}
-                    <div className="flex justify-end space-x-2 mt-4">
+                    <div className="sticky bottom-0 -mx-5 mt-5 flex items-center justify-between gap-3 border-t bg-background/95 px-5 py-4 backdrop-blur">
+                        <p className="text-xs text-muted-foreground">
+                            {selectedOfficeManager.length} regional manager{selectedOfficeManager.length === 1 ? '' : 's'} · {selectedCities.length} cit{selectedCities.length === 1 ? 'y' : 'ies'} · {selectedEmployees.length} officer{selectedEmployees.length === 1 ? '' : 's'}
+                        </p>
+                        <div className="flex shrink-0 gap-2">
                         <Button variant="outline" onClick={requestCloseModal}>
                             Cancel
                         </Button>
@@ -854,12 +886,14 @@ const AddTeam = () => {
                                     Creating...
                                 </span>
                             ) : (
-                                "Create Team"
+                                "Create team"
                             )}
                         </Button>
+                        </div>
                     </div>
-                </DialogContent>
-            </Dialog>
+                    </div>
+                </SheetContent>
+            </Sheet>
         </>
     );
 };

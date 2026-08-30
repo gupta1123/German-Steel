@@ -27,10 +27,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ChevronDown, ChevronUp, Phone, User, DollarSign, Target, Filter, X, Download, Columns, Home, MoreHorizontal, ChevronLeft, ChevronRight, Briefcase, Cake } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Phone, User, DollarSign, Target, Filter, X, Download, Columns, MoreHorizontal, ChevronLeft, ChevronRight, Briefcase, Cake } from "lucide-react";
 import { format } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
-import { API, type StoreDto, type StoreResponse, type TeamDataDto, type EmployeeUserDto } from "@/lib/api";
+import { API, type StoreDto, type StoreResponse, type TeamDataDto, type EmployeeUserDto, type ClientTypeDto, type LocationMasterDto } from "@/lib/api";
+import { formatCityLabel } from "@/lib/city-options";
 import AddCustomerModal from "@/components/AddCustomerModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/components/auth-provider";
@@ -64,8 +65,39 @@ type CustomerFilters = {
     employeeName: string;
 };
 
+function Ellipsis({ value }: { value: React.ReactNode }) {
+    const title = typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
+    return (
+        <span className="block min-w-0 truncate" title={title}>
+            {value}
+        </span>
+    );
+}
+
 const TEAM_CUSTOMER_PAGE_SIZE = 1000;
 const CUSTOMER_FILTER_DEBOUNCE_MS = 300;
+
+const buildFilterOptions = (
+    values: Array<string | null | undefined>,
+    allLabel: string,
+    formatLabel: (value: string) => string = (value) => value,
+): SearchableOption[] => {
+    const uniqueValues = new Map<string, string>();
+
+    values.forEach((value) => {
+        const trimmedValue = value?.trim();
+        if (!trimmedValue) return;
+
+        const normalizedValue = trimmedValue.toLocaleLowerCase();
+        if (!uniqueValues.has(normalizedValue)) uniqueValues.set(normalizedValue, trimmedValue);
+    });
+
+    const options = Array.from(uniqueValues.values())
+        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
+        .map((value) => ({ value, label: formatLabel(value) }));
+
+    return [{ value: 'all', label: allLabel }, ...options];
+};
 
 const normalizeSearchValue = (value: unknown) => String(value ?? '').trim().toLocaleLowerCase();
 
@@ -228,6 +260,10 @@ function CustomerListContent() {
    const [error, setError] = useState<string | null>(null);
     const [employees, setEmployees] = useState<EmployeeUserDto[]>([]);
     const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
+    const [locationStates, setLocationStates] = useState<LocationMasterDto[]>([]);
+    const [clientTypes, setClientTypes] = useState<ClientTypeDto[]>([]);
+    const [filterSourceCustomers, setFilterSourceCustomers] = useState<StoreDto[]>([]);
+    const [isLoadingFilterOptions, setIsLoadingFilterOptions] = useState(false);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("all");
     const [mobileSelectedEmployeeId, setMobileSelectedEmployeeId] = useState<string>("all");
     
@@ -269,6 +305,39 @@ function CustomerListContent() {
 
         loadEmployees();
 
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadCustomerMasters = async () => {
+            setIsLoadingFilterOptions(true);
+            const [statesResult, clientTypesResult] = await Promise.allSettled([
+                API.getLocationStates(),
+                API.getClientTypes(),
+            ]);
+
+            if (!isMounted) return;
+
+            if (statesResult.status === 'fulfilled') {
+                setLocationStates(statesResult.value);
+            } else {
+                console.error('Failed to load customer state filter options:', statesResult.reason);
+            }
+
+            if (clientTypesResult.status === 'fulfilled') {
+                setClientTypes(clientTypesResult.value);
+            } else {
+                console.error('Failed to load customer type filter options:', clientTypesResult.reason);
+            }
+
+            setIsLoadingFilterOptions(false);
+        };
+
+        loadCustomerMasters();
         return () => {
             isMounted = false;
         };
@@ -425,6 +494,48 @@ function CustomerListContent() {
         return [{ value: "all", label: "All Field Officers" }, ...base];
     }, [employeesForOptions]);
 
+    const stateOptions = useMemo(
+        () => buildFilterOptions(
+            [
+                ...locationStates.map((state) => state.name),
+                ...filterSourceCustomers.map((customer) => customer.state),
+                ...customers.map((customer) => customer.state),
+                desktopFilters.state,
+                mobileFilters.state,
+            ],
+            'All States',
+        ),
+        [customers, desktopFilters.state, filterSourceCustomers, locationStates, mobileFilters.state],
+    );
+
+    const cityOptions = useMemo(
+        () => buildFilterOptions(
+            [
+                ...filterSourceCustomers.map((customer) => customer.city),
+                ...customers.map((customer) => customer.city),
+                desktopFilters.city,
+                mobileFilters.city,
+            ],
+            'All cities',
+            formatCityLabel,
+        ),
+        [customers, desktopFilters.city, filterSourceCustomers, mobileFilters.city],
+    );
+
+    const clientTypeOptions = useMemo(
+        () => buildFilterOptions(
+            [
+                ...clientTypes.map((clientType) => clientType.type),
+                ...filterSourceCustomers.map((customer) => customer.clientType),
+                ...customers.map((customer) => customer.clientType),
+                desktopFilters.clientType,
+                mobileFilters.clientType,
+            ],
+            'All Client Types',
+        ),
+        [clientTypes, customers, desktopFilters.clientType, filterSourceCustomers, mobileFilters.clientType],
+    );
+
     useEffect(() => {
         if (employees.length === 0) {
             return;
@@ -543,6 +654,42 @@ function CustomerListContent() {
 
         loadTeamData();
     }, [isManager, isFieldOfficer, userData?.employeeId]);
+
+    useEffect(() => {
+        if (!isRoleDetermined || teamLoading) return;
+
+        let isMounted = true;
+
+        const loadFilterSourceCustomers = async () => {
+            try {
+                let stores: StoreDto[] = [];
+
+                if (isManager || isFieldOfficer) {
+                    if (teamIds.length === 0) {
+                        setFilterSourceCustomers([]);
+                        return;
+                    }
+
+                    const responses = await Promise.all(teamIds.map(getAllStoresForTeam));
+                    const uniqueStores = new Map<number, StoreDto>();
+                    responses.flat().forEach((store) => uniqueStores.set(store.storeId, store));
+                    stores = Array.from(uniqueStores.values());
+                } else {
+                    stores = await API.getStoresFiltered({ page: 0, size: TEAM_CUSTOMER_PAGE_SIZE });
+                }
+
+                if (isMounted) setFilterSourceCustomers(stores);
+            } catch (error) {
+                console.error('Failed to load customer filter values:', error);
+                if (isMounted) setFilterSourceCustomers([]);
+            }
+        };
+
+        loadFilterSourceCustomers();
+        return () => {
+            isMounted = false;
+        };
+    }, [isFieldOfficer, isManager, isRoleDetermined, teamIds, teamLoading]);
 
     const handleSort = (column: string) => {
         let mappedColumn = column;
@@ -960,7 +1107,7 @@ function CustomerListContent() {
         const filterInputId = `customer-${filterScope}-filter-${name}`;
 
         return (
-            <div className="space-y-1">
+            <div className={isMobile ? "space-y-1" : "min-w-0"}>
                 <Label htmlFor={filterInputId} className="sr-only">{label}</Label>
                 <div className="relative">
                     <Input
@@ -972,7 +1119,10 @@ function CustomerListContent() {
                         value={isMobile ? mobileFilters[name] : desktopFilters[name]}
                         disabled={isModalOpen}
                         onChange={(e) => isMobile ? handleMobileFilterChange(name, e.target.value) : handleDesktopFilterChange(name, e.target.value)}
-                        className="pl-8 pr-8 h-9"
+                        className={isMobile
+                            ? "h-11 pl-8 pr-8"
+                            : "h-8 bg-background pl-8 pr-8 text-xs shadow-none"
+                        }
                     />
                     <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-gray-400">
                         {icon}
@@ -991,8 +1141,44 @@ function CustomerListContent() {
         );
     };
 
+    const renderFilterSelect = (
+        name: 'city' | 'state' | 'clientType',
+        label: string,
+        options: SearchableOption[],
+        isMobile: boolean,
+    ) => {
+        const filters = isMobile ? mobileFilters : desktopFilters;
+        const value = filters[name] || 'all';
+
+        return (
+            <div className={isMobile ? "space-y-1" : "min-w-0"}>
+                <Label className="sr-only">{label}</Label>
+                <SearchableSelect
+                    options={options}
+                    value={value}
+                    onSelect={(option) => {
+                        const nextValue = !option || option.value === 'all' ? '' : option.value;
+                        if (isMobile) {
+                            handleMobileFilterChange(name, nextValue);
+                        } else {
+                            handleDesktopFilterChange(name, nextValue);
+                        }
+                    }}
+                    placeholder={label}
+                    loading={isLoadingFilterOptions}
+                    triggerClassName={isMobile
+                        ? "h-11 w-full justify-between"
+                        : "h-8 w-full justify-between bg-background text-xs shadow-none"
+                    }
+                    contentClassName="w-[var(--radix-popover-trigger-width)]"
+                    searchPlaceholder={`Search ${label.toLowerCase()}...`}
+                />
+            </div>
+        );
+    };
+
   return (
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-none py-4">
             <div>
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1067,6 +1253,7 @@ function CustomerListContent() {
                             size="icon"
                             onClick={() => setIsMobileFilterExpanded(true)}
                             className="md:hidden"
+                            aria-label="Open customer filters"
                         >
                             <Filter className="h-4 w-4" />
                         </Button>
@@ -1074,16 +1261,15 @@ function CustomerListContent() {
                 </div>
 
                 {isDesktopFilterExpanded && (
-                    <Card className="mb-6 hidden md:block">
-                        <CardContent className="p-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <div className="mb-4 hidden rounded-xl border border-border/70 bg-muted/20 p-3 md:block">
+                            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3 lg:grid-cols-4">
                                 {renderFilterInput('storeName', 'Shop Name', <User className="h-4 w-4" />, false)}
                                 {renderFilterInput('ownerName', 'Owner Name', <User className="h-4 w-4" />, false)}
-                                {renderFilterInput('city', 'City', <Home className="h-4 w-4" />, false)}
-                                {renderFilterInput('state', 'State', <Home className="h-4 w-4" />, false)}
+                                {renderFilterSelect('state', 'State', stateOptions, false)}
+                                {renderFilterSelect('city', 'City', cityOptions, false)}
                                 {renderFilterInput('primaryContact', 'Phone', <Phone className="h-4 w-4" />, false)}
-                                {renderFilterInput('clientType', 'Client Type', <Target className="h-4 w-4" />, false)}
-                                <div className="space-y-1">
+                                {renderFilterSelect('clientType', 'Client Type', clientTypeOptions, false)}
+                                <div className="min-w-0">
                                     <Label className="sr-only">Field Officer</Label>
                                     <SearchableSelect
                                         options={employeeOptions}
@@ -1091,12 +1277,12 @@ function CustomerListContent() {
                                         onSelect={handleDesktopEmployeeSelect}
                                         placeholder="Field Officer"
                                         loading={isLoadingEmployees}
-                                        triggerClassName="w-full justify-between h-9"
+                                        triggerClassName="h-8 w-full justify-between bg-background text-xs shadow-none"
                                         contentClassName="w-[var(--radix-popover-trigger-width)]"
                                         searchPlaceholder="Search employees..."
                                     />
                                 </div>
-                                <div className="flex items-center space-x-2 p-3 border rounded-md bg-gradient-to-r from-pink-50 to-rose-50 border-pink-200">
+                                <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2.5 transition-colors hover:border-pink-200 hover:bg-pink-50/50">
                                     <Checkbox
                                         id="birthdayToday"
                                         checked={birthdayToday}
@@ -1104,19 +1290,18 @@ function CustomerListContent() {
                                             setBirthdayToday(checked === true);
                                             setCurrentPage(1);
                                         }}
-                                        className="border-pink-300"
+                                        className="h-3.5 w-3.5 border-pink-300 data-[state=checked]:border-pink-500 data-[state=checked]:bg-pink-500"
                                     />
                                     <Label
                                         htmlFor="birthdayToday"
-                                        className="text-sm font-medium cursor-pointer flex items-center gap-2 flex-1"
+                                        className="flex flex-1 cursor-pointer items-center gap-1.5 text-xs font-medium"
                                     >
-                                        <Cake className="h-4 w-4 text-pink-600" />
-                                        <span className="text-pink-700">Birthday Today</span>
+                                        <Cake className="h-3.5 w-3.5 text-pink-500" />
+                                        <span>Birthday today</span>
                                     </Label>
                                 </div>
                             </div>
-                        </CardContent>
-                    </Card>
+                    </div>
                 )}
 
                 {isManager && (
@@ -1133,10 +1318,10 @@ function CustomerListContent() {
                         <div className="py-4 space-y-4">
                             {renderFilterInput('storeName', 'Shop Name', <User className="h-4 w-4" />, true)}
                             {renderFilterInput('ownerName', 'Owner Name', <User className="h-4 w-4" />, true)}
-                            {renderFilterInput('city', 'City', <Home className="h-4 w-4" />, true)}
-                            {renderFilterInput('state', 'State', <Home className="h-4 w-4" />, true)}
+                            {renderFilterSelect('state', 'State', stateOptions, true)}
+                            {renderFilterSelect('city', 'City', cityOptions, true)}
                             {renderFilterInput('primaryContact', 'Phone', <Phone className="h-4 w-4" />, true)}
-                            {renderFilterInput('clientType', 'Client Type', <Target className="h-4 w-4" />, true)}
+                            {renderFilterSelect('clientType', 'Client Type', clientTypeOptions, true)}
                             <div className="space-y-1">
                                 <Label className="sr-only">Field Officer</Label>
                                 <SearchableSelect
@@ -1218,7 +1403,7 @@ function CustomerListContent() {
                                             </Avatar>
                                             <div>
                                                 <CardTitle className="text-lg">{customer.storeName}</CardTitle>
-                                                <p className="text-sm text-gray-500">{customer.city}, {customer.state}</p>
+                                                <p className="text-sm text-gray-500">{formatCityLabel(customer.city)}, {customer.state}</p>
                                             </div>
                                         </div>
                                         {customer.clientType && (
@@ -1312,12 +1497,26 @@ function CustomerListContent() {
                     )}
                 </div>
 
-                <div className="hidden md:block">
-                    <Table className="text-sm font-poppins">
+                <div className="hidden min-w-0 md:block">
+                    <Table className="table-fixed text-xs font-poppins">
+                        <colgroup>
+                            {selectedColumns.includes('shopName') && <col className="w-[15%]" />}
+                            {selectedColumns.includes('ownerName') && <col className="w-[10%]" />}
+                            {selectedColumns.includes('city') && <col className="w-[8%]" />}
+                            {selectedColumns.includes('state') && <col className="w-[8%]" />}
+                            {selectedColumns.includes('phone') && <col className="w-[9%]" />}
+                            {selectedColumns.includes('monthlySales') && <col className="w-[8%]" />}
+                            {selectedColumns.includes('intentLevel') && <col className="w-[5%]" />}
+                            {selectedColumns.includes('fieldOfficer') && <col className="w-[12%]" />}
+                            {selectedColumns.includes('clientType') && <col className="w-[8%]" />}
+                            {selectedColumns.includes('totalVisits') && <col className="w-[5%]" />}
+                            {selectedColumns.includes('lastVisitDate') && <col className="w-[7%]" />}
+                            <col className="w-[5%]" />
+                        </colgroup>
                         <TableHeader>
                             <TableRow>
                                 {selectedColumns.includes('shopName') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('storeName')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Shop Name" onClick={() => handleSort('storeName')}>
                                         Shop Name
                                         {sortColumn === 'storeName' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1325,7 +1524,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('ownerName') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('ownerName')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Owner Name" onClick={() => handleSort('ownerName')}>
                                         Owner Name
                                         {sortColumn === 'ownerFirstName' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1333,7 +1532,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('city') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('city')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="City" onClick={() => handleSort('city')}>
                                         City
                                         {sortColumn === 'city' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1341,7 +1540,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('state') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('state')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="State" onClick={() => handleSort('state')}>
                                         State
                                         {sortColumn === 'state' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1349,7 +1548,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('phone') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('primaryContact')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Phone" onClick={() => handleSort('primaryContact')}>
                                         Phone
                                         {sortColumn === 'primaryContact' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1357,7 +1556,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('monthlySales') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('monthlySale')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Monthly Sale" onClick={() => handleSort('monthlySale')}>
                                         Mon Sale
                                         {sortColumn === 'monthlySale' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1365,7 +1564,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('intentLevel') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('intent')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Intent" onClick={() => handleSort('intent')}>
                                         Intent
                                         {sortColumn === 'intent' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1373,7 +1572,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('fieldOfficer') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('employeeName')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Field Officer" onClick={() => handleSort('employeeName')}>
                                         Field Officer
                                         {sortColumn === 'employeeName' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1381,7 +1580,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('clientType') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('clientType')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Client Type" onClick={() => handleSort('clientType')}>
                                         Client Type
                                         {sortColumn === 'clientType' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1389,7 +1588,7 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('totalVisits') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('totalVisits')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Total Visits" onClick={() => handleSort('totalVisits')}>
                                         #Vists
                                         {sortColumn === 'visitCount' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -1397,14 +1596,14 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('lastVisitDate') && (
-                                    <TableHead className="cursor-pointer" onClick={() => handleSort('lastVisitDate')}>
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Last Visit Date" onClick={() => handleSort('lastVisitDate')}>
                                         Last Visit Date
                                         {sortColumn === 'lastVisitDate' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
                                         )}
                                     </TableHead>
                                 )}
-                                <TableHead className="w-20">Actions</TableHead>
+                                <TableHead className="overflow-hidden text-ellipsis" title="Actions">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
 
@@ -1455,44 +1654,44 @@ function CustomerListContent() {
                             ) : (
                                 customers.map((customer: Customer, index: number) => (
                                     <TableRow key={`customer-${customer.storeId}-${index}`}>
-                                        {selectedColumns.includes('shopName') && <TableCell>{customer.storeName || ''}</TableCell>}
+                                        {selectedColumns.includes('shopName') && <TableCell className="overflow-hidden"><Ellipsis value={customer.storeName || ''} /></TableCell>}
                                         {selectedColumns.includes('ownerName') && (
-                                            <TableCell>
-                                                {customer.clientFirstName || customer.clientLastName
+                                            <TableCell className="overflow-hidden">
+                                                <Ellipsis value={customer.clientFirstName || customer.clientLastName
                                                     ? `${customer.clientFirstName || ''} ${customer.clientLastName || ''}`.trim()
-                                                    : ''}
+                                                    : ''} />
                                             </TableCell>
                                         )}
-                                        {selectedColumns.includes('city') && <TableCell>{customer.city || ''}</TableCell>}
-                                        {selectedColumns.includes('state') && <TableCell>{customer.state || ''}</TableCell>}
-                                        {selectedColumns.includes('phone') && <TableCell>{customer.primaryContact || ''}</TableCell>}
+                                        {selectedColumns.includes('city') && <TableCell className="overflow-hidden"><Ellipsis value={customer.city || ''} /></TableCell>}
+                                        {selectedColumns.includes('state') && <TableCell className="overflow-hidden"><Ellipsis value={customer.state || ''} /></TableCell>}
+                                        {selectedColumns.includes('phone') && <TableCell className="overflow-hidden"><Ellipsis value={customer.primaryContact || ''} /></TableCell>}
                                         {selectedColumns.includes('monthlySales') && (
-                                            <TableCell>
-                                                {customer.monthlySale !== null && customer.monthlySale !== undefined
+                                            <TableCell className="overflow-hidden">
+                                                <Ellipsis value={customer.monthlySale !== null && customer.monthlySale !== undefined
                                                     ? `${customer.monthlySale.toLocaleString()} tonnes`
-                                                    : ''}
+                                                    : ''} />
                                             </TableCell>
                                         )}
                                         {selectedColumns.includes('intentLevel') && (
                                             <TableCell>{customer.intent !== null && customer.intent !== undefined ? customer.intent : ''}</TableCell>
                                         )}
-                                        {selectedColumns.includes('fieldOfficer') && <TableCell>{customer.employeeName || ''}</TableCell>}
+                                        {selectedColumns.includes('fieldOfficer') && <TableCell className="overflow-hidden"><Ellipsis value={customer.employeeName || ''} /></TableCell>}
                                         {selectedColumns.includes('clientType') && (
-                                            <TableCell>
-                                                <Badge variant="outline">
-                                                    {customer.clientType || ''}
+                                            <TableCell className="overflow-hidden">
+                                                <Badge variant="outline" className="max-w-full">
+                                                    <Ellipsis value={customer.clientType || ''} />
                                                 </Badge>
                                             </TableCell>
                                         )}
                                         {selectedColumns.includes('totalVisits') && <TableCell>{customer.totalVisitCount}</TableCell>}
                                         {selectedColumns.includes('lastVisitDate') && (
-                                            <TableCell>
-                                                {customer.lastVisitDate
+                                            <TableCell className="overflow-hidden">
+                                                <Ellipsis value={customer.lastVisitDate
                                                     ? formatDateToUserFriendly(customer.lastVisitDate)
-                                                    : ''}
+                                                    : ''} />
                                             </TableCell>
                                         )}
-                                        <TableCell className="w-20">
+                                        <TableCell className="overflow-hidden px-1 text-center">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="sm">

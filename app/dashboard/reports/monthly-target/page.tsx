@@ -28,11 +28,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { formatCityLabel } from "@/lib/city-options";
 import { Progress } from "@/components/ui/progress";
 
 // Mock data for cities
 const cities = [
-  "All Cities",
+  "All cities",
   "Mumbai",
   "Delhi",
   "Bangalore",
@@ -141,12 +142,12 @@ const mockCityTargets = [
 ];
 
 export default function MonthlyTargetPage() {
-  const [selectedCity, setSelectedCity] = useState("All Cities");
+  const [selectedCity, setSelectedCity] = useState("All cities");
   const [selectedMonth, setSelectedMonth] = useState("7"); // August
   const [selectedYear, setSelectedYear] = useState("2023");
   const [reportGenerated, setReportGenerated] = useState(true);
 
-  const filteredCityTargets = selectedCity === "All Cities" 
+  const filteredCityTargets = selectedCity === "All cities"
     ? mockCityTargets 
     : mockCityTargets.filter(cityTarget => cityTarget.city === selectedCity);
 
@@ -181,7 +182,7 @@ export default function MonthlyTargetPage() {
                 <SelectContent>
                   {cities.map((city) => (
                     <SelectItem key={city} value={city}>
-                      {city}
+                      {formatCityLabel(city)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -299,7 +300,7 @@ export default function MonthlyTargetPage() {
               <TableBody>
                 {filteredCityTargets.map((cityTarget) => (
                   <TableRow key={cityTarget.id}>
-                    <TableCell className="font-medium">{cityTarget.city}</TableCell>
+                    <TableCell className="font-medium">{formatCityLabel(cityTarget.city)}</TableCell>
                     <TableCell>₹{cityTarget.target.toLocaleString()}</TableCell>
                     <TableCell>₹{cityTarget.achieved.toLocaleString()}</TableCell>
                     <TableCell>₹{cityTarget.pending.toLocaleString()}</TableCell>
@@ -350,7 +351,7 @@ export default function MonthlyTargetPage() {
                 {filteredCityTargets.flatMap((cityTarget) => 
                   cityTarget.teamMembers.map((member) => (
                     <TableRow key={member.id}>
-                      <TableCell className="font-medium">{cityTarget.city}</TableCell>
+                      <TableCell className="font-medium">{formatCityLabel(cityTarget.city)}</TableCell>
                       <TableCell>{member.name}</TableCell>
                       <TableCell>₹{member.achieved.toLocaleString()}</TableCell>
                       <TableCell>

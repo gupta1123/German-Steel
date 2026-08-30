@@ -140,8 +140,8 @@ export default function EmployeeAttendanceCard({ employee, selectedMonth, select
 
   return (
     <>
-      <Card className="w-full hover:shadow-md transition-shadow bg-card">
-        <CardHeader className="pb-3">
+      <Card className="w-full gap-0 overflow-hidden bg-card py-0 transition-shadow hover:shadow-md">
+        <CardHeader className="px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Avatar className="h-10 w-10">
@@ -150,54 +150,54 @@ export default function EmployeeAttendanceCard({ employee, selectedMonth, select
                   {getInitials(employee.name)}
                 </AvatarFallback>
               </Avatar>
-              <div>
+              <div className="min-w-0">
                 <Heading as="h3" size="lg" weight="semibold" className="text-foreground dark:text-gray-200">
                   {employee.name}
                 </Heading>
-                <Text size="sm" tone="muted" className="dark:text-gray-400">
+                <Badge variant="secondary" className="mt-0.5 w-fit px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
                   {employee.position}
-                </Text>
+                </Badge>
               </div>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            <div className="bg-green-50 dark:bg-green-900/30 p-3 rounded-lg text-center w-full">
-              <div className="flex items-center justify-center mb-1">
-                <Sun className="h-4 w-4 text-green-600 dark:text-green-400" />
+        <CardContent className="px-4 pb-4 pt-0">
+          <div className="mb-3 grid grid-cols-3 gap-1.5">
+            <div className="w-full rounded-lg bg-emerald-50 p-2 text-center dark:bg-emerald-950/60">
+              <div className="mb-0.5 flex items-center justify-center">
+                <Sun className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <Heading as="p" size="lg" weight="semibold" className="text-green-800 dark:text-green-300">
+              <Heading as="p" size="lg" weight="semibold" className="text-emerald-800 dark:text-emerald-300">
                 {summary.fullDays}
               </Heading>
-              <Text size="xs" tone="muted" className="text-green-700 dark:text-green-400">
+              <Text size="xs" tone="muted" className="text-emerald-700 dark:text-emerald-400">
                 Full Days
               </Text>            </div>
-            <div className="bg-yellow-50 dark:bg-yellow-900/30 p-3 rounded-lg text-center">
-              <div className="flex items-center justify-center mb-1">
-                <CloudSun className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+            <div className="rounded-lg bg-amber-50 p-2 text-center dark:bg-amber-950/60">
+              <div className="mb-0.5 flex items-center justify-center">
+                <CloudSun className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
               </div>
-              <Heading as="p" size="lg" weight="semibold" className="text-yellow-800 dark:text-yellow-300">
+              <Heading as="p" size="lg" weight="semibold" className="text-amber-800 dark:text-amber-300">
                 {summary.halfDays}
               </Heading>
-              <Text size="xs" tone="muted" className="text-yellow-700 dark:text-yellow-400">
+              <Text size="xs" tone="muted" className="text-amber-700 dark:text-amber-400">
                 Half Days
               </Text>
             </div>
-            <div className="bg-red-50 dark:bg-red-900/30 p-3 rounded-lg text-center">
-              <div className="flex items-center justify-center mb-1">
-                <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            <div className="rounded-lg bg-rose-50 p-2 text-center dark:bg-rose-950/60">
+              <div className="mb-0.5 flex items-center justify-center">
+                <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
               </div>
-              <Heading as="p" size="lg" weight="semibold" className="text-red-800 dark:text-red-300">
+              <Heading as="p" size="lg" weight="semibold" className="text-rose-800 dark:text-rose-300">
                 {summary.absentDays}
               </Heading>
-              <Text size="xs" tone="muted" className="text-red-700 dark:text-red-400">
+              <Text size="xs" tone="muted" className="text-rose-700 dark:text-rose-400">
                 Absent
               </Text>
             </div>
           </div>
           
-          <div className="mt-4">
+          <div className="mt-3">
             <CustomCalendar
               month={selectedMonth}
               year={selectedYear}

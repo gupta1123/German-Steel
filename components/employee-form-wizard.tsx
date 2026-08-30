@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useId, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils"; 
 
@@ -18,27 +17,30 @@ import { SpacedCalendar } from '@/components/ui/spaced-calendar';
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 
 // Icons
 import { 
-  ArrowLeft, 
   Eye, 
   EyeOff, 
   CalendarIcon, 
   User, 
-  Briefcase, 
+  Briefcase,
   MapPin, 
   Lock, 
   CheckCircle2, 
-  ChevronRight,
   ChevronsUpDown,
+  RefreshCw,
+  Search,
   Loader2,
   ShieldAlert,
   X
 } from 'lucide-react';
 
 import { API, EmployeeUserDto } from "@/lib/api";
+import { formatCityLabel } from "@/lib/city-options";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { useDashboardHeader } from "@/components/dashboard-header-context";
 
 // --- Types & Initial State ---
 
@@ -70,7 +72,7 @@ const initialNewEmployeeState: NewEmployeeState = {
   lastName: "",
   primaryContact: "",
   secondaryContact: "",
-  departmentName: "",
+  departmentName: "Sales",
   email: "",
   role: "",
   addressLine1: "",
@@ -127,25 +129,21 @@ const mapEmployeeDtoToState = (employee: EmployeeUserDto): NewEmployeeState => {
   };
 };
 
-// --- Steps Configuration ---
-const STEPS = [
-  { id: 0, title: "Personal Details", description: "Identity & Contact", icon: User },
-  { id: 1, title: "Work & Role", description: "Department & Designation", icon: Briefcase },
-  { id: 2, title: "Residency", description: "Address Information", icon: MapPin },
-  { id: 3, title: "Security", description: "Access Credentials", icon: Lock },
-];
+const generateTemporaryPassword = () => {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const random = Array.from({ length: 10 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  return `${random}@9`;
+};
+
 
 export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWizardProps) {
   const router = useGuardedRouter();
   const isEditMode = mode === "edit";
-  const steps = isEditMode ? STEPS.slice(0, -1) : STEPS;
   const pageTitle = isEditMode ? "Edit Employee" : "Add Employee";
   const pageSubtitle = isEditMode ? "Update the existing user profile" : "Create a new user profile";
   const primaryActionLabel = isEditMode ? "Update Employee" : "Create Employee";
   
   // State
-  const [currentStep, setCurrentStep] = useState(0);
-  const [previousStep, setPreviousStep] = useState(0);
   const [newEmployee, setNewEmployee] = useState<NewEmployeeState>(initialNewEmployeeState);
   const [baselineEmployee, setBaselineEmployee] = useState<NewEmployeeState>(initialNewEmployeeState);
   const [showPassword, setShowPassword] = useState(false);
@@ -157,6 +155,8 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [selectedAssignedCities, setSelectedAssignedCities] = useState<string[]>([]);
   const [baselineAssignedCities, setBaselineAssignedCities] = useState<string[]>([]);
   const [isCityAssignmentOpen, setIsCityAssignmentOpen] = useState(false);
+  const [citySearch, setCitySearch] = useState("");
+  const [usernameWasEdited, setUsernameWasEdited] = useState(false);
 
   const employeeFormIsDirty = isFormReady && (
     JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
@@ -185,9 +185,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     setBaselineEmployee(state);
     setSelectedAssignedCities(assignedCities);
     setBaselineAssignedCities(assignedCities);
-    setCurrentStep(0);
-    setPreviousStep(0);
     setShowPassword(false);
+    setCitySearch("");
+    setUsernameWasEdited(false);
     setPrimaryContactError(null);
     setSecondaryContactError(null);
     setCityError(null);
@@ -223,7 +223,12 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
 
     if (!isEditMode) {
       setIsFormReady(false);
-      resetFormState(initialNewEmployeeState);
+      const createDefaults = {
+        ...initialNewEmployeeState,
+        dateOfJoining: format(new Date(), "yyyy-MM-dd"),
+        password: generateTemporaryPassword(),
+      };
+      resetFormState(createDefaults);
       setLoadError(null);
       if (typeof window !== 'undefined') {
         rafId = window.requestAnimationFrame(() => setIsFormReady(true));
@@ -266,20 +271,33 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     };
   }, [isEditMode, employeeId]);
 
-  // Check if form has unsaved changes
-  const hasFormChanges = (): boolean => {
-    return JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
-      JSON.stringify(selectedAssignedCities) !== JSON.stringify(baselineAssignedCities);
-  };
+  useEffect(() => {
+    if (isEditMode || usernameWasEdited) return;
+
+    const suggestedUsername = [newEmployee.firstName, newEmployee.lastName]
+      .map((part) => part.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"))
+      .filter(Boolean)
+      .join("_");
+
+    setNewEmployee((current) =>
+      current.userName === suggestedUsername ? current : { ...current, userName: suggestedUsername }
+    );
+  }, [isEditMode, newEmployee.firstName, newEmployee.lastName, usernameWasEdited]);
 
   // Handle back button click
-  const handleBackClick = () => {
-    if (hasFormChanges()) {
+  const handleBackClick = React.useCallback(() => {
+    if (employeeFormIsDirty) {
       setShowBackConfirmDialog(true);
     } else {
       router.push('/dashboard/employees');
     }
-  };
+  }, [employeeFormIsDirty, router]);
+
+  useDashboardHeader({
+    heading: pageTitle,
+    subheading: pageSubtitle,
+    onBack: handleBackClick,
+  });
 
   // Confirm navigation back
   const handleConfirmBack = () => {
@@ -296,6 +314,8 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     const fieldName = datasetField ?? (target.name as NewEmployeeField);
     if (!fieldName) return;
     let { value } = target;
+
+    if (fieldName === "userName") setUsernameWasEdited(true);
 
     // Phone Validation
     if (fieldName === 'primaryContact' || fieldName === 'secondaryContact') {
@@ -323,41 +343,16 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     setNewEmployee((prev) => ({ ...prev, [fieldName]: value }));
   };
 
-  const validateStep = (stepIndex: number): boolean => {
-    switch (stepIndex) {
-      case 0: // Personal
-        return !!(
-          newEmployee.firstName &&
-          newEmployee.lastName &&
-          newEmployee.employeeId &&
-          newEmployee.primaryContact &&
-          newEmployee.primaryContact.length === 10 &&
-          !primaryContactError
-        );
-      case 1: // Work
-        return !!(newEmployee.departmentName && newEmployee.role);
-      case 2: // Address
-        return true; 
-      case 3: // Credentials
-        return !!(newEmployee.userName && newEmployee.password);
-      default:
-        return false;
-    }
-  };
-
-  const handleNext = () => {
-    if (currentStep < steps.length - 1) {
-        setPreviousStep(currentStep);
-        setCurrentStep(prev => prev + 1);
-    }
-  };
-
-  const handlePrev = () => {
-    if (currentStep > 0) {
-        setPreviousStep(currentStep);
-        setCurrentStep(prev => prev - 1);
-    }
-  };
+  const formIsValid = !!(
+    newEmployee.firstName.trim() &&
+    newEmployee.lastName.trim() &&
+    newEmployee.employeeId.trim() &&
+    newEmployee.primaryContact.length === 10 &&
+    !primaryContactError &&
+    newEmployee.departmentName &&
+    newEmployee.role &&
+    (isEditMode || (newEmployee.userName.trim() && newEmployee.password))
+  );
 
   const toggleAssignedCity = (city: string) => {
     setSelectedAssignedCities((current) =>
@@ -434,13 +429,19 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
 
         await API.createEmployee(requestBody);
 
-        const allEmployees = await API.getAllEmployees();
+        const allEmployees = await API.getAllEmployees({ forceRefresh: true });
         const createdEmployee = allEmployees.find(
           (emp: EmployeeUserDto) => emp?.userDto?.username === newEmployee.userName
         );
         if (createdEmployee) {
           if (roleForApi === 'Field Officer') {
             await syncAssignedCities(createdEmployee.id);
+            const refreshedEmployee = await API.getEmployeeById(createdEmployee.id);
+            const savedCityKeys = new Set((refreshedEmployee.assignedCity ?? []).map((city) => city.trim().toLowerCase()));
+            const missingCities = selectedAssignedCities.filter((city) => !savedCityKeys.has(city.trim().toLowerCase()));
+            if (missingCities.length > 0) {
+              throw new Error(`Employee was created, but these city assignments were not saved: ${missingCities.join(', ')}`);
+            }
           }
 
           try {
@@ -472,36 +473,31 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         }
       }
 
+      toast.success(isEditMode ? "Employee updated" : "Employee created", { duration: 3000 });
       markSaved();
       router.push('/dashboard/employees');
     } catch (error) {
       console.error('Error saving employee:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(error instanceof Error ? error.message : 'Could not save employee', { duration: 3000 });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // --- Animation Variants ---
-  const variants = {
-    enter: (direction: number) => ({
-      x: direction > 0 ? 15 : -15,
-      opacity: 0,
-    }),
-    center: {
-      x: 0,
-      opacity: 1,
-    },
-    exit: (direction: number) => ({
-      x: direction < 0 ? 15 : -15,
-      opacity: 0,
-    }),
-  };
-
-  const direction = currentStep > previousStep ? 1 : -1;
   const cityAssignmentOptions = Array.from(
-    new Set([...availableCities, newEmployee.city].map((city) => city.trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
+    [...availableCities, newEmployee.city]
+      .map((city) => city.trim())
+      .filter(Boolean)
+      .reduce((cities, city) => {
+        const key = city.toLowerCase();
+        const residenceCity = newEmployee.city.trim();
+        cities.set(key, residenceCity && residenceCity.toLowerCase() === key ? residenceCity : formatCityLabel(city));
+        return cities;
+      }, new Map<string, string>())
+      .values()
+  )
+    .filter((city) => city.toLowerCase().includes(citySearch.trim().toLowerCase()))
+    .sort((a, b) => a.localeCompare(b));
 
   if (isEditMode && loadError) {
     return (
@@ -517,141 +513,54 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     return <EmployeeFormSkeleton />;
   }
 
-  const isLastStep = currentStep === steps.length - 1;
-
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 md:p-8">
-      {/* Ambient background glow */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-primary/5 blur-[100px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-primary/5 blur-[100px]" />
-      </div>
-
-      <div className="relative z-10 mx-auto max-w-6xl">
-        
-        {/* Top Navigation Bar */}
-        <div className="mb-8 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={handleBackClick} 
-                  className="h-10 w-10 rounded-full border-white/10 bg-background/50 hover:bg-accent hover:text-accent-foreground backdrop-blur-md"
-                >
-                    <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
-                    <p className="text-sm text-muted-foreground">{pageSubtitle}</p>
-                </div>
-            </div>
-            <div className="hidden text-sm font-medium text-muted-foreground/80 sm:block">
-                Step <span className="text-foreground">{currentStep + 1}</span> of {steps.length}
-            </div>
+    <div className="mx-auto w-full max-w-6xl py-3 text-foreground">
+      {isEditMode && (
+        <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-slate-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+          <p><span className="font-semibold text-slate-900 dark:text-white">Admin notice:</span> Verify personal information carefully. The Employee ID is permanent after profile creation.</p>
         </div>
+      )}
 
-        <div className="grid gap-6 lg:grid-cols-12 lg:gap-10">
-          
-          {/* LEFT COLUMN: Stepper Navigation */}
-          <div className="lg:col-span-4 lg:block">
-            <div className="sticky top-8 space-y-6">
-              <Card className="border-border/50 bg-card/30 shadow-none backdrop-blur-sm">
-                  <CardContent className="p-6">
-                      <nav aria-label="Progress">
-                          <ol role="list" className="overflow-hidden">
-                              {steps.map((step, stepIdx) => (
-                              <li key={step.title} className={cn(stepIdx !== steps.length - 1 ? "pb-10" : "", "relative")}>
-                                  {stepIdx !== steps.length - 1 ? (
-                                    <div className={cn(
-                                        "absolute left-4 top-4 -ml-px mt-0.5 h-full w-[2px]", 
-                                        stepIdx < currentStep ? "bg-primary" : "bg-muted"
-                                    )} aria-hidden="true" />
-                                    ) : null}
-                                  <div className="group relative flex items-start">
-                                  <span className="flex h-9 items-center">
-                                      <span className={cn(
-                                          "relative z-10 flex h-8 w-8 items-center justify-center rounded-full transition-all duration-300",
-                                          stepIdx < currentStep ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : 
-                                          stepIdx === currentStep ? "bg-background ring-2 ring-primary text-primary" : "bg-muted/50 ring-1 ring-white/10 text-muted-foreground"
-                                      )}>
-                                          {stepIdx < currentStep ? (
-                                              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-                                          ) : (
-                                              <step.icon className="h-4 w-4" />
-                                          )}
-                                      </span>
-                                  </span>
-                                  <span className="ml-4 flex min-w-0 flex-col pt-1">
-                                      <span className={cn(
-                                          "text-sm font-semibold tracking-wide transition-colors",
-                                          stepIdx === currentStep ? "text-foreground" : "text-muted-foreground"
-                                      )}>{step.title}</span>
-                                      <span className="text-xs text-muted-foreground/70">{step.description}</span>
-                                  </span>
-                                  </div>
-                              </li>
-                              ))}
-                          </ol>
-                      </nav>
-                  </CardContent>
-              </Card>
-
-              {/* Helper Card for Desktop */}
-              <div className="hidden lg:flex items-start gap-3 rounded-lg border border-blue-900/50 bg-blue-950/20 p-4 text-sm text-blue-200">
-                  <ShieldAlert className="h-5 w-5 shrink-0 text-blue-500" />
-                  <div>
-                    <p className="font-semibold text-blue-400 mb-1">Admin Notice</p>
-                    <p className="opacity-80 leading-relaxed">Ensure all personal data is accurate. The <span className="text-blue-300">Employee ID</span> cannot be changed once the profile is created.</p>
-                  </div>
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN: Form Area */}
-          <div className="lg:col-span-8">
-            <Card className="min-h-[550px] border-border bg-card relative overflow-hidden shadow-2xl">
-                
-                <CardHeader className="border-b border-border/50 pb-6">
+      <Card className="mx-auto flex flex-col overflow-hidden border-border/80 shadow-sm">
+                {!isEditMode && <CardHeader className="border-b border-border/60 px-5 py-4">
                     <div className="flex items-center gap-3">
-                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                         {steps[currentStep]?.icon && React.createElement(steps[currentStep].icon, { className: "h-5 w-5" })}
+                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                         <User className="h-4 w-4" />
                        </div>
                        <div>
-                         <CardTitle className="text-lg">{steps[currentStep]?.title}</CardTitle>
-                         <CardDescription className="text-muted-foreground">{steps[currentStep]?.description}</CardDescription>
+                         <CardTitle className="text-base font-semibold tracking-tight">Employee profile</CardTitle>
+                         <CardDescription className="text-xs text-muted-foreground">Identity, work assignment, address, and account access</CardDescription>
                        </div>
                     </div>
-                </CardHeader>
+                </CardHeader>}
                 
-                <CardContent className="pt-6">
-                    <AnimatePresence initial={false} custom={direction} mode="wait">
-                        <motion.div
-                            key={currentStep}
-                            custom={direction}
-                            variants={variants}
-                            initial="enter"
-                            animate="center"
-                            exit="exit"
-                            transition={{ x: { type: "spring", stiffness: 300, damping: 30 }, opacity: { duration: 0.2 } }}
-                            className="space-y-6"
-                        >
+                <CardContent className={cn("flex-1", isEditMode ? "p-4" : "px-5 py-5")}>
+                    <div className="space-y-5">
                             {/* STEP 1: PERSONAL */}
-                            {currentStep === 0 && (
-                                <div className="grid gap-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {(
+                                <div className="grid gap-4">
+                                      <div className="flex items-start gap-2.5">
+                                        <User className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                                        <div>
+                                        <h3 className="text-sm font-semibold tracking-tight">Personal details</h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">Basic identity and contact information</p>
+                                        </div>
+                                      </div>
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                                         <div className="space-y-2">
                                             <Label htmlFor="firstName">First Name <span className="text-red-500">*</span></Label>
-                                            <Input id="firstName" name="firstName" placeholder="e.g. John" value={newEmployee.firstName} onChange={handleInputChange} className="h-11 bg-background" autoFocus />
+                                            <Input id="firstName" name="firstName" placeholder="e.g. John" value={newEmployee.firstName} onChange={handleInputChange} className="h-9 bg-background" autoFocus />
                                         </div>
                                         <div className="space-y-2">
                                             <Label htmlFor="lastName">Last Name <span className="text-red-500">*</span></Label>
-                                            <Input id="lastName" name="lastName" placeholder="e.g. Doe" value={newEmployee.lastName} onChange={handleInputChange} className="h-11 bg-background" />
+                                            <Input id="lastName" name="lastName" placeholder="e.g. Doe" value={newEmployee.lastName} onChange={handleInputChange} className="h-9 bg-background" />
                                         </div>
-                                    </div>
                                     
-                                    <div className="space-y-2">
+                                    <div className="space-y-2 xl:col-span-2">
                                         <Label htmlFor="employeeId">Employee ID <span className="text-red-500">*</span></Label>
-                                        <Input id="employeeId" name="employeeId" placeholder="EMP-001" value={newEmployee.employeeId} onChange={handleInputChange} className="h-11 font-mono uppercase bg-background" />
+                                        <Input id="employeeId" name="employeeId" placeholder="EMP-001" value={newEmployee.employeeId} onChange={handleInputChange} disabled={isEditMode} className="h-9 bg-background font-mono uppercase disabled:opacity-70" />
+                                    </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -663,7 +572,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 placeholder="9876543210" 
                                                 maxLength={10} 
                                                 inputMode="numeric"
-                                                className={cn("h-11 bg-background", primaryContactError ? "border-red-500/50 focus-visible:ring-red-500" : "")} 
+                                                className={cn("h-9 bg-background", primaryContactError ? "border-red-500/50 focus-visible:ring-red-500" : "")}
                                                 value={newEmployee.primaryContact} 
                                                 onChange={handleInputChange} 
                                             />
@@ -677,7 +586,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 placeholder="Optional" 
                                                 maxLength={10} 
                                                 inputMode="numeric"
-                                                className={cn("h-11 bg-background", secondaryContactError ? "border-red-500/50 focus-visible:ring-red-500" : "")} 
+                                                className={cn("h-9 bg-background", secondaryContactError ? "border-red-500/50 focus-visible:ring-red-500" : "")}
                                                 value={newEmployee.secondaryContact} 
                                                 onChange={handleInputChange} 
                                             />
@@ -688,13 +597,21 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                             )}
 
                             {/* STEP 2: WORK */}
-                            {currentStep === 1 && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {(
+                                <div className="space-y-4">
+                                        <Separator />
+                                        <div className="flex items-start gap-2.5">
+                                          <Briefcase className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                                          <div>
+                                          <h3 className="text-sm font-semibold tracking-tight">Work and role</h3>
+                                          <p className="mt-0.5 text-xs text-muted-foreground">Department, designation, and operational assignments</p>
+                                          </div>
+                                        </div>
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                                         <div className="space-y-2">
                                             <Label>Department <span className="text-red-500">*</span></Label>
                                             <Select value={newEmployee.departmentName} onValueChange={(val) => setNewEmployee({ ...newEmployee, departmentName: val })}>
-                                                <SelectTrigger className="h-11 bg-background">
+                                                <SelectTrigger className="h-9 w-full bg-background">
                                                     <SelectValue placeholder="Select Department" />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -713,7 +630,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                     }
                                                 }}
                                             >
-                                                <SelectTrigger className="h-11 bg-background">
+                                                <SelectTrigger className="h-9 w-full bg-background">
                                                     <SelectValue placeholder="Select Role" />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -722,7 +639,6 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 </SelectContent>
                                             </Select>
                                         </div>
-                                    </div>
 
                                     <div className="space-y-2">
                                         <Label>Date of Joining</Label>
@@ -731,7 +647,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                             <Button
                                                 variant={"outline"}
                                                 className={cn(
-                                                "w-full h-11 justify-start text-left font-normal bg-background border-input",
+                                                "h-9 w-full justify-start border-input bg-background text-left font-normal",
                                                 !newEmployee.dateOfJoining && "text-muted-foreground"
                                                 )}
                                             >
@@ -751,6 +667,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                             </PopoverContent>
                                         </Popover>
                                     </div>
+                                    </div>
 
                                     {newEmployee.role === 'Field Officer' && (
                                         <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
@@ -765,10 +682,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 <div className="flex flex-wrap gap-2">
                                                     {selectedAssignedCities.map((city) => (
                                                         <Badge key={city} variant="secondary" className="gap-1 pr-1">
-                                                            {city}
+                                                            {formatCityLabel(city)}
                                                             <button
                                                                 type="button"
-                                                                aria-label={`Remove ${city}`}
+                                                                aria-label={`Remove ${formatCityLabel(city)}`}
                                                                 className="rounded-sm p-0.5 hover:bg-background/70"
                                                                 onClick={() => toggleAssignedCity(city)}
                                                             >
@@ -789,6 +706,15 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
+                                                    <div className="relative border-b border-border/60 p-1.5">
+                                                        <Search className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                                                        <Input
+                                                            value={citySearch}
+                                                            onChange={(event) => setCitySearch(event.target.value)}
+                                                            placeholder="Search cities"
+                                                            className="h-8 border-0 bg-transparent pl-8 shadow-none focus-visible:ring-0"
+                                                        />
+                                                    </div>
                                                     {cityAssignmentOptions.length === 0 ? (
                                                         <div className="p-3 text-sm text-muted-foreground">
                                                             Enter the employee city in the Residency step first.
@@ -808,7 +734,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                                             checked={checked}
                                                                             onCheckedChange={() => toggleAssignedCity(city)}
                                                                         />
-                                                                        <span>{city}</span>
+                                                                        <span>{formatCityLabel(city)}</span>
                                                                     </label>
                                                                 );
                                                             })}
@@ -822,29 +748,32 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                             )}
 
                             {/* STEP 3: ADDRESS */}
-                            {currentStep === 2 && (
+                            {(
                                 <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label>Street Address</Label>
-                                        <Input 
-                                            placeholder="Line 1" 
-                                            className="h-11 mb-2 bg-background" 
-                                            value={newEmployee.addressLine1} 
-                                            onChange={(e) => setNewEmployee({...newEmployee, addressLine1: e.target.value})} 
-                                        />
-                                        <Input 
-                                            placeholder="Line 2 (Optional)" 
-                                            className="h-11 bg-background" 
-                                            value={newEmployee.addressLine2} 
-                                            onChange={(e) => setNewEmployee({...newEmployee, addressLine2: e.target.value})} 
-                                        />
+                                        <Separator />
+                                        <div className="flex items-start gap-2.5">
+                                          <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                                          <div>
+                                          <h3 className="text-sm font-semibold tracking-tight">Residency</h3>
+                                          <p className="mt-0.5 text-xs text-muted-foreground">Home address and location details</p>
+                                          </div>
+                                        </div>
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                      <div className="space-y-2">
+                                        <Label>Address line 1</Label>
+                                        <Input placeholder="Street address" className="h-9 bg-background" value={newEmployee.addressLine1} onChange={(e) => setNewEmployee({...newEmployee, addressLine1: e.target.value})} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Address line 2</Label>
+                                        <Input placeholder="Optional" className="h-9 bg-background" value={newEmployee.addressLine2} onChange={(e) => setNewEmployee({...newEmployee, addressLine2: e.target.value})} />
+                                      </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                                         <div className="space-y-2">
                                             <Label>City</Label>
                                             <Input 
                                                 name="city" 
-                                                className={cn("h-11 bg-background", cityError ? "border-red-500/50" : "")} 
+                                                className={cn("h-9 bg-background", cityError ? "border-red-500/50" : "")}
                                                 value={newEmployee.city} 
                                                 onChange={handleInputChange} 
                                             />
@@ -854,38 +783,37 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                             <Label>State</Label>
                                             <Input 
                                                 name="state" 
-                                                className="h-11 bg-background" 
+                                                className="h-9 bg-background"
                                                 value={newEmployee.state} 
                                                 onChange={handleInputChange} 
                                             />
                                         </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <Label>Pincode</Label>
                                             <Input 
                                                 name="pincode" 
-                                                className="h-11 bg-background" 
+                                                className="h-9 bg-background"
                                                 value={newEmployee.pincode} 
                                                 onChange={handleInputChange} 
                                             />
                                         </div>
                                         <div className="space-y-2">
                                             <Label>Country</Label>
-                                            <Input value="India" disabled className="h-11 bg-muted/20 text-muted-foreground border-input/50" />
+                                            <Input value="India" disabled className="h-9 border-input/50 bg-muted/20 text-muted-foreground" />
                                         </div>
                                     </div>
                                 </div>
                             )}
 
                             {/* STEP 4: CREDENTIALS */}
-                            {steps[currentStep]?.id === 3 && !isEditMode && (
-                                <div className="space-y-6 pt-2">
-                                    <div className="rounded-lg border border-amber-900/30 bg-amber-950/20 p-4 text-amber-500/90 flex items-start gap-3">
-                                        <Lock className="h-5 w-5 mt-0.5 shrink-0" />
-                                        <div className="text-sm">
-                                            <p className="font-semibold mb-1">Security Notice</p>
-                                            <p className="opacity-90">Credentials will be generated instantly. Please handle them securely.</p>
+                            {!isEditMode && (
+                                <div className="space-y-4 pt-1">
+                                    <Separator />
+                                    <div className="flex items-start gap-2.5">
+                                        <Lock className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                                        <div>
+                                            <h3 className="text-sm font-semibold tracking-tight">Account access</h3>
+                                            <p className="mt-0.5 text-xs text-muted-foreground">A username and temporary password are suggested automatically.</p>
                                         </div>
                                     </div>
 
@@ -898,7 +826,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 data-field="userName"
                                                 value={newEmployee.userName}
                                                 onChange={handleInputChange}
-                                                className="h-11 bg-background"
+                                                className="h-9 bg-background"
                                                 autoComplete="off"
                                             />
                                         </div>
@@ -912,7 +840,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                     type={showPassword ? 'text' : 'password'}
                                                     value={newEmployee.password}
                                                     onChange={handleInputChange}
-                                                    className="h-11 pr-10 bg-background"
+                                                    className="h-9 bg-background pr-10"
                                                     autoComplete="new-password"
                                                 />
                                                 <button
@@ -923,31 +851,40 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                                 </button>
                                             </div>
+                                            <div className="flex justify-end">
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 px-2 text-xs text-muted-foreground"
+                                                    onClick={() => setNewEmployee((current) => ({ ...current, password: generateTemporaryPassword() }))}
+                                                >
+                                                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                                                    Generate another password
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             )}
-                        </motion.div>
-                    </AnimatePresence>
+                        </div>
 
                     {/* Action Buttons */}
-                    <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-border/50 bg-card/95 backdrop-blur-sm">
-                      <div className="flex items-center justify-between">
+                    <div className={cn("border-t border-border/60 bg-muted/15", isEditMode ? "-mx-4 -mb-4 mt-4 px-4 py-3" : "-mx-5 -mb-5 mt-6 px-5 py-4")}>
+                      <div className="flex items-center justify-between gap-3">
                           <Button
                               variant="ghost"
-                              onClick={handlePrev}
-                              disabled={currentStep === 0 || isSubmitting}
-                              className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                              onClick={handleBackClick}
+                              disabled={isSubmitting}
+                              className="text-muted-foreground hover:text-foreground"
                           >
-                              <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                              Cancel
                           </Button>
-                          
-                          {isLastStep ? (
                               <Button 
                                   onClick={handleSubmit} 
-                                  disabled={!validateStep(currentStep) || isSubmitting}
-                                  className="min-w-[150px] shadow-lg shadow-primary/20"
-                                  size="lg"
+                                  disabled={!formIsValid || isSubmitting}
+                              className="min-w-[140px]"
+                              size="sm"
                               >
                                   {isSubmitting ? (
                                       <>
@@ -959,23 +896,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                       </>
                                   )}
                               </Button>
-                          ) : (
-                              <Button 
-                                  onClick={handleNext} 
-                                  disabled={!validateStep(currentStep)}
-                                  className="min-w-[130px]"
-                                  size="lg"
-                              >
-                                  Next Step <ChevronRight className="ml-2 h-4 w-4" />
-                              </Button>
-                          )}
                       </div>
                     </div>
                 </CardContent>
             </Card>
-          </div>
-        </div>
-      </div>
 
       {/* Back Confirmation Dialog */}
       <Dialog open={showBackConfirmDialog} onOpenChange={setShowBackConfirmDialog}>
@@ -1008,30 +932,24 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
 
 const EmployeeFormSkeleton = () => {
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 md:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-full" />
-            <div>
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-4 w-60 mt-2" />
+    <div className="mx-auto w-full max-w-none space-y-3 py-4">
+      <Skeleton className="h-10 w-full rounded-lg" />
+      <Card className="shadow-none">
+        <CardContent className="space-y-5 p-4">
+          {[5, 3, 6].map((fieldCount, section) => (
+            <div key={fieldCount} className="space-y-3">
+              {section > 0 && <Separator />}
+              <div className="space-y-1.5">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: fieldCount }, (_, index) => <Skeleton key={index} className="h-9 w-full" />)}
+              </div>
             </div>
-          </div>
-          <Skeleton className="h-6 w-24" />
-        </div>
-        <div className="grid gap-6 lg:grid-cols-12 lg:gap-10">
-          <div className="lg:col-span-4 space-y-4">
-            {[...Array(4)].map((_, idx) => (
-              <Skeleton key={idx} className="h-20 w-full" />
-            ))}
-          </div>
-          <div className="lg:col-span-8 space-y-4">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-[480px] w-full" />
-          </div>
-        </div>
+          ))}
+        </CardContent>
+      </Card>
       </div>
-    </div>
   );
 };

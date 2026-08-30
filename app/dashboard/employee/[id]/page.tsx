@@ -7,10 +7,10 @@ import { useAuth } from '@/components/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { format, formatDuration, intervalToDuration } from "date-fns";
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Building2, Calendar as CalendarIcon, CalendarDays, Mail, MapPin, Pencil, Phone } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from "lucide-react";
 import {
   Select,
   SelectTrigger,
@@ -21,6 +21,9 @@ import {
 import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { API } from "@/lib/api";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
+import { useDashboardHeader } from '@/components/dashboard-header-context';
+import { getEmployeeRoleLabel } from '@/lib/employee-role';
+import { formatCityLabel } from '@/lib/city-options';
 
 const ACTIVITY_TABS = [
   { value: 'visits', label: 'Visits', icon: 'fas fa-map-marked-alt' },
@@ -94,7 +97,6 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
   const { token } = useAuth();
 
   const [activeTab, setActiveTab] = useState('visits');
-  const [activeInfoTab, setActiveInfoTab] = useState('personal-info');
   const [showExpenseStartCalendar, setShowExpenseStartCalendar] = useState(false);
   const [showExpenseEndCalendar, setShowExpenseEndCalendar] = useState(false);
 
@@ -147,7 +149,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
     }
   };
   
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     // If navigated from employees list, simple back will restore persisted filters
     try {
       const raw = sessionStorage.getItem('employees.last.view');
@@ -157,7 +159,15 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
       }
     } catch {}
     router.back();
-  };
+  }, [router]);
+
+  useDashboardHeader({
+    heading: 'Employee Details',
+    subheading: employeeData
+      ? `${employeeData.firstName} ${employeeData.lastName} · ${getEmployeeRoleLabel(employeeData.role)}`
+      : `Employee #${id}`,
+    onBack: handleBack,
+  });
 
   const handleViewVisit = useCallback((visitId: number) => {
     try {
@@ -367,169 +377,89 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
     setVisitPage(1);
   }, [visitFilter, visitPageSize]);
 
-    return (
-      <div className="space-y-6">
+  const profileProperties = [
+    { label: 'Email', value: employeeData?.email, icon: Mail },
+    { label: 'Phone', value: employeeData?.primaryContact ? String(employeeData.primaryContact) : '', icon: Phone },
+    {
+      label: 'Location',
+      value: [employeeData?.city, employeeData?.state, employeeData?.country].filter(Boolean).join(', '),
+      icon: MapPin,
+    },
+    { label: 'Department', value: employeeData?.departmentName, icon: Building2 },
+    {
+      label: 'Joined',
+      value: employeeData?.dateOfJoining
+        ? format(new Date(employeeData.dateOfJoining), 'MMM dd, yyyy')
+        : '',
+      icon: CalendarDays,
+    },
+  ].filter((property) => property.value);
+
+  return (
+    <div className="space-y-4 py-4">
       <Head>
-        <title>Sales Executive Detail Page</title>
+        <title>{employeeData ? `${employeeData.firstName} ${employeeData.lastName}` : 'Employee Details'}</title>
       </Head>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Employee Profile */}
-        <div className="lg:col-span-1">
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-xl font-semibold text-foreground">Employee Details</CardTitle>
-                  <p className="text-sm text-muted-foreground">Employee information and actions</p>
+      <Card className="gap-0 py-0 shadow-none">
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar className="h-12 w-12 shrink-0 border">
+                <AvatarFallback className="bg-muted text-sm font-semibold text-muted-foreground">
+                  {employeeData ? getInitials(`${employeeData.firstName} ${employeeData.lastName}`) : '—'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="truncate text-lg font-semibold tracking-tight">
+                    {employeeData ? `${employeeData.firstName} ${employeeData.lastName}` : 'Loading employee…'}
+                  </h2>
+                  {employeeData?.role && <Badge variant="secondary" className="font-medium">{getEmployeeRoleLabel(employeeData.role)}</Badge>}
                 </div>
-                <Button variant="ghost" size="sm" onClick={handleBack}>
-                  <i className="fas fa-arrow-left mr-2"></i> Back
-                </Button>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {employeeData?.employeeId ? `Employee ID ${employeeData.employeeId}` : 'Employee record'}
+                </p>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-start gap-4">
-                <div className="h-14 w-14 rounded-xl border-2 border-dashed bg-muted flex items-center justify-center">
-                  <span className="text-lg font-semibold text-muted-foreground">
-                    {employeeData ? getInitials(`${employeeData.firstName} ${employeeData.lastName}`) : 'AW'}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0 space-y-1">
-                  <h3 className="text-lg font-semibold text-foreground truncate">
-                    {employeeData ? `${employeeData.firstName} ${employeeData.lastName}` : 'Abhijeet Wagh'}
-                  </h3>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {employeeData ? employeeData.role : 'Field Officer'}
-                  </p>
-                </div>
-              </div>
-
-        
-            <div className="space-y-4">
-                <div className="flex border-b">
-                  <button
-                    className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                      activeInfoTab === 'personal-info' 
-                        ? 'border-primary text-primary' 
-                        : 'border-transparent text-muted-foreground hover:text-foreground'
-                    }`}
-                    onClick={() => setActiveInfoTab('personal-info')}
-                  >
-                    Personal Info
-                  </button>
-                  <button
-                    className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                      activeInfoTab === 'work-info' 
-                        ? 'border-primary text-primary' 
-                        : 'border-transparent text-muted-foreground hover:text-foreground'
-                    }`}
-                    onClick={() => setActiveInfoTab('work-info')}
-                  >
-                    Work Info
-                  </button>
-                </div>
-                
-                {activeInfoTab === 'personal-info' && (
-                  <div className="space-y-3">
-                    {employeeData?.email && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <i className="fas fa-envelope text-sm text-muted-foreground"></i>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Email</p>
-                          <p className="text-sm text-muted-foreground">{employeeData.email}</p>
-                        </div>
-                      </div>
-                    )}
-                    {employeeData?.primaryContact && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <i className="fas fa-phone text-sm text-muted-foreground"></i>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Phone</p>
-                          <p className="text-sm text-muted-foreground">{employeeData.primaryContact}</p>
-                        </div>
-                      </div>
-                    )}
-                    {(employeeData?.city || employeeData?.state || employeeData?.country) && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <i className="fas fa-map-marker-alt text-sm text-muted-foreground"></i>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Location</p>
-                          <p className="text-sm text-muted-foreground">
-                            {[employeeData?.city, employeeData?.state, employeeData?.country].filter(Boolean).join(', ')}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {employeeData?.dateOfJoining && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <i className="fas fa-calendar text-sm text-muted-foreground"></i>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Joined</p>
-                          <p className="text-sm text-muted-foreground">
-                            {format(new Date(employeeData.dateOfJoining), 'MMM dd, yyyy')}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {activeInfoTab === 'work-info' && (
-                  <div className="space-y-3">
-                    {employeeData?.departmentName && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <i className="fas fa-building text-sm text-muted-foreground"></i>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Department</p>
-                          <p className="text-sm text-muted-foreground">{employeeData.departmentName}</p>
-                        </div>
-                      </div>
-                    )}
-                    {employeeData?.role && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <i className="fas fa-user-tie text-sm text-muted-foreground"></i>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Role</p>
-                          <p className="text-sm text-muted-foreground">{employeeData.role}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/employees/${id}/edit`)}>
+              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit employee
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Right Column - Activity Details */}
-        <div className="lg:col-span-2">
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-xl font-semibold text-foreground">Employee Activity</CardTitle>
-                  <p className="text-sm text-muted-foreground">View visits, attendance, expenses, and daily pricing</p>
-                </div>
-              </div>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside>
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="border-b px-4 py-3">
+              <CardTitle className="text-sm font-semibold">About</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
+            <CardContent className="p-4">
+              <dl className="space-y-4">
+                {profileProperties.map((property) => (
+                  <div key={property.label} className="flex items-start gap-3">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                      <property.icon className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{property.label}</dt>
+                      <dd className="break-words text-sm text-foreground">{property.value}</dd>
+                    </div>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
+        </aside>
+
+        <section className="min-w-0">
+          <Card className="gap-0 py-0 shadow-none">
+            <CardContent className="p-0">
+              <div className="space-y-4 p-4">
                 <div className="md:hidden">
                   <Select value={activeTab} onValueChange={setActiveTab}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="h-9 w-full">
                       <SelectValue placeholder="Select section" />
                     </SelectTrigger>
                     <SelectContent>
@@ -544,11 +474,11 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="hidden md:flex border-b">
+                <div className="hidden border-b md:flex">
                   {ACTIVITY_TABS.map((tab) => (
                     <button
                       key={tab.value}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                      className={`flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                         activeTab === tab.value
                           ? 'border-primary text-primary'
                           : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -562,9 +492,9 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
 
                 {activeTab === 'visits' && (
                   <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Select value={visitFilter} onValueChange={handleVisitFilterChange}>
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="h-9 min-w-[150px] flex-1 sm:flex-none">
                           <SelectValue placeholder="Select Filter" />
                         </SelectTrigger>
                         <SelectContent>
@@ -580,7 +510,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         value={visitPageSize.toString()}
                         onValueChange={(value) => setVisitPageSize(parseInt(value, 10))}
                       >
-                        <SelectTrigger className="w-[150px]">
+                        <SelectTrigger className="h-9 min-w-[140px] flex-1 sm:flex-none">
                           <SelectValue placeholder="Page size" />
                         </SelectTrigger>
                         <SelectContent>
@@ -591,14 +521,14 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-xs text-muted-foreground sm:ml-auto">
                         Showing {visits.length === 0 ? 0 : (visitPage - 1) * visitPageSize + 1}-
                         {Math.min(visitPage * visitPageSize, visitTotalElements)} of {visitTotalElements}
                       </p>
                     </div>
                     <div className="space-y-3">
                       {paginatedVisits.length === 0 ? (
-                        <div className="rounded-lg border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+                        <div className="rounded-lg border bg-muted/30 p-5 text-center text-sm text-muted-foreground">
                           No visits found for this filter
                         </div>
                       ) : (
@@ -613,7 +543,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                           return (
                             <div
                               key={visit.id}
-                              className="rounded-lg border bg-card p-4 hover:shadow-sm transition-shadow"
+                              className="rounded-lg border bg-card p-3 transition-shadow hover:shadow-sm"
                             >
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -851,11 +781,11 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                               <span className="text-lg">🏷️</span>
                               <div>
                                 <h4 className="font-semibold text-sm capitalize">{pricing.brandName}</h4>
-                                <p className="text-xs text-muted-foreground">{pricing.city}</p>
+                                <p className="text-xs text-muted-foreground">{formatCityLabel(pricing.city)}</p>
                               </div>
                             </div>
                             <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded-full">
-                              {pricing.city}
+                              {formatCityLabel(pricing.city)}
                             </span>
                           </div>
                           <div className="text-2xl font-bold text-foreground">
@@ -869,7 +799,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
               </div>
           </CardContent>
         </Card>
-      </div>
+      </section>
       </div>
     </div>
   );

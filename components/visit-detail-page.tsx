@@ -52,6 +52,7 @@ import {
   X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCityLabel } from "@/lib/city-options";
 import { format, parseISO } from "date-fns";
 import { Heading, Text } from "@/components/ui/typography";
 import {
@@ -79,6 +80,8 @@ import { hasManagerPrivileges } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import Image from 'next/image';
 import BrandTab from './BrandTab';
+import VisitTasksTab from './visit-tasks-tab';
+import { normalizeVisitTask } from '@/lib/visit-task';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 type Priority = 'low' | 'medium' | 'high';
@@ -458,8 +461,8 @@ export default function VisitDetailPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [filteredRequirements, setFilteredRequirements] = useState<Task[]>([]);
-  const [filteredComplaints, setFilteredComplaints] = useState<Task[]>([]);
+  const [taskLoading, setTaskLoading] = useState({ requirement: true, complaint: true });
+  const [taskErrors, setTaskErrors] = useState<{ requirement: string | null; complaint: string | null }>({ requirement: null, complaint: null });
   const [isRequirementModalOpen, setIsRequirementModalOpen] = useState(false);
   const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -795,22 +798,27 @@ export default function VisitDetailPage() {
       setIsLoading(false);
 
       // Load remaining data in parallel without blocking UI
+      // Keep tasks independent: a failed notes/brand request must not hide them.
+      for (const type of ['requirement', 'complaint'] as const) {
+        setTaskLoading(current => ({ ...current, [type]: true }));
+        setTaskErrors(current => ({ ...current, [type]: null }));
+        void api.getTasksByVisit(type, Number(visitId))
+          .then(tasks => type === 'requirement' ? setRequirements(tasks) : setComplaints(tasks))
+          .catch(() => setTaskErrors(current => ({ ...current, [type]: `Unable to load ${type}s. Please reload and try again.` })))
+          .finally(() => setTaskLoading(current => ({ ...current, [type]: false })));
+      }
       (async () => {
         try {
           const [
             proConsData,
             intentAuditData,
             monthlySaleData,
-            requirementsData,
-            complaintsData,
             notesData,
             storeVisitsData,
           ] = await Promise.all([
             api.getVisitProCons(Number(visitId)),
             api.getIntentAuditByVisit(Number(visitId)),
             api.getMonthlySaleByVisit(Number(visitId)),
-            api.getTasksByVisit('requirement', Number(visitId)),
-            api.getTasksByVisit('complaint', Number(visitId)),
             api.getNotesByVisit(Number(visitId)),
             api.getVisitsByStore(visitData.storeId || 0),
           ]);
@@ -818,8 +826,6 @@ export default function VisitDetailPage() {
           setBrandProCons(proConsData || []);
           setIntentAuditLogs(intentAuditData || []);
           setMonthlySaleChanges(monthlySaleData || []);
-          setRequirements(requirementsData || []);
-          setComplaints(complaintsData || []);
           setNotes(notesData || []);
           // Sort latest to oldest by visit_date
           const sortedStoreVisits = (storeVisitsData || []).slice().sort((a: VisitDto, b: VisitDto) => {
@@ -1099,16 +1105,6 @@ export default function VisitDetailPage() {
     setPriorityFilter(value);
   };
 
-  const filterTasks = useCallback(() => {
-    const filterByPriority = (tasks: Task[]) => {
-      if (priorityFilter === 'all') return tasks;
-      return tasks.filter(task => task.priority === priorityFilter);
-    };
-
-    setFilteredRequirements(filterByPriority(requirements));
-    setFilteredComplaints(filterByPriority(complaints));
-  }, [priorityFilter, requirements, complaints]);
-
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
   };
@@ -1132,10 +1128,6 @@ export default function VisitDetailPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [pageSize, searchQuery]);
-
-  useEffect(() => {
-    filterTasks();
-  }, [requirements, complaints, priorityFilter, filterTasks]);
 
   const visitStatus = getOutcomeStatus(visitDetail);
 
@@ -1428,17 +1420,7 @@ export default function VisitDetailPage() {
 
       const data = await response.json();
 
-      const createdTask: Task = {
-        id: data.id,
-        title: taskToCreate.taskTitle,
-        description: taskToCreate.taskDesciption,
-        type: taskToCreate.taskType,
-        status: taskToCreate.status,
-        priority: taskToCreate.priority,
-        assignedTo: taskToCreate.assignedToName,
-        dueDate: taskToCreate.dueDate,
-        visitId: taskToCreate.visitId,
-      };
+      const createdTask = normalizeVisitTask({ ...taskToCreate, ...data });
 
       if (taskType === 'requirement') {
         setRequirements(prevTasks => [createdTask, ...prevTasks]);
@@ -1609,114 +1591,103 @@ export default function VisitDetailPage() {
   }
 
                   return (
-    <div>
-      <div className="visit-details grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 items-start">
-        {/* Left Panel */}
-        <aside className="lg:col-span-3 space-y-3 md:space-y-4">
-          <div className="back-button-container flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <div className="back-button flex items-center cursor-pointer text-foreground hover:text-muted-foreground" onClick={handleBack}>
+    <div className="mx-auto w-full max-w-[1600px]">
+      <div className="visit-details grid grid-cols-1 items-start gap-3 lg:grid-cols-[216px_minmax(0,1fr)_216px] xl:grid-cols-[232px_minmax(0,1fr)_232px]">
+        {/* Record context rail */}
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3">
+          <div className="back-button-container flex items-start justify-between gap-2">
+            <button className="back-button inline-flex h-9 items-center rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={handleBack}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="flex items-center gap-2 px-3 py-1 text-sm font-medium">
+            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <Badge className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium">
                 {getStatusIcon(visitStatus.status as 'Assigned' | 'On Going' | 'Checked Out' | 'Completed')}
                 <span>{visitStatus.status}</span>
               </Badge>
               {userRole && (
-                <Badge variant={isManager ? "secondary" : "default"} className="text-xs">
+                <Badge variant={isManager ? "secondary" : "default"} className="px-2 py-0.5 text-[11px]">
                   {isManager ? "Manager View" : "Admin View"}
                 </Badge>
               )}
             </div>
           </div>
 
-          <Card className="bg-transparent border-0 shadow-none">
-            <CardContent className="p-4 md:p-6">
-              <div className="profile text-center mb-4 md:mb-6">
-                <div className="avatar w-12 h-12 md:w-16 md:h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
-                  <span className="text-lg md:text-xl font-semibold text-foreground">
+          <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
+            <CardContent className="flex flex-col gap-3 p-3">
+              <div className="profile flex min-w-0 items-center gap-3">
+                <div className="avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <span className="text-sm font-semibold">
                     {getInitials(visitDetail?.storeName || '')}
                   </span>
                 </div>
-                <div className="mb-2">
-                  <h2 className="text-lg md:text-xl font-semibold break-words">
-                    <span className="text-xs md:text-sm font-normal text-muted-foreground">Store: </span>
-                    {visitDetail?.storeName}
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-muted-foreground">Store</p>
+                  <h2 className="break-words text-sm font-semibold leading-5 text-foreground">
+                    {visitDetail?.storeName || 'Unknown store'}
                   </h2>
-                </div>
-                <div>
-                  <p className="text-sm md:text-base text-gray-600 break-words">
-                    <span className="text-xs md:text-sm text-muted-foreground">Employee: </span>
-                    {visitDetail?.employeeName}
+                  <p className="mt-0.5 break-words text-xs leading-4 text-muted-foreground">
+                    {visitDetail?.employeeName || 'Unknown employee'}
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-3 md:gap-4 mb-3 md:mb-4">
-                <div className="relative group">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+                <div>
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-10 w-10 rounded-full"
+                    size="sm"
+                    className="h-8 w-full justify-start px-2.5 text-xs"
                     onClick={handleViewStore}
                   >
-                    <Store className="h-4 w-4" />
+                    <Store className="mr-1.5 h-3.5 w-3.5" />
+                    Store
                   </Button>
-                  <span className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow transition group-hover:opacity-100">
-                    View Store
-                  </span>
                 </div>
-                <div className="relative group">
+                <div>
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-10 w-10 rounded-full"
+                    size="sm"
+                    className="h-8 w-full justify-start px-2.5 text-xs"
                     onClick={() => {
                       setTaskCreateError(null);
                       setIsRequirementModalOpen(true);
                     }}
                   >
-                    <FileText className="h-4 w-4" />
+                    <FileText className="mr-1.5 h-3.5 w-3.5" />
+                    Requirement
                   </Button>
-                  <span className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow transition group-hover:opacity-100">
-                    Add Requirement
-                  </span>
                 </div>
-                <div className="relative group">
+                <div>
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-10 w-10 rounded-full"
+                    size="sm"
+                    className="h-8 w-full justify-start px-2.5 text-xs"
                     onClick={() => {
                       setTaskCreateError(null);
                       setIsComplaintModalOpen(true);
                     }}
                   >
-                    <AlertCircle className="h-4 w-4" />
+                    <AlertCircle className="mr-1.5 h-3.5 w-3.5" />
+                    Complaint
                   </Button>
-                  <span className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow transition group-hover:opacity-100">
-                    Add Complaint
-                  </span>
                 </div>
                 {canCheckoutVisit && (
-                  <div className="relative group">
+                  <div>
                     <Button
                       variant="default"
-                      size="icon"
-                      className="h-10 w-10 rounded-full"
+                      size="sm"
+                      className="h-8 w-full justify-start px-2.5 text-xs"
                       onClick={openCheckoutModal}
                       disabled={isCheckingOut}
                     >
                       {isCheckingOut ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <LogOut className="h-4 w-4" />
+                        <LogOut className="mr-1.5 h-3.5 w-3.5" />
                       )}
+                      Check out
                     </Button>
-                    <span className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow transition group-hover:opacity-100">
-                      Check Out
-                    </span>
                   </div>
                 )}
               </div>
@@ -1740,218 +1711,99 @@ export default function VisitDetailPage() {
           </Card>
 
           {/* Visit Information Card */}
-          <Card className="w-full border border-border bg-card shadow-sm lg:-mt-10 xl:-mt-12 transition-all">
-            <CardHeader className="pt-3 pb-4">
-              <CardTitle className="text-base font-semibold text-foreground text-center">
-                Visit Information
+          <Card className="w-full gap-0 overflow-hidden rounded-lg border-border/80 bg-card py-0 shadow-none">
+            <header className="border-b px-3 py-2.5">
+              <CardTitle className="text-sm font-semibold text-foreground">
+                Visit information
               </CardTitle>
-            </CardHeader>
+            </header>
             <CardContent className="p-0">
               {/* Tabs Navigation */}
-              <div className="flex border-b border-border">
+              <div className="flex border-b border-border bg-muted/20">
                 <button
-                  className={`flex-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  className={`flex-1 px-2 py-2 text-xs font-medium border-b-2 transition-colors ${
                     activeInfoTab === 'visit-info' 
-                      ? 'border-border text-card-foreground bg-card shadow-sm' 
+                      ? 'border-primary text-foreground bg-background'
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                   onClick={() => setActiveInfoTab('visit-info')}
                 >
                   <div className="flex items-center justify-center gap-2">
                     <ClipboardList className="h-4 w-4" />
-                    <span>Visit Info</span>
+                    <span>Visit</span>
                   </div>
                 </button>
                 <button
-                  className={`flex-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  className={`flex-1 px-2 py-2 text-xs font-medium border-b-2 transition-colors ${
                     activeInfoTab === 'store-info' 
-                      ? 'border-border text-card-foreground bg-card shadow-sm' 
+                      ? 'border-primary text-foreground bg-background'
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                   onClick={() => setActiveInfoTab('store-info')}
                 >
                   <div className="flex items-center justify-center gap-2">
                     <Store className="h-4 w-4" />
-                    <span>Store Info</span>
+                    <span>Store</span>
                   </div>
                 </button>
               </div>
 
               {/* Tab Content */}
-              <div className="p-4">
-                {/* Visit Info Content */}
+              <div className="p-3">
                 {activeInfoTab === 'visit-info' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-purple-100 dark:bg-purple-900">
-                          <ListTodo className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Purpose</p>
-                          <p className="text-sm text-muted-foreground break-words">{visitDetail?.purpose || 'N/A'}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-yellow-100 dark:bg-yellow-900">
-                          <MapMarker className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Location</p>
-                          <div className="text-sm text-muted-foreground">
-                            {visitDetail?.checkinLatitude && visitDetail?.checkinLongitude ? (
-                              <button
-                                onClick={handleOpenLocation}
-                                className="text-foreground hover:text-muted-foreground transition-colors flex items-center gap-1"
-                              >
-                                <ExternalLink className="w-4 h-4" />
-                                View Location
-                              </button>
-                            ) : (
-                              <span>Location not available</span>
-                            )}
-                          </div>
+                  <dl className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+                    {[
+                      { label: 'Purpose', icon: ListTodo, value: visitDetail?.purpose || 'Not recorded' },
+                      { label: 'Location', icon: MapMarker, value: visitDetail?.checkinLatitude && visitDetail?.checkinLongitude ? (
+                        <button onClick={handleOpenLocation} className="inline-flex items-center gap-1 text-primary hover:underline">
+                          View location <ExternalLink className="h-3 w-3" />
+                        </button>
+                      ) : 'Not recorded' },
+                      { label: 'Check-in', icon: LogIn, value: visitDetail?.checkinDate && visitDetail?.checkinTime ? (
+                        <><span className="block">{format(new Date(visitDetail.checkinDate), "MMM dd, yyyy")}</span><span className="text-[11px] text-muted-foreground">{format(parseISO(`1970-01-01T${visitDetail.checkinTime}`), 'h:mm a')}</span></>
+                      ) : 'Not checked in' },
+                      { label: 'Check-out', icon: LogOut, value: visitDetail?.checkoutDate && visitDetail?.checkoutTime ? (
+                        <><span className="block">{format(new Date(visitDetail.checkoutDate), "MMM dd, yyyy")}</span><span className="text-[11px] text-muted-foreground">{format(parseISO(`1970-01-01T${visitDetail.checkoutTime}`), 'h:mm a')}</span></>
+                      ) : 'Not checked out' },
+                    ].map(({ label, icon: Icon, value }) => (
+                      <div key={label} className="flex min-w-0 items-start gap-2">
+                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <dt className="text-[11px] leading-4 text-muted-foreground">{label}</dt>
+                          <dd className="mt-0.5 break-words text-xs leading-4 text-foreground">{value}</dd>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-green-100 dark:bg-green-900">
-                          <LogIn className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Check-in</p>
-                          <div className="text-sm text-muted-foreground">
-                            {visitDetail?.checkinDate && visitDetail?.checkinTime ? (
-                              <div className="flex flex-col">
-                                <span>{format(new Date(visitDetail.checkinDate), "MMM dd, yyyy")}</span>
-                                <span className="text-xs">
-                                  {format(parseISO(`1970-01-01T${visitDetail.checkinTime}`), 'h:mm a')}
-                                </span>
-                              </div>
-                            ) : (
-                              <span>Check-in not available</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-red-100 dark:bg-red-900">
-                          <LogOut className="h-4 w-4 text-red-600 dark:text-red-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Check-out</p>
-                          <div className="text-sm text-muted-foreground">
-                            {visitDetail?.checkoutDate && visitDetail?.checkoutTime ? (
-                              <div className="flex flex-col">
-                                <span>{format(new Date(visitDetail.checkoutDate), "MMM dd, yyyy")}</span>
-                                <span className="text-xs">
-                                  {format(parseISO(`1970-01-01T${visitDetail.checkoutTime}`), 'h:mm a')}
-                                </span>
-                              </div>
-                            ) : (
-                              <span>Check-out not available</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Visit Duration Display */}
-                    {visitDetail?.checkinDate && visitDetail?.checkinTime && visitDetail?.checkoutDate && visitDetail?.checkoutTime && (
-                      <div className="mt-4 p-4 bg-muted/30 rounded-lg border">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900">
-                            <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-foreground">Visit Duration</p>
-                            <p className="text-lg font-semibold text-foreground mt-1">
-                              {metrics.find(m => m.title === 'Visit Duration')?.value || 'Calculating...'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="p-4 bg-muted/30 rounded-lg border">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-100 dark:bg-rose-900">
-                          <Gift className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                        </div>
-                        <div className="flex flex-1 items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-foreground">Gift</p>
-                          <Badge
-                            className={hasSavedGift
-                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300'
-                              : 'bg-muted text-muted-foreground hover:bg-muted'}
-                          >
-                            {hasSavedGift ? 'Gift recorded' : 'No gift recorded'}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    ))}
+                  </dl>
                 )}
 
-                {/* Store Info Content */}
                 {activeInfoTab === 'store-info' && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 mb-4 p-4 bg-muted/30 rounded-lg">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                        <Store className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-foreground text-base break-words">{visitDetail?.storeName}</h3>
-                        <p className="text-sm text-muted-foreground">{storeDetails?.city}</p>
+                  <dl className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <dt className="text-[11px] text-muted-foreground">Contact</dt>
+                        <dd className="mt-0.5 break-words text-xs leading-4">
+                          {storeDetails?.contactNumber ? <a href={`tel:${storeDetails.contactNumber}`} className="hover:underline">{storeDetails.contactNumber}</a> : 'Not recorded'}
+                        </dd>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                          <Phone className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Contact</p>
-                          {storeDetails?.contactNumber ? (
-                            <a 
-                              href={`tel:${storeDetails.contactNumber}`}
-                              className="text-sm text-foreground hover:text-muted-foreground transition-colors break-words"
-                            >
-                              {storeDetails.contactNumber}
-                            </a>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">No contact available</span>
+                    <div className="flex items-start gap-2">
+                      <MapMarker className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <dt className="text-[11px] text-muted-foreground">Address</dt>
+                        <dd className="mt-0.5 break-words text-xs leading-5">
+                          {storeDetails?.address || 'Not recorded'}
+                          {storeDetails?.city && <span className="block text-muted-foreground">{formatCityLabel(storeDetails.city)}</span>}
+                          {storeDetails?.city && (
+                            <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${visitDetail?.storeName} ${storeDetails?.address}`)}`, "_blank")} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
+                              View map <ExternalLink className="h-3 w-3" />
+                            </button>
                           )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-green-100 dark:bg-green-900">
-                          <MapMarker className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Location</p>
-                          <div className="text-sm text-muted-foreground">
-                            <p className="break-words">{storeDetails?.address || 'Address not available'}</p>
-                            {storeDetails?.city && (
-                              <button
-                                onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${visitDetail?.storeName} ${storeDetails?.address}`)}`, "_blank")}
-                                className="text-foreground hover:text-muted-foreground transition-colors mt-1 inline-flex items-center gap-1 text-xs"
-                              >
-                                <ExternalLink className="w-4 h-4" />
-                                View on Maps
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                        </dd>
                       </div>
                     </div>
-                  </div>
+                  </dl>
                 )}
               </div>
             </CardContent>
@@ -1959,15 +1811,15 @@ export default function VisitDetailPage() {
         </aside>
 
         {/* Main Content */}
-        <section className="lg:col-span-6">
-          <div className="tabs border-b mb-4 md:mb-6">
+        <section className="min-w-0">
+          <div className="tabs mb-4 rounded-lg border bg-card p-1 shadow-sm">
             <div className="md:hidden mb-3">
               <Select value={activeTab} onValueChange={setActiveTab}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select section" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="metrics">Visit Metrics</SelectItem>
+                  <SelectItem value="metrics">Activity & Overview</SelectItem>
                   <SelectItem value="visits">Recent Visits</SelectItem>
                   <SelectItem value="brands">Brands</SelectItem>
                   <SelectItem value="requirements">Requirements</SelectItem>
@@ -1975,60 +1827,60 @@ export default function VisitDetailPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="hidden md:flex md:gap-2 md:overflow-x-auto md:flex-nowrap">
+            <div className="hidden min-w-0 grid-cols-5 gap-1 md:grid">
               <button
-                className={`tab py-2 px-3 border-b-2 font-medium text-sm rounded transition-colors whitespace-nowrap ${
+                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
                   activeTab === 'metrics' 
-                    ? 'border-border text-card-foreground bg-card shadow-sm' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={() => setActiveTab('metrics')}
               >
-                <TrendingUp className="w-4 h-4 mr-2 inline" />
-                <span>Metrics</span>
+                <TrendingUp className="hidden h-4 w-4 2xl:inline" />
+                <span>Activity</span>
               </button>
               <button
-                className={`tab py-2 px-3 border-b-2 font-medium text-sm rounded transition-colors whitespace-nowrap ${
+                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
                   activeTab === 'visits' 
-                    ? 'border-border text-card-foreground bg-card shadow-sm' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={() => setActiveTab('visits')}
               >
-                <Calendar className="w-4 h-4 mr-2 inline" />
+                <Calendar className="hidden h-4 w-4 2xl:inline" />
                 <span>Visits</span>
               </button>
               <button
-                className={`tab py-2 px-3 border-b-2 font-medium text-sm rounded transition-colors whitespace-nowrap ${
+                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
                   activeTab === 'brands' 
-                    ? 'border-border text-card-foreground bg-card shadow-sm' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={() => setActiveTab('brands')}
               >
-                <Building className="w-4 h-4 mr-2 inline" />
+                <Building className="hidden h-4 w-4 2xl:inline" />
                 <span>Brands</span>
               </button>
               <button
-                className={`tab py-2 px-3 border-b-2 font-medium text-sm rounded transition-colors whitespace-nowrap ${
+                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
                   activeTab === 'requirements' 
-                    ? 'border-border text-card-foreground bg-card shadow-sm' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={() => setActiveTab('requirements')}
               >
-                <FileText className="w-4 h-4 mr-2 inline" />
+                <FileText className="hidden h-4 w-4 2xl:inline" />
                 <span>Requirements</span>
               </button>
               <button
-                className={`tab py-2 px-3 border-b-2 font-medium text-sm rounded transition-colors whitespace-nowrap ${
+                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
                   activeTab === 'complaints' 
-                    ? 'border-border text-card-foreground bg-card shadow-sm' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={() => setActiveTab('complaints')}
               >
-                <AlertCircle className="w-4 h-4 mr-2 inline" />
+                <AlertCircle className="hidden h-4 w-4 2xl:inline" />
                 <span>Complaints</span>
               </button>
             </div>
@@ -2037,41 +1889,150 @@ export default function VisitDetailPage() {
           {/* Tab Content */}
           <div className="tab-content">
             {activeTab === 'metrics' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold text-foreground">Visit Metrics</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-                    {displayMetrics.map((metric, index) => (
-                      <div key={index} className="text-center p-3 md:p-4 bg-muted/30 rounded-lg">
-                        <Text size="sm" tone="muted" weight="medium" className="mb-2">
-                          {metric.label}
-                        </Text>
-                        <Heading size="lg" weight="semibold" className="text-foreground break-words">
-                          {metric.value}
-                        </Heading>
+              <div className="space-y-4">
+                <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
+                  <header className="border-b px-3 py-2.5">
+                    <div>
+                      <CardTitle className="text-sm font-semibold">Visit overview</CardTitle>
+                    </div>
+                  </header>
+                  <CardContent className="p-3">
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      {displayMetrics.map((metric, index) => (
+                        <div key={index} className="rounded-md bg-muted/45 px-3 py-2.5">
+                          <Text size="sm" tone="muted" weight="medium" className="mb-1 text-xs">
+                            {metric.label}
+                          </Text>
+                          <Heading size="lg" weight="semibold" className="break-words text-base text-foreground">
+                            {metric.value}
+                          </Heading>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
+                  <header className="border-b px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-sm font-semibold">Visit activity</CardTitle>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                      <Button onClick={addNote} size="sm" className="h-8 shrink-0 text-xs">
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        Add note
+                      </Button>
+                    </div>
+                  </header>
+                  <CardContent className="p-3">
+                    <div className="relative space-y-0 before:absolute before:bottom-4 before:left-[15px] before:top-4 before:w-px before:bg-border">
+                      <div className="relative flex gap-3 pb-5">
+                        <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background">
+                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 pt-0.5">
+                          <p className="text-sm font-medium text-foreground">Visit scheduled</p>
+                          <p className="text-xs text-muted-foreground">
+                            {visitDetail?.visit_date ? format(new Date(visitDetail.visit_date), "MMM dd, yyyy") : 'Date unavailable'}
+                            {visitDetail?.purpose ? ` · ${visitDetail.purpose}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      {visitDetail?.checkinDate && visitDetail?.checkinTime && (
+                        <div className="relative flex gap-3 pb-5">
+                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950">
+                            <LogIn className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <div className="min-w-0 pt-0.5">
+                            <p className="text-sm font-medium text-foreground">Checked in</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(visitDetail.checkinDate), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail.checkinTime}`), 'h:mm a')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {notes.map((note) => (
+                        <div key={`activity-note-${note.id}`} className="relative flex gap-3 pb-5">
+                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
+                            <MessageSquare className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="min-w-0 flex-1 pt-0.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">Note added</p>
+                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{note.content}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {format(new Date(note.createdDate), "MMM dd, yyyy")}{note.employeeName ? ` · ${note.employeeName}` : ''}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-7 w-7 text-muted-foreground hover:text-foreground" aria-label="Edit note">
+                                  <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label="Delete note">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {visitDetail?.checkoutDate && visitDetail?.checkoutTime ? (
+                        <div className="relative flex gap-3">
+                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10">
+                            <CheckCircle className="h-3.5 w-3.5 text-primary" />
+                          </div>
+                          <div className="min-w-0 pt-0.5">
+                            <p className="text-sm font-medium text-foreground">Visit completed</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(visitDetail.checkoutDate), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail.checkoutTime}`), 'h:mm a')}
+                            </p>
+                            {(visitDetail.outcome || visitDetail.feedback) && (
+                              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                                <span className="font-medium text-foreground">Outcome:</span> {visitDetail.outcome || visitDetail.feedback}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative flex gap-3">
+                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background">
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0 pt-0.5">
+                            <p className="text-sm font-medium text-foreground">Visit in progress</p>
+                            <p className="text-xs text-muted-foreground">Waiting for check-out</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
             {activeTab === 'visits' && (
-              <div>
-                <div className="filter-bar mb-4 w-full md:w-64">
-                  <div className="relative">
+              <section className="space-y-3" aria-labelledby="visit-history-heading">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 id="visit-history-heading" className="text-sm font-semibold text-foreground">Visit history</h2>
+                    <p className="text-xs text-muted-foreground">{filteredVisits.length} visits recorded for this store</p>
+                  </div>
+                  <div className="relative w-full sm:w-64">
                     <Input
-                      placeholder="Search by Visit Purpose"
+                      placeholder="Search visit purpose"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pr-10"
+                      className="h-9 pr-9 text-sm shadow-none"
                     />
                     {searchQuery && (
                       <button
                         type="button"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label="Clear visit search"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                         onClick={() => {
                           setSearchQuery('');
                           setCurrentPage(1);
@@ -2082,93 +2043,92 @@ export default function VisitDetailPage() {
                     )}
                   </div>
                 </div>
-                <div className="visits-list space-y-3">
+                <div className="overflow-hidden rounded-lg border bg-card">
                   {currentVisits.map((visit: VisitDto) => {
                     // Determine visit status
                     const getVisitStatus = () => {
                       if (visit.checkinDate && visit.checkinTime && visit.checkoutDate && visit.checkoutTime) {
-                        return { status: 'Completed', color: 'bg-green-100 text-green-800', icon: '✅' };
+                        return { status: 'Completed', color: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300', icon: CheckCircle };
                       } else if (visit.checkinDate && visit.checkinTime) {
-                        return { status: 'In Progress', color: 'bg-blue-100 text-blue-800', icon: '🕐' };
+                        return { status: 'In progress', color: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300', icon: Clock };
                       } else {
-                        return { status: 'Scheduled', color: 'bg-yellow-100 text-yellow-800', icon: '📅' };
+                        return { status: 'Scheduled', color: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300', icon: Calendar };
                       }
                     };
 
                     const visitStatus = getVisitStatus();
+                    const VisitStatusIcon = visitStatus.icon;
 
                     return (
-                      <Card key={visit.id} className="w-full hover:shadow-sm transition-all duration-200 border-l-2 border-l-primary/30 hover:border-l-primary">
-                        <CardContent className="p-3">
-                          {/* Header Section */}
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10">
-                                <Calendar className="h-3 w-3 text-primary" />
-                              </div>
-                              <div>
-                                <h3 className="font-medium text-sm text-foreground">{visit.purpose}</h3>
-                                <p className="text-xs text-muted-foreground">ID: {visit.id}</p>
-                              </div>
+                      <article
+                        key={visit.id}
+                        className="group grid gap-3 border-b px-3 py-3 transition-colors last:border-b-0 hover:bg-muted/25 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-4"
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                            <Calendar className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <h3 className="text-sm font-semibold text-foreground">{visit.purpose || 'Visit'}</h3>
+                              <span className="text-[11px] text-muted-foreground">#{visit.id}</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge className={`${visitStatus.color} text-xs px-2 py-1`}>
-                                <span className="mr-1">{visitStatus.icon}</span>
-                                {visitStatus.status}
-                              </Badge>
-                              <div className="text-right">
-                                <p className="text-xs font-medium text-foreground">
-                            {visit.checkinDate && visit.checkinTime
-                                    ? format(new Date(visit.checkinDate), "MMM dd, yyyy")
-                                    : 'TBD'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {visit.checkinDate && visit.checkinTime
-                                    ? format(parseISO(`1970-01-01T${visit.checkinTime}`), 'h:mm a')
-                                    : 'TBD'}
-                                </p>
-                              </div>
+                            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <Store className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{visit.storeName || 'Store unavailable'}</span>
+                              </span>
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <User className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{visit.employeeName || 'Employee unavailable'}</span>
+                              </span>
+                              <span className="flex items-center gap-1.5">
+                                <Clock className="h-3.5 w-3.5" />
+                                {visit.checkinDate && visit.checkinTime && visit.checkoutDate && visit.checkoutTime
+                                  ? calculateDuration(visit.checkinTime, visit.checkoutTime)
+                                  : 'Duration unavailable'}
+                              </span>
                             </div>
                           </div>
+                        </div>
 
-                          {/* Details Section */}
-                          <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-4">
-                              <div className="flex items-center gap-1">
-                                <User className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-muted-foreground font-medium">Store:</span>
-                                <span className="text-muted-foreground">{visit.storeName}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Store className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-muted-foreground font-medium">Employee:</span>
-                                <span className="text-muted-foreground truncate max-w-32">{visit.employeeName}</span>
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1 text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                <span>
-                                  {visit.checkinDate && visit.checkinTime && visit.checkoutDate && visit.checkoutTime
-                                    ? calculateDuration(visit.checkinTime, visit.checkoutTime)
-                                    : 'TBD'}
-                          </span>
+                        <div className="flex items-center justify-between gap-3 pl-11 sm:justify-end sm:pl-0">
+                          <Badge variant="outline" className={`${visitStatus.color} gap-1 px-1.5 py-0.5 text-[11px] font-medium shadow-none`}>
+                            <VisitStatusIcon className="h-3 w-3" />
+                            {visitStatus.status}
+                          </Badge>
+                          <div className="min-w-[78px] text-right">
+                            <p className="text-xs font-medium text-foreground">
+                              {visit.checkinDate && visit.checkinTime
+                                ? format(new Date(visit.checkinDate), "MMM dd, yyyy")
+                                : 'Date pending'}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {visit.checkinDate && visit.checkinTime
+                                ? format(parseISO(`1970-01-01T${visit.checkinTime}`), 'h:mm a')
+                                : 'Time pending'}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.push(`/dashboard/visits/${visit.id}`)}
+                            className="h-8 px-2 text-xs font-medium"
+                          >
+                            View
+                            <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                          </Button>
                         </div>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => router.push(`/dashboard/visits/${visit.id}`)}
-                                className="text-xs h-6 px-2"
-                              >
-                                View
-                              </Button>
-                            </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      </article>
                     );
                   })}
+                  {currentVisits.length === 0 && (
+                    <div className="flex min-h-28 flex-col items-center justify-center px-4 py-8 text-center">
+                      <Calendar className="mb-2 h-5 w-5 text-muted-foreground" />
+                      <p className="text-sm font-medium text-foreground">No matching visits</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Try a different visit purpose.</p>
+                    </div>
+                  )}
                 </div>
                 {storeVisits.length > pageSize && (
                   <div className="mt-4">
@@ -2221,7 +2181,7 @@ export default function VisitDetailPage() {
                     )}
                         </div>
                       )}
-                    </div>
+              </section>
                   )}
 
             {activeTab === 'brands' && (
@@ -2239,107 +2199,29 @@ export default function VisitDetailPage() {
             )}
 
             {activeTab === 'requirements' && (
-              <div>
-                <div className="filter-bar mb-4">
-                  <Select value={priorityFilter} onValueChange={handlePriorityChange}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Filter by Priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Priorities</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="requirements-list space-y-3 md:space-y-4">
-                  {filteredRequirements.map((req, index) => (
-                    <Card key={index}>
-                      <CardContent className="p-3 md:p-4">
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-3">
-                          <span className="font-medium text-foreground text-sm md:text-base break-words">{req.title}</span>
-                          <div className="flex flex-wrap gap-2">
-                            {getPriorityBadge(req.priority as Priority)}
-                            {getStatusBadge(req.status)}
-                          </div>
-                        </div>
-                        <div className="text-xs md:text-sm text-gray-600 space-y-2">
-                          <p>Due: {format(new Date(req.dueDate), "MMM dd, yyyy")}</p>
-                          <div className="flex items-center">
-                            <div className="avatar w-5 h-5 md:w-6 md:h-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
-                              <span className="text-xs">{getInitials(req.assignedTo || 'Unknown')}</span>
-                            </div>
-                            <span className="break-words">Assigned to {req.assignedTo || 'Unknown'}</span>
-                          </div>
-                          <p className="break-words">{req.description}</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
+              <VisitTasksTab tasks={requirements} type="requirement" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.requirement} error={taskErrors.requirement} />
             )}
 
             {activeTab === 'complaints' && (
-              <div>
-                <div className="filter-bar mb-4">
-                  <Select value={priorityFilter} onValueChange={handlePriorityChange}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Filter by Priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Priorities</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="complaints-list space-y-3 md:space-y-4">
-                  {filteredComplaints.map((complaint, index) => (
-                    <Card key={index}>
-                      <CardContent className="p-3 md:p-4">
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-3">
-                          <span className="font-medium text-foreground text-sm md:text-base break-words">{complaint.title}</span>
-                          <div className="flex flex-wrap gap-2">
-                            {getPriorityBadge(complaint.priority as Priority)}
-                            {getStatusBadge(complaint.status)}
-                          </div>
-                        </div>
-                        <div className="text-xs md:text-sm text-gray-600 space-y-2">
-                          <p>Reported: {format(new Date(complaint.dueDate), "MMM dd, yyyy")}</p>
-                          <div className="flex items-center">
-                            <div className="avatar w-5 h-5 md:w-6 md:h-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
-                              <span className="text-xs">{getInitials(complaint.assignedTo || 'Unknown')}</span>
-                            </div>
-                            <span className="break-words">Handled by {complaint.assignedTo || 'Unknown'}</span>
-                          </div>
-                          <p className="break-words">{complaint.description}</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
+              <VisitTasksTab tasks={complaints} type="complaint" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.complaint} error={taskErrors.complaint} />
             )}
           </div>
 
         </section>
 
         {/* Right Panel */}
-        <aside className="lg:col-span-3 space-y-4 md:space-y-6">
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3">
           {hasSavedGift && (
-            <Card>
-              <CardHeader className="pb-3 md:pb-4">
+            <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
+              <header className="border-b px-3 py-2.5">
                 <div className="flex items-center justify-between gap-3">
-                  <Heading as="h3" size="lg" weight="semibold" className="text-base md:text-lg">
-                    Gift Details
+                  <Heading as="h3" size="sm" weight="semibold" className="text-sm leading-5">
+                    Gift details
                   </Heading>
                   <Gift className="h-5 w-5 text-rose-500" aria-hidden="true" />
                 </div>
-              </CardHeader>
-              <CardContent className="p-3 md:p-6 pt-0 md:pt-0 space-y-4">
+              </header>
+              <CardContent className="space-y-2.5 p-3">
                 <dl className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border bg-muted/30 p-3">
                     <dt className="text-xs font-medium text-muted-foreground">Gift name</dt>
@@ -2367,10 +2249,10 @@ export default function VisitDetailPage() {
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">Gift image</p>
                   {isGiftImageLoading ? (
-                    <Skeleton className="h-40 w-full rounded-lg" />
+                    <Skeleton className="h-32 w-full rounded-lg" />
                   ) : giftImage ? (
                     <div className="overflow-hidden rounded-lg border">
-                      <div className="relative h-40 w-full bg-muted">
+                      <div className="relative h-32 w-full bg-muted">
                         <Image
                           src={giftImage}
                           alt={`${visitDetail?.giftName?.trim() || 'Gift'} image`}
@@ -2393,7 +2275,7 @@ export default function VisitDetailPage() {
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed p-5 text-center">
-                      <ImageIcon className="mx-auto mb-2 h-8 w-8 text-muted-foreground/60" />
+                      <ImageIcon className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground/60" />
                       <Text tone="muted" className="text-sm">
                         {giftImageError ? 'Gift image could not be loaded' : 'No gift image uploaded'}
                       </Text>
@@ -2404,34 +2286,24 @@ export default function VisitDetailPage() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader className="pb-3 md:pb-4">
-              <Heading as="h3" size="lg" weight="semibold" className="text-base md:text-lg">
-                Check-in Images
-              </Heading>
-            </CardHeader>
-            <CardContent className="p-3 md:p-6 space-y-4 md:space-y-6">
-              {/* Check-in Location */}
-              {visitDetail?.checkinLatitude && visitDetail?.checkinLongitude && (
-                <div className="flex items-center gap-2 pb-2 border-b">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2"
-                    onClick={handleOpenLocation}
-                  >
-                    <MapPin className="h-4 w-4 mr-1.5" />
-                    <span className="text-sm">Check-in Location</span>
-                  </Button>
-                </div>
-              )}
-
+          <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
+            <header className="border-b px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold leading-5">Check-in images</h3>
+                {visitDetail?.checkinLatitude && visitDetail?.checkinLongitude && (
+                  <button type="button" onClick={handleOpenLocation} aria-label="View check-in location" title="View check-in location" className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                    <MapPin className="h-3.5 w-3.5" /> Map
+                  </button>
+                )}
+              </div>
+            </header>
+            <CardContent className="space-y-2.5 p-3">
               {/* Check-in Images */}
               {checkinImages.length > 0 ? (
-                <div className="space-y-3 md:space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
                   {checkinImages.map((image, index) => (
-                    <div key={index} className="rounded-lg border overflow-hidden">
-                      <div className="relative w-full h-32 md:h-40 bg-gray-100">
+                    <div key={index} className="min-w-0">
+                      <div className="relative aspect-video w-full overflow-hidden rounded-md bg-muted">
                         <Image
                           src={image}
                           alt={`Check-in image ${index + 1}`}
@@ -2441,61 +2313,63 @@ export default function VisitDetailPage() {
                           onClick={() => handleImageClick(image)}
                         />
                       </div>
-                      <div className="p-2 md:p-3">
-                        <Heading as="h4" size="sm" weight="semibold" className="text-sm md:text-base">
-                          Check-in Image {index + 1}
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <Heading as="h4" size="sm" weight="medium" className="text-xs">
+                          Image {index + 1}
                         </Heading>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="mt-2 w-full text-xs md:text-sm"
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-1 text-xs text-muted-foreground hover:text-foreground"
                           onClick={() => handleImageClick(image)}
                         >
-                          View Full Size
+                          View full size
                         </Button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-6 md:py-8">
-                  <ImageIcon className="h-8 w-8 md:h-12 md:w-12 text-gray-400 mx-auto mb-3 md:mb-4" />
-                  <Text tone="muted" className="text-sm md:text-base">No images available for this visit</Text>
+                <div className="rounded-md bg-muted/25 px-2 py-4 text-center">
+                  <ImageIcon className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground/60" />
+                  <Text tone="muted" className="text-xs">No check-in images</Text>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3 md:pb-4">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                <Heading as="h3" size="lg" weight="semibold" className="text-base md:text-lg">
-                  Notes
-                </Heading>
-                <Button onClick={addNote} size="sm" className="text-xs md:text-sm">
-                  <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                  Add Note
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-3 md:p-6">
-              <div className="notes-list space-y-3">
-                {notes.map((note) => (
-                  <div key={note.id} className="rounded-lg border bg-card p-3 md:p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                      <span className="text-xs text-muted-foreground">{format(new Date(note.createdDate), "MMM dd, yyyy")}</span>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-7 w-7">
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-7 w-7">
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                    </div>
-                    <div className="text-xs md:text-sm text-foreground break-words">{note.content}</div>
-                  </div>
-                ))}
+          <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
+            <header className="border-b px-3 py-2.5">
+              <Heading as="h3" size="sm" weight="semibold" className="text-sm leading-5">
+                Related records
+              </Heading>
+            </header>
+            <CardContent className="p-0">
+              <div className="divide-y">
+                <button type="button" onClick={() => setActiveTab('requirements')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Requirements</span>
+                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{requirements.length}</Badge>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+                <button type="button" onClick={() => setActiveTab('complaints')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Complaints</span>
+                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{complaints.length}</Badge>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+                <button type="button" onClick={() => setActiveTab('brands')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
+                  <Building className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Brands</span>
+                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{brandProCons.length}</Badge>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+                <button type="button" onClick={() => setActiveTab('visits')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
+                  <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Previous visits</span>
+                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{storeVisits.length}</Badge>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
               </div>
             </CardContent>
           </Card>

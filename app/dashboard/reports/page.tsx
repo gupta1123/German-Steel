@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import ReactSelect, { type SingleValue, type StylesConfig } from 'react-select';
 import { useAuth } from '@/components/auth-provider';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   CalendarIcon, 
   DownloadIcon, 
@@ -45,6 +43,8 @@ import { API } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
 import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
+import { SearchableSelect } from '@/components/ui/searchable-select2';
+import { formatCityLabel } from '@/lib/city-options';
 
 interface AttendanceStats {
     absences: number;
@@ -62,6 +62,12 @@ interface FieldOfficerStatsResponse {
     completedVisits: number;
     visitsByCustomerType: VisitsByCustomerType;
 }
+
+const CUSTOMER_CATEGORIES = ["Shop", "Site Visit", "Architect", "Engineer", "Builder", "Others"] as const;
+
+type ReportSummaryData = FieldOfficerStatsResponse & {
+    categorizedVisits: Record<(typeof CUSTOMER_CATEGORIES)[number], number>;
+};
 
 interface EmployeeUserDto {
     username: string;
@@ -175,8 +181,7 @@ const ReportsPage: React.FC = () => {
     const [reportError, setReportError] = useState<string | null>(null);
 
     const [showReport, setShowReport] = useState<boolean>(false);
-    const [summaryHeader, setSummaryHeader] = useState<React.ReactNode>(null);
-    const [summaryRow, setSummaryRow] = useState<React.ReactNode>(null);
+    const [reportSummary, setReportSummary] = useState<ReportSummaryData | null>(null);
 
     const [visitDetails, setVisitDetails] = useState<VisitDetail[] | null>(null);
     const [detailsLoading, setDetailsLoading] = useState<boolean>(false);
@@ -310,8 +315,7 @@ const ReportsPage: React.FC = () => {
             const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } }, 6, 1000);
             const data: FieldOfficerStatsResponse = await response.json();
 
-            const displayCategories = ["Shop", "Site Visit", "Architect", "Engineer", "Builder", "Others"];
-            const apiTypeToDisplayCategoryMap: { [apiTypeLowercase: string]: string } = {
+            const apiTypeToDisplayCategoryMap: Record<string, (typeof CUSTOMER_CATEGORIES)[number]> = {
                 "shop": "Shop",
                 "site visit": "Site Visit",
                 "architect": "Architect", 
@@ -319,8 +323,9 @@ const ReportsPage: React.FC = () => {
                 "builder": "Builder"
             };
 
-            const categorizedVisits: { [key: string]: number } = {};
-            displayCategories.forEach(cat => categorizedVisits[cat] = 0); 
+            const categorizedVisits = Object.fromEntries(
+                CUSTOMER_CATEGORIES.map((category) => [category, 0])
+            ) as ReportSummaryData["categorizedVisits"];
 
             for (const apiType in data.visitsByCustomerType) {
                 const count = data.visitsByCustomerType[apiType];
@@ -333,36 +338,7 @@ const ReportsPage: React.FC = () => {
                 }
             }
 
-            setSummaryHeader(
-                <>
-                    <tr>
-                        <th rowSpan={2}>Total Visits</th><th rowSpan={2}>Completed Visits</th>
-                        <th colSpan={3}>Attendance</th><th colSpan={displayCategories.length}>Visits by Customer Type</th>
-                    </tr>
-                    <tr>
-                        <th>Full Days</th><th>Half Days</th><th>Absences</th>
-                        {displayCategories.map(displayCat => (
-                            <th key={displayCat}>
-                                <button
-                                    onClick={() => fetchCustomerTypeDetails(displayCat)}
-                                    className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 m-0 cursor-pointer disabled:text-gray-400"
-                                    disabled={reportLoading || detailsLoading}
-                                    type="button"
-                                >
-                                    {displayCat}
-                                </button>
-                            </th>
-                        ))}
-                    </tr>
-                </>
-            );
-            setSummaryRow(
-                <>
-                    <td className="text-center">{data.totalVisits}</td><td className="text-center">{data.completedVisits}</td>
-                    <td className="text-center">{data.attendanceStats.fullDays}</td><td className="text-center">{data.attendanceStats.halfDays}</td><td className="text-center">{data.attendanceStats.absences}</td>
-                    {displayCategories.map(type => (<td key={type} className="text-center">{categorizedVisits[type]}</td>))}
-                </>
-            );
+            setReportSummary({ ...data, categorizedVisits });
             setShowReport(true);
             setVisitDetails(null);
             setDetailsError(null);
@@ -405,63 +381,11 @@ const ReportsPage: React.FC = () => {
 
     const selectedEmployeeName = selectedFieldOfficerOption?.label || "Select Field Officer";
 
-    const fieldOfficerSelectStyles: StylesConfig<FieldOfficerOption, false> = {
-        control: (base, state) => ({
-            ...base,
-            minHeight: 40,
-            borderRadius: 6,
-            backgroundColor: 'hsl(var(--background))',
-            borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--input))',
-            boxShadow: state.isFocused ? '0 0 0 1px hsl(var(--ring))' : 'none',
-            '&:hover': {
-                borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--input))',
-            },
-        }),
-        valueContainer: (base) => ({ ...base, paddingLeft: 12, paddingRight: 8 }),
-        singleValue: (base) => ({ ...base, color: 'hsl(var(--foreground))' }),
-        placeholder: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-        input: (base) => ({ ...base, color: 'hsl(var(--foreground))' }),
-        indicatorSeparator: (base) => ({ ...base, backgroundColor: 'hsl(var(--border))' }),
-        dropdownIndicator: (base) => ({
-            ...base,
-            color: 'hsl(var(--muted-foreground))',
-            '&:hover': { color: 'hsl(var(--foreground))' },
-        }),
-        clearIndicator: (base) => ({
-            ...base,
-            color: 'hsl(var(--muted-foreground))',
-            '&:hover': { color: 'hsl(var(--foreground))' },
-        }),
-        menu: (base) => ({
-            ...base,
-            backgroundColor: 'hsl(var(--popover))',
-            border: '1px solid hsl(var(--border))',
-            borderRadius: 6,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-            overflow: 'hidden',
-            zIndex: 60,
-        }),
-        menuList: (base) => ({ ...base, paddingTop: 4, paddingBottom: 4, maxHeight: 240 }),
-        option: (base, state) => ({
-            ...base,
-            backgroundColor: state.isSelected
-                ? 'hsl(var(--accent))'
-                : state.isFocused
-                    ? 'hsl(var(--muted))'
-                    : 'transparent',
-            color: 'hsl(var(--foreground))',
-            cursor: 'pointer',
-            fontSize: 14,
-        }),
-        noOptionsMessage: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-        loadingMessage: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-    };
-
   return (
-    <div className="min-w-0 space-y-6 overflow-hidden">
+    <div className="min-w-0 space-y-5 overflow-visible">
       <Tabs defaultValue="fieldOfficerReport" className="w-full min-w-0">
-        <div className="mb-6 overflow-x-auto">
-          <TabsList className="flex h-auto w-max min-w-full justify-start gap-2 p-1">
+        <div className="mb-4 overflow-x-auto rounded-lg border bg-card p-1 shadow-sm">
+          <TabsList className="flex h-9 w-max min-w-full justify-start gap-1 bg-transparent p-0">
             <TabsTrigger value="fieldOfficerReport">Field Officer Visit Report</TabsTrigger>
             <TabsTrigger value="fieldOfficerPerformance">Field Officer Performance</TabsTrigger>
             <TabsTrigger value="newCustomers">New Customers Report</TabsTrigger>
@@ -469,16 +393,11 @@ const ReportsPage: React.FC = () => {
           </TabsList>
         </div>
         
-        <TabsContent value="fieldOfficerReport" className="space-y-6">
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl font-semibold text-foreground">Field Officer Visit Report</CardTitle>
-              <p className="text-sm text-muted-foreground">Select a field officer and date range to generate detailed visit reports</p>
-            </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 p-4 bg-muted/30 rounded-lg">
-                        <div className="space-y-2">
-                            <Label htmlFor="employeeSelectTrigger" className="text-sm font-medium text-foreground">Field Officer</Label>
+        <TabsContent value="fieldOfficerReport" className="space-y-5">
+                <div className="space-y-5">
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-3 border-b pb-4 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1.3fr)_minmax(145px,.8fr)_minmax(155px,.9fr)_minmax(155px,.9fr)_minmax(180px,auto)] xl:items-end">
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="employeeSelectTrigger" className="text-xs font-medium text-foreground">Field officer</Label>
                             {employeesLoading ? (
                                 <div className="flex items-center justify-center h-10 w-full">
                                     <Loader className="w-4 h-4 animate-spin text-muted-foreground"/>
@@ -486,28 +405,25 @@ const ReportsPage: React.FC = () => {
                             ) : employeesError ? (
                                 <div className="text-destructive text-sm">Error loading officers</div>
                             ) : (
-                                <ReactSelect
-                                    inputId="employeeSelectTrigger"
-                                    className="w-full"
-                                    classNamePrefix="field-officer-select"
+                                <SearchableSelect
+                                    triggerId="employeeSelectTrigger"
                                     placeholder="Select Field Officer"
                                     options={fieldOfficerOptions}
-                                    value={selectedFieldOfficerOption}
-                                    onChange={(option: SingleValue<FieldOfficerOption>) => {
-                                        setSelectedEmployeeId(option?.value ?? '');
-                                    }}
-                                    styles={fieldOfficerSelectStyles}
-                                    isSearchable
-                                    isClearable
-                                    isDisabled={fieldOfficerOptions.length === 0}
-                                    noOptionsMessage={() => "No matching officers"}
-                                    menuPlacement="auto"
+                                    value={selectedEmployeeId || undefined}
+                                    onSelect={(option) => setSelectedEmployeeId(option?.value ?? '')}
+                                    searchPlaceholder="Search officers..."
+                                    emptyMessage="No matching officers"
+                                    allowClear
+                                    loading={employeesLoading}
+                                    disabled={fieldOfficerOptions.length === 0}
+                                    triggerClassName="h-9 w-full"
+                                    contentClassName="w-[min(360px,calc(100vw-2rem))]"
                                 />
                             )}
             </div>
             
-            <div className="space-y-2">
-                            <Label htmlFor="rangeSelectTrigger" className="text-sm font-medium text-foreground">Date Range</Label>
+            <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="rangeSelectTrigger" className="text-xs font-medium text-foreground">Date range</Label>
                             <Select value={rangeSelect} onValueChange={(value) => { 
                                 setRangeSelect(value); 
                                 setDateRangeError(null);
@@ -516,7 +432,7 @@ const ReportsPage: React.FC = () => {
                                     setEndDate('');
                                 }
                             }}>
-                                <SelectTrigger id="rangeSelectTrigger" className="w-full">
+                                <SelectTrigger id="rangeSelectTrigger" className="h-9 w-full">
                                     <SelectValue placeholder="Select Range" />
                 </SelectTrigger>
                 <SelectContent>
@@ -532,14 +448,14 @@ const ReportsPage: React.FC = () => {
               </Select>
             </div>
             
-            <div className="space-y-2">
-                            <Label htmlFor="startDateTrigger" className="text-sm font-medium text-foreground">From Date</Label>
+            <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="startDateTrigger" className="text-xs font-medium text-foreground">From date</Label>
                             <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
                                         id="startDateTrigger"
                     variant="outline"
-                                        className={cn("w-full justify-start text-left font-normal", !startDate && "text-muted-foreground", rangeSelect !== 'custom' && rangeSelect !== '' && "opacity-50 cursor-not-allowed")}
+                                        className={cn("h-9 w-full justify-start text-left font-normal", !startDate && "text-muted-foreground", rangeSelect !== 'custom' && rangeSelect !== '' && "opacity-50 cursor-not-allowed")}
                                         disabled={rangeSelect !== 'custom' && rangeSelect !== ''}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -557,14 +473,14 @@ const ReportsPage: React.FC = () => {
                             </Popover>
                         </div>
             
-                        <div className="space-y-2">
-                            <Label htmlFor="endDateTrigger" className="text-sm font-medium text-foreground">To Date</Label>
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="endDateTrigger" className="text-xs font-medium text-foreground">To date</Label>
                             <Popover open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
                                         id="endDateTrigger"
                                         variant="outline"
-                                        className={cn("w-full justify-start text-left font-normal", !endDate && "text-muted-foreground", rangeSelect !== 'custom' && rangeSelect !== '' && "opacity-50 cursor-not-allowed")}
+                                        className={cn("h-9 w-full justify-start text-left font-normal", !endDate && "text-muted-foreground", rangeSelect !== 'custom' && rangeSelect !== '' && "opacity-50 cursor-not-allowed")}
                                         disabled={rangeSelect !== 'custom' && rangeSelect !== ''}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
@@ -583,11 +499,11 @@ const ReportsPage: React.FC = () => {
               </Popover>
             </div>
             
-            <div className="flex flex-col justify-end gap-2">
+            <div className="flex flex-col justify-end gap-2 sm:col-span-2 xl:col-span-1">
                             <DateRangeError fromDate={startDate} toDate={endDate} />
                             <Button
                                 onClick={handleGenerateReport}
-                                className="w-full sm:w-auto min-w-[180px] whitespace-nowrap"
+                                className="h-9 w-full min-w-[160px] whitespace-nowrap"
                                 disabled={reportLoading || fieldOfficers.length === 0 || !selectedEmployeeId || !startDate || !endDate || dateRangeInvalid}
                             >
                                 {reportLoading ? (
@@ -598,7 +514,7 @@ const ReportsPage: React.FC = () => {
                                 ) : (
                                     <>
                 <DownloadIcon className="mr-2 h-4 w-4" />
-                Generate Report
+                Generate report
                                     </>
                                 )}
               </Button>
@@ -635,31 +551,63 @@ const ReportsPage: React.FC = () => {
                             </div>
                         </div>
                     )}
-                    {showReport && !reportLoading && !reportError && (
-                        <div className="space-y-6">
-                            <div className="rounded-lg border bg-card">
-                                <div className="p-4 border-b">
-                                    <h3 className="text-lg font-semibold text-foreground">Report Summary</h3>
-                                    <p className="text-sm text-muted-foreground">Overview of visits, attendance, and customer types</p>
+                    {showReport && reportSummary && !reportLoading && !reportError && (
+                        <section className="border-y bg-card/30">
+                            <div className="border-b px-1 py-3">
+                                <h3 className="text-sm font-semibold text-foreground">Report summary</h3>
+                                <p className="mt-0.5 text-xs text-muted-foreground">Visits and attendance for the selected period. Choose a customer type to inspect its visits.</p>
+                            </div>
+                            <div className="grid lg:grid-cols-[.8fr_1.15fr_2.1fr]">
+                                <div className="py-4 pr-5 lg:border-r">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Visits</p>
+                                    <div className="mt-2 grid grid-cols-2 gap-2">
+                                        <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.totalVisits}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Total</p></div>
+                                        <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.completedVisits}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Completed</p></div>
+                                    </div>
                                 </div>
-                                <div className="overflow-x-auto">
-                <Table>
-                                        <TableHeader>{summaryHeader}</TableHeader>
-                                        <TableBody><TableRow>{summaryRow}</TableRow></TableBody>
-                </Table>
+                                <div className="border-t py-4 lg:border-r lg:border-t-0 lg:px-5">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Attendance</p>
+                                    <div className="mt-2 grid grid-cols-3 gap-2">
+                                        <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.attendanceStats.fullDays}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Full days</p></div>
+                                        <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.attendanceStats.halfDays}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Half days</p></div>
+                                        <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.attendanceStats.absences}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Absent</p></div>
+                                    </div>
+                                </div>
+                                <div className="border-t py-4 lg:border-t-0 lg:pl-5">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Customer types</p>
+                                        <p className="text-[11px] text-muted-foreground">Select to view visits</p>
+                                    </div>
+                                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+                                        {CUSTOMER_CATEGORIES.map((category) => (
+                                            <button
+                                                key={category}
+                                                type="button"
+                                                disabled={reportLoading || detailsLoading}
+                                                onClick={() => fetchCustomerTypeDetails(category)}
+                                                className={cn(
+                                                    "group flex min-h-16 cursor-pointer flex-col items-center justify-center rounded-md border bg-background px-2 py-2 text-center transition-[border-color,background-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.04] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60",
+                                                    selectedCustomerTypeForDetails === category && "border-primary bg-primary/10 text-primary shadow-sm"
+                                                )}
+                                            >
+                                                <span className="block text-xl font-semibold leading-none tabular-nums">{reportSummary.categorizedVisits[category]}</span>
+                                                <span className={cn("mt-1.5 block max-w-full truncate text-xs leading-none text-muted-foreground group-hover:text-foreground", selectedCustomerTypeForDetails === category && "text-primary")}>{category}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </section>
                     )}
 
                     {selectedCustomerTypeForDetails && (
-                        <div className="rounded-lg border bg-card">
-                            <div className="p-4 border-b">
-                                <h3 className="text-lg font-semibold text-foreground">
-                                    Visit Details for {selectedCustomerTypeForDetails}
+                        <section className="border-t bg-card/20">
+                            <div className="border-b px-1 py-3">
+                                <h3 className="text-sm font-semibold text-foreground">
+                                    {selectedCustomerTypeForDetails} visits
                                 </h3>
-                                <p className="text-sm text-muted-foreground">
-                                    {selectedEmployeeName !== "Select Field Officer" && `Officer: ${selectedEmployeeName} • ${dayjs(startDate).format('MMM DD, YYYY')} - ${dayjs(endDate).format('MMM DD, YYYY')}`}
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                    {selectedEmployeeName !== "Select Field Officer" && `${selectedEmployeeName} · ${dayjs(startDate).format('MMM DD, YYYY')} – ${dayjs(endDate).format('MMM DD, YYYY')}`}
                                 </p>
                             </div>
                             
@@ -682,17 +630,16 @@ const ReportsPage: React.FC = () => {
                                 visitDetails.length > 0 ? (
                                     <div className="overflow-x-auto">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="bg-muted/30">
                       <TableRow>
-                        <TableHead>Customer Name</TableHead>
+                        <TableHead>Customer</TableHead>
                         <TableHead>City</TableHead>
                         <TableHead>Taluka</TableHead>
                         <TableHead>State</TableHead>
-                        <TableHead>Last Visited</TableHead>
-                        <TableHead>Visit Count</TableHead>
-                        <TableHead>Avg Monthly Sales</TableHead>
-                        <TableHead>Avg Intent Level</TableHead>
-                        <TableHead>Customer Type</TableHead>
+                        <TableHead>Last visited</TableHead>
+                        <TableHead>Visits</TableHead>
+                        <TableHead>Monthly sales</TableHead>
+                        <TableHead>Intent</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -710,7 +657,7 @@ const ReportsPage: React.FC = () => {
                                                                     {detail.customerName}
                                                                 </Link>
                                                             </TableCell>
-                                                            <TableCell>{detail.city}</TableCell>
+                                                            <TableCell>{formatCityLabel(detail.city)}</TableCell>
                                                             <TableCell>{detail.taluka}</TableCell>
                                                             <TableCell>{detail.state}</TableCell>
                                                             <TableCell>{dayjs(detail.lastVisited).format('MMM DD, YYYY')}</TableCell>
@@ -728,11 +675,6 @@ const ReportsPage: React.FC = () => {
                                                                     {Number.isInteger(detail.avgIntentLevel) ? detail.avgIntentLevel : detail.avgIntentLevel.toFixed(1)}
                                                                 </Badge>
                                                             </TableCell>
-                            <TableCell>
-                                                                <Badge variant="outline">
-                                                                    {detail.customerType}
-                              </Badge>
-                            </TableCell>
                           </TableRow>
                         ))}
                     </TableBody>
@@ -745,10 +687,9 @@ const ReportsPage: React.FC = () => {
                                     </div>
                                 )
                             )}
-                        </div>
+                        </section>
                     )}
-              </CardContent>
-            </Card>
+                </div>
         </TabsContent>
 
         <TabsContent value="fieldOfficerPerformance" className="space-y-6">

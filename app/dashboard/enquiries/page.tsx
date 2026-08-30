@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarIcon as CalendarIconLucide } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -14,16 +12,16 @@ import {
   TableRow,
   TableHead,
   TableCell,
-  TableCaption,
 } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
-import { MapPin, Store, Phone, DollarSign, Users, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Filter, Loader2, MapPin, RefreshCw, Store, Phone, DollarSign, Users } from 'lucide-react';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
+import { API, type LocationMasterDto } from '@/lib/api';
 
 interface SalesData {
   [monthYear: string]: number;
@@ -62,7 +60,6 @@ const formatMonthYearToString = (month: number | undefined, year: number | undef
 
 export default function EnquiriesPage() {
   const [token, setToken] = useState<string | null>(null);
-  const [isClient, setIsClient] = useState(false);
 
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -88,8 +85,12 @@ export default function EnquiriesPage() {
   const [tempCityFilter, setTempCityFilter] = useState<string>('');
   const [tempStateFilter, setTempStateFilter] = useState<string>('');
   
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: currentYear - 2000 + 1 }, (_, index) => currentYear - index);
+  const firstEnquiryYear = 2026;
+  const lastEnquiryYear = Math.max(new Date().getFullYear() + 10, firstEnquiryYear + 10);
+  const years = Array.from(
+    { length: lastEnquiryYear - firstEnquiryYear + 1 },
+    (_, index) => firstEnquiryYear + index
+  );
   const months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
@@ -99,23 +100,38 @@ export default function EnquiriesPage() {
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [pageSize, setPageSize] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(0);
-  const [sortColumn, setSortColumn] = useState<string>('dealerName');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isSortByStoreCount, setIsSortByStoreCount] = useState<boolean>(false);
 
-  // Filter expansion state
-  const [isDesktopFilterExpanded, setIsDesktopFilterExpanded] = useState<boolean>(false);
   const [isMobileFilterExpanded, setIsMobileFilterExpanded] = useState<boolean>(false);
 
   // Data state
   const [enquiriesData, setEnquiriesData] = useState<PaginatedEnquiryResponse | null>(null);
+  const [locationStates, setLocationStates] = useState<LocationMasterDto[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Handle client-side hydration
   useEffect(() => {
-    setIsClient(true);
     setToken(localStorage.getItem('authToken'));
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    API.getLocationStates()
+      .then((states) => {
+        if (!isMounted) return;
+        setLocationStates(
+          [...states].sort((left, right) => left.name.localeCompare(right.name))
+        );
+      })
+      .catch(() => {
+        if (isMounted) setLocationStates([]);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const fetchEnquiries = useCallback(async () => {
@@ -207,8 +223,6 @@ export default function EnquiriesPage() {
     setCityFilter('');
     setStateFilter('');
     setIsSortByStoreCount(false);
-    setSortColumn('dealerName');
-    setSortDirection('asc');
   };
 
   const salesMonths = React.useMemo(() => {
@@ -242,56 +256,53 @@ export default function EnquiriesPage() {
   const renderMainContent = () => {
     if (!token && !isLoading) {
       return (
-        <div className="rounded-lg border bg-card p-8">
-          <div className="text-center">
-            <div className="text-6xl mb-4">🔒</div>
-            <h3 className="text-xl font-semibold text-foreground mb-2">Authentication Required</h3>
-            <p className="text-muted-foreground">Please log in to view enquiries data.</p>
+        <div className="rounded-lg border bg-card px-4 py-14 text-center">
+          <div className="mx-auto max-w-sm">
+            <h3 className="text-sm font-semibold text-foreground">Authentication required</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Please log in to view enquiries.</p>
           </div>
         </div>
       );
     }
     if (isLoading) return (
-      <div className="rounded-lg border bg-card p-8">
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-3"></div>
-          <span className="text-foreground font-medium">Loading enquiries from API...</span>
+      <div className="flex min-h-52 items-center justify-center rounded-lg border bg-card">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading enquiries…</span>
         </div>
       </div>
     );
     if (error) return (
-      <div className="rounded-lg border bg-card p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <div className="text-2xl mr-3">❌</div>
-            <div>
-              <h3 className="text-lg font-semibold text-destructive mb-1">Error Loading Data</h3>
-              <p className="text-muted-foreground">{error}</p>
-            </div>
+      <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-destructive">Could not load enquiries</h3>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{error}</p>
           </div>
           <Button
             variant="outline"
+            size="sm"
             onClick={() => fetchEnquiries()}
-            className="text-destructive hover:bg-destructive/10"
+            className="h-8 shrink-0"
           >
-            🔄 Refresh
+            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            Retry
           </Button>
         </div>
       </div>
     );
     return (
-      <div className="rounded-lg border bg-card">
+      <div className="overflow-hidden rounded-lg border border-border/80 bg-card">
         
         {/* Desktop Table View */}
-        <div className="hidden md:block overflow-x-auto">
-          <Table>
-            <TableCaption>List of enquiries</TableCaption>
-            <TableHeader>
+        <div className="hidden overflow-x-auto md:block">
+          <Table className="text-xs">
+            <TableHeader className="bg-muted/35">
               <TableRow>
                 {tableDisplayColumns.map((column) => (
                   <TableHead 
                     key={column} 
-                    className="text-left"
+                    className="h-10 whitespace-nowrap text-left text-xs font-medium"
                   >
                     {column}
                   </TableHead>
@@ -300,8 +311,8 @@ export default function EnquiriesPage() {
             </TableHeader>
             <TableBody>
               {enquiriesData?.content?.map((enquiry: Enquiry, index: number) => (
-                <TableRow key={enquiry.id}>
-                  <TableCell className="font-medium">
+                <TableRow key={enquiry.id} className="hover:bg-muted/25">
+                  <TableCell className="h-11 whitespace-nowrap font-medium">
                     {enquiry.taluka}
                   </TableCell>
                   <TableCell>
@@ -313,7 +324,7 @@ export default function EnquiriesPage() {
                   <TableCell>
                     {enquiry.population ? enquiry.population.toLocaleString() : '0'}
                   </TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="max-w-[220px] truncate font-medium" title={enquiry.dealerName}>
                     {enquiry.dealerName}
                   </TableCell>
                   <TableCell>
@@ -342,9 +353,9 @@ export default function EnquiriesPage() {
                 <TableRow>
                   <TableCell colSpan={tableDisplayColumns.length} className="text-center py-12">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
-                      <div className="text-4xl mb-4">📭</div>
-                      <h3 className="text-lg font-medium mb-2">No enquiries found</h3>
-                      <p className="text-sm">Try adjusting your filters or upload new data</p>
+                      <Store className="mb-3 h-8 w-8 stroke-[1.5]" />
+                      <h3 className="text-sm font-medium text-foreground">No enquiries found</h3>
+                      <p className="mt-1 text-xs">Try changing or clearing the filters.</p>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -354,53 +365,53 @@ export default function EnquiriesPage() {
         </div>
 
         {/* Mobile Card View */}
-        <div className="md:hidden space-y-4 p-4">
+        <div className="space-y-3 p-3 md:hidden">
           {enquiriesData?.content?.map((enquiry: Enquiry) => (
-            <Card key={enquiry.id} className="border-l-4 border-l-primary shadow-md">
-              <CardContent className="p-6">
+            <Card key={enquiry.id} className="shadow-none">
+              <CardContent className="p-4">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <Store className="h-6 w-6 text-foreground" />
-                    <div>
-                      <h3 className="text-xl font-bold text-foreground">{enquiry.dealerName}</h3>
-                      <p className="text-lg text-muted-foreground">{enquiry.taluka}</p>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-foreground">{enquiry.dealerName}</h3>
+                      <p className="text-xs text-muted-foreground">{enquiry.taluka}</p>
                     </div>
                   </div>
-                  <Badge variant="secondary" className="text-lg px-4 py-2">
+                  <Badge variant="secondary" className="shrink-0 text-xs">
                     ₹{calculateTotalSales(enquiry.sales) ? calculateTotalSales(enquiry.sales).toLocaleString() : '0'}
                   </Badge>
                 </div>
 
                 {/* Location Details */}
-                <div className="space-y-3 mb-4">
-                  <div className="flex items-center space-x-3">
-                    <MapPin className="h-5 w-5 text-foreground" />
-                    <div className="text-lg">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div>
                       <span className="font-medium">{enquiry.city || '—'}</span>
                       {enquiry.state && <span className="text-muted-foreground">, {enquiry.state}</span>}
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-3">
-                    <Users className="h-5 w-5 text-foreground" />
-                    <div className="text-lg">
+                  <div className="flex items-start gap-2">
+                    <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div>
                       <span className="font-medium">Population: </span>
                       <span className="font-semibold">{enquiry.population ? enquiry.population.toLocaleString() : '0'}</span>
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-3">
-                    <Phone className="h-5 w-5 text-foreground" />
-                    <div className="text-lg">
+                  <div className="flex items-start gap-2">
+                    <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div>
                       <span className="font-medium">Phone: </span>
                       <span className="font-semibold">{enquiry.contactNumber}</span>
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-3">
-                    <DollarSign className="h-5 w-5 text-foreground" />
-                    <div className="text-lg">
+                  <div className="flex items-start gap-2">
+                    <DollarSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div>
                       <span className="font-medium">Expenses: </span>
                       <span className="font-semibold">₹{enquiry.expenses ? enquiry.expenses.toLocaleString() : '0'}</span>
                     </div>
@@ -410,9 +421,9 @@ export default function EnquiriesPage() {
                 {/* Sales Data */}
                 {salesMonths.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-border">
-                    <div className="flex items-center space-x-2 mb-3">
-                      <CalendarIconLucide className="h-5 w-5 text-foreground" />
-                      <h4 className="text-lg font-medium text-foreground">Sales Data</h4>
+                    <div className="mb-2 flex items-center gap-2">
+                      <CalendarIconLucide className="h-3.5 w-3.5 text-muted-foreground" />
+                      <h4 className="text-xs font-medium text-foreground">Sales</h4>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {salesMonths.map(month => (
@@ -434,11 +445,11 @@ export default function EnquiriesPage() {
           ))}
           
           {(!enquiriesData?.content || enquiriesData.content.length === 0) && !isLoading && (
-            <div className="text-center py-12">
+            <div className="py-12 text-center">
               <div className="flex flex-col items-center justify-center text-muted-foreground">
-                <div className="text-6xl mb-4">📭</div>
-                <h3 className="text-2xl font-medium mb-2">No enquiries found</h3>
-                <p className="text-lg">Try adjusting your filters or upload new data</p>
+                <Store className="mb-3 h-8 w-8 stroke-[1.5]" />
+                <h3 className="text-sm font-medium text-foreground">No enquiries found</h3>
+                <p className="mt-1 text-xs">Try changing or clearing the filters.</p>
               </div>
             </div>
           )}
@@ -448,92 +459,85 @@ export default function EnquiriesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-end">
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsDesktopFilterExpanded(!isDesktopFilterExpanded)}
-                className="hidden md:inline-flex h-14 text-lg md:h-10 md:text-sm"
-              >
-                <Filter className="mr-2 h-5 w-5 md:h-4 md:w-4" />
-                {isDesktopFilterExpanded ? 'Hide Filters' : 'Show Filters'}
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setIsMobileFilterExpanded(true)}
-                className="md:hidden h-14 w-14"
-              >
-                <Filter className="h-6 w-6" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
+    <div className="space-y-4 py-4">
+      <div className="flex items-center justify-between md:hidden">
+        <p className="text-xs text-muted-foreground">
+          {enquiriesData?.totalElements ?? enquiriesData?.content?.length ?? 0} enquiries
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsMobileFilterExpanded(true)}
+          className="h-9"
+        >
+          <Filter className="mr-2 h-4 w-4" />
+          Filters
+        </Button>
+      </div>
 
-          {/* Desktop Filters Section */}
-          {isDesktopFilterExpanded && (
-          <div className="hidden md:block">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 p-6 bg-muted/30 rounded-lg">
+          <div className="hidden space-y-3 border-b border-border/70 pb-4 md:block">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             {/* Store Name */}
-            <div className="space-y-3">
-              <Label htmlFor="storeNameFilter" className="text-lg md:text-sm font-medium text-foreground">Store Name</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="storeNameFilter" className="text-xs font-medium text-foreground">Store name</Label>
               <Input 
                 id="storeNameFilter"
                 type="text" 
-                placeholder="Enter store name"
+                placeholder="All stores"
                 value={tempStoreNameFilter} 
                 onChange={(e) => setTempStoreNameFilter(e.target.value)} 
-                className="w-full h-14 text-lg md:h-10 md:text-sm"
+                className="h-9 w-full text-sm shadow-none"
               />
             </div>
 
             {/* Taluka */}
-            <div className="space-y-3">
-              <Label htmlFor="talukaFilter" className="text-lg md:text-sm font-medium text-foreground">Taluka</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="talukaFilter" className="text-xs font-medium text-foreground">Taluka</Label>
               <Input 
                 id="talukaFilter"
                 type="text" 
-                placeholder="Enter taluka"
+                placeholder="All talukas"
                 value={tempTalukaFilter} 
                 onChange={(e) => setTempTalukaFilter(e.target.value)} 
-                className="w-full h-14 text-lg md:h-10 md:text-sm"
+                className="h-9 w-full text-sm shadow-none"
               />
             </div>
 
             {/* City */}
-            <div className="space-y-3">
-              <Label htmlFor="cityFilter" className="text-lg md:text-sm font-medium text-foreground">City</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="cityFilter" className="text-xs font-medium text-foreground">City</Label>
               <Input 
                 id="cityFilter"
                 type="text" 
-                placeholder="Enter city"
+                placeholder="All cities"
                 value={tempCityFilter} 
                 onChange={(e) => setTempCityFilter(e.target.value)} 
-                className="w-full h-14 text-lg md:h-10 md:text-sm"
+                className="h-9 w-full text-sm shadow-none"
               />
             </div>
 
             {/* State */}
-            <div className="space-y-3">
-              <Label htmlFor="stateFilter" className="text-lg md:text-sm font-medium text-foreground">State</Label>
-              <Input 
-                id="stateFilter"
-                type="text" 
-                placeholder="Enter state"
-                value={tempStateFilter} 
-                onChange={(e) => setTempStateFilter(e.target.value)} 
-                className="w-full h-14 text-lg md:h-10 md:text-sm"
-              />
+            <div className="space-y-1.5">
+              <Label htmlFor="stateFilter" className="text-xs font-medium text-foreground">State</Label>
+              <Select
+                value={tempStateFilter || "all"}
+                onValueChange={(value) => setTempStateFilter(value === "all" ? "" : value)}
+              >
+                <SelectTrigger id="stateFilter" className="h-9 w-full text-sm shadow-none">
+                  <SelectValue placeholder="All states" />
+                </SelectTrigger>
+                <SelectContent className="max-h-56">
+                  <SelectItem value="all">All states</SelectItem>
+                  {locationStates.map((state) => (
+                    <SelectItem key={state.id} value={state.name}>{state.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* From Year */}
-            <div className="space-y-3">
-              <Label htmlFor="fromYearFilter" className="text-lg md:text-sm font-medium text-foreground">From Year</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="fromYearFilter" className="text-xs font-medium text-foreground">From year</Label>
                 <Select
                   value={tempStartYear !== undefined ? tempStartYear.toString() : "NONE_VALUE"}
                   onValueChange={(value) => {
@@ -541,11 +545,11 @@ export default function EnquiriesPage() {
                     else setTempStartYear(parseInt(value));
                   }}
                 >
-                  <SelectTrigger className="w-full h-14 md:h-10 text-lg md:text-sm">
+                  <SelectTrigger id="fromYearFilter" className="h-9 w-[132px] text-sm shadow-none">
                     <SelectValue placeholder="Select year" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                  <SelectContent className="max-h-48">
+                    <SelectItem value="NONE_VALUE">Any year</SelectItem>
                     {years.map(year => (
                       <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
                     ))}
@@ -554,8 +558,8 @@ export default function EnquiriesPage() {
               </div>
 
             {/* From Month */}
-            <div className="space-y-3">
-              <Label htmlFor="fromMonthFilter" className="text-lg md:text-sm font-medium text-foreground">From Month</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="fromMonthFilter" className="text-xs font-medium text-foreground">From month</Label>
                 <Select
                   value={tempStartMonth !== undefined ? tempStartMonth.toString() : "NONE_VALUE"}
                   onValueChange={(value) => {
@@ -564,11 +568,11 @@ export default function EnquiriesPage() {
                   }}
                   disabled={typeof tempStartYear !== 'number'}
                 >
-                  <SelectTrigger className="w-full h-14 md:h-10 text-lg md:text-sm">
+                  <SelectTrigger id="fromMonthFilter" className="h-9 w-full text-sm shadow-none">
                     <SelectValue placeholder="Select month" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                    <SelectItem value="NONE_VALUE">Any month</SelectItem>
                     {months.map((month, index) => (
                       <SelectItem key={index} value={index.toString()}>{month}</SelectItem>
                     ))}
@@ -577,8 +581,8 @@ export default function EnquiriesPage() {
               </div>
 
             {/* To Year */}
-            <div className="space-y-3">
-              <Label htmlFor="toYearFilter" className="text-lg md:text-sm font-medium text-foreground">To Year</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="toYearFilter" className="text-xs font-medium text-foreground">To year</Label>
                 <Select
                   value={tempEndYear !== undefined ? tempEndYear.toString() : "NONE_VALUE"}
                   onValueChange={(value) => {
@@ -586,11 +590,11 @@ export default function EnquiriesPage() {
                     else setTempEndYear(parseInt(value));
                   }}
                 >
-                  <SelectTrigger className="w-full h-14 md:h-10 text-lg md:text-sm">
+                  <SelectTrigger id="toYearFilter" className="h-9 w-[132px] text-sm shadow-none">
                     <SelectValue placeholder="Select year" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                  <SelectContent className="max-h-48">
+                    <SelectItem value="NONE_VALUE">Any year</SelectItem>
                     {years.map(year => (
                       <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
                     ))}
@@ -599,8 +603,8 @@ export default function EnquiriesPage() {
               </div>
 
             {/* To Month */}
-            <div className="space-y-3">
-              <Label htmlFor="toMonthFilter" className="text-lg md:text-sm font-medium text-foreground">To Month</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="toMonthFilter" className="text-xs font-medium text-foreground">To month</Label>
                 <Select
                   value={tempEndMonth !== undefined ? tempEndMonth.toString() : "NONE_VALUE"}
                   onValueChange={(value) => {
@@ -609,11 +613,11 @@ export default function EnquiriesPage() {
                   }}
                   disabled={typeof tempEndYear !== 'number'}
                 >
-                  <SelectTrigger className="w-full h-14 md:h-10 text-lg md:text-sm">
+                  <SelectTrigger id="toMonthFilter" className="h-9 w-full text-sm shadow-none">
                     <SelectValue placeholder="Select month" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                    <SelectItem value="NONE_VALUE">Any month</SelectItem>
                     {months.map((month, index) => (
                       <SelectItem key={index} value={index.toString()}>{month}</SelectItem>
                     ))}
@@ -621,11 +625,11 @@ export default function EnquiriesPage() {
                 </Select>
               </div>
             </div>
-            <DateRangeError fromDate={tempStartDate} toDate={tempEndDate} className="mt-4" />
+            <DateRangeError fromDate={tempStartDate} toDate={tempEndDate} />
         
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mt-8 pt-6 border-t border-border">
-            <div className="flex items-center space-x-3">
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <div className="flex items-center gap-2">
               <Switch
                 id="sortByStoreCountToggle"
                 checked={isSortByStoreCount}
@@ -633,95 +637,99 @@ export default function EnquiriesPage() {
                   setCurrentPage(0);
                   setIsSortByStoreCount(checked);
                 }}
-                className="data-[state=checked]:bg-blue-600"
               />
-              <Label htmlFor="sortByStoreCountToggle" className="text-lg md:text-sm font-medium text-foreground">
-                Sort by Store Count
+              <Label htmlFor="sortByStoreCountToggle" className="text-xs font-medium text-foreground">
+                Sort by store count
               </Label>
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
               <Button 
-                onClick={handleApplyFilters} 
-                disabled={dateRangeInvalid}
-                className="flex-1 sm:flex-none sm:px-6 h-14 text-lg md:h-10 md:text-sm font-medium"
+                variant="ghost"
+                onClick={handleClearFilters}
+                className="h-9 px-3 text-sm"
               >
-                Apply Filters
+                Clear
               </Button>
               <Button 
-                variant="outline" 
-                onClick={handleClearFilters} 
-                className="flex-1 sm:flex-none sm:px-6 h-14 text-lg md:h-10 md:text-sm font-medium"
+                onClick={handleApplyFilters}
+                disabled={dateRangeInvalid}
+                className="h-9 px-4 text-sm font-medium"
               >
-                Clear All
+                Apply filters
               </Button>
             </div>
           </div>
           </div>
-          )}
 
           {/* Mobile Filter Sheet */}
           <Sheet open={isMobileFilterExpanded} onOpenChange={setIsMobileFilterExpanded}>
-            <SheetContent>
+            <SheetContent className="overflow-y-auto sm:max-w-md">
               <SheetHeader>
-                <SheetTitle className="text-2xl">Enquiry Filters</SheetTitle>
+                <SheetTitle className="text-base">Enquiry filters</SheetTitle>
               </SheetHeader>
-              <div className="py-6 space-y-5">
+              <div className="grid gap-4 py-5">
                 {/* Store Name */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileStoreNameFilter" className="text-lg font-medium text-foreground">Store Name</Label>
+                  <Label htmlFor="mobileStoreNameFilter" className="text-xs font-medium text-foreground">Store name</Label>
                   <Input 
                     id="mobileStoreNameFilter"
                     type="text" 
-                    placeholder="Enter store name"
+                    placeholder="All stores"
                     value={tempStoreNameFilter} 
                     onChange={(e) => setTempStoreNameFilter(e.target.value)} 
-                    className="w-full h-14 text-lg"
+                    className="h-9 w-full text-sm"
                   />
                 </div>
 
                 {/* Taluka */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileTalukaFilter" className="text-lg font-medium text-foreground">Taluka</Label>
+                  <Label htmlFor="mobileTalukaFilter" className="text-xs font-medium text-foreground">Taluka</Label>
                   <Input 
                     id="mobileTalukaFilter"
                     type="text" 
-                    placeholder="Enter taluka"
+                    placeholder="All talukas"
                     value={tempTalukaFilter} 
                     onChange={(e) => setTempTalukaFilter(e.target.value)} 
-                    className="w-full h-14 text-lg"
+                    className="h-9 w-full text-sm"
                   />
                 </div>
 
                 {/* City */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileCityFilter" className="text-lg font-medium text-foreground">City</Label>
+                  <Label htmlFor="mobileCityFilter" className="text-xs font-medium text-foreground">City</Label>
                   <Input 
                     id="mobileCityFilter"
                     type="text" 
-                    placeholder="Enter city"
+                    placeholder="All cities"
                     value={tempCityFilter} 
                     onChange={(e) => setTempCityFilter(e.target.value)} 
-                    className="w-full h-14 text-lg"
+                    className="h-9 w-full text-sm"
                   />
                 </div>
 
                 {/* State */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileStateFilter" className="text-lg font-medium text-foreground">State</Label>
-                  <Input 
-                    id="mobileStateFilter"
-                    type="text" 
-                    placeholder="Enter state"
-                    value={tempStateFilter} 
-                    onChange={(e) => setTempStateFilter(e.target.value)} 
-                    className="w-full h-14 text-lg"
-                  />
+                  <Label htmlFor="mobileStateFilter" className="text-xs font-medium text-foreground">State</Label>
+                  <Select
+                    value={tempStateFilter || "all"}
+                    onValueChange={(value) => setTempStateFilter(value === "all" ? "" : value)}
+                  >
+                    <SelectTrigger id="mobileStateFilter" className="h-9 w-full text-sm">
+                      <SelectValue placeholder="All states" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      <SelectItem value="all">All states</SelectItem>
+                      {locationStates.map((state) => (
+                        <SelectItem key={state.id} value={state.name}>{state.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* From Year */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileFromYearFilter" className="text-lg font-medium text-foreground">From Year</Label>
+                  <Label htmlFor="mobileFromYearFilter" className="text-xs font-medium text-foreground">From year</Label>
                   <Select
                     value={tempStartYear !== undefined ? tempStartYear.toString() : "NONE_VALUE"}
                     onValueChange={(value) => {
@@ -729,11 +737,11 @@ export default function EnquiriesPage() {
                       else setTempStartYear(parseInt(value));
                     }}
                   >
-                    <SelectTrigger className="w-full h-14 text-lg">
+                    <SelectTrigger id="mobileFromYearFilter" className="h-9 w-full text-sm">
                       <SelectValue placeholder="Select year" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                    <SelectContent className="max-h-48">
+                      <SelectItem value="NONE_VALUE">Any year</SelectItem>
                       {years.map(year => (
                         <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
                       ))}
@@ -743,7 +751,7 @@ export default function EnquiriesPage() {
 
                 {/* From Month */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileFromMonthFilter" className="text-lg font-medium text-foreground">From Month</Label>
+                  <Label htmlFor="mobileFromMonthFilter" className="text-xs font-medium text-foreground">From month</Label>
                   <Select
                     value={tempStartMonth !== undefined ? tempStartMonth.toString() : "NONE_VALUE"}
                     onValueChange={(value) => {
@@ -752,11 +760,11 @@ export default function EnquiriesPage() {
                     }}
                     disabled={typeof tempStartYear !== 'number'}
                   >
-                    <SelectTrigger className="w-full h-14 text-lg">
+                    <SelectTrigger id="mobileFromMonthFilter" className="h-9 w-full text-sm">
                       <SelectValue placeholder="Select month" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                    <SelectContent className="max-h-48">
+                      <SelectItem value="NONE_VALUE">Any month</SelectItem>
                       {months.map((month, index) => (
                         <SelectItem key={index} value={index.toString()}>{month}</SelectItem>
                       ))}
@@ -766,7 +774,7 @@ export default function EnquiriesPage() {
 
                 {/* To Year */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileToYearFilter" className="text-lg font-medium text-foreground">To Year</Label>
+                  <Label htmlFor="mobileToYearFilter" className="text-xs font-medium text-foreground">To year</Label>
                   <Select
                     value={tempEndYear !== undefined ? tempEndYear.toString() : "NONE_VALUE"}
                     onValueChange={(value) => {
@@ -774,11 +782,11 @@ export default function EnquiriesPage() {
                       else setTempEndYear(parseInt(value));
                     }}
                   >
-                    <SelectTrigger className="w-full h-14 text-lg">
+                    <SelectTrigger id="mobileToYearFilter" className="h-9 w-full text-sm">
                       <SelectValue placeholder="Select year" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                    <SelectContent className="max-h-48">
+                      <SelectItem value="NONE_VALUE">Any year</SelectItem>
                       {years.map(year => (
                         <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
                       ))}
@@ -788,7 +796,7 @@ export default function EnquiriesPage() {
 
                 {/* To Month */}
                 <div className="space-y-2">
-                  <Label htmlFor="mobileToMonthFilter" className="text-lg font-medium text-foreground">To Month</Label>
+                  <Label htmlFor="mobileToMonthFilter" className="text-xs font-medium text-foreground">To month</Label>
                   <Select
                     value={tempEndMonth !== undefined ? tempEndMonth.toString() : "NONE_VALUE"}
                     onValueChange={(value) => {
@@ -797,11 +805,11 @@ export default function EnquiriesPage() {
                     }}
                     disabled={typeof tempEndYear !== 'number'}
                   >
-                    <SelectTrigger className="w-full h-14 text-lg">
+                    <SelectTrigger id="mobileToMonthFilter" className="h-9 w-full text-sm">
                       <SelectValue placeholder="Select month" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="NONE_VALUE"><em>None</em></SelectItem>
+                      <SelectItem value="NONE_VALUE">Any month</SelectItem>
                       {months.map((month, index) => (
                         <SelectItem key={index} value={index.toString()}>{month}</SelectItem>
                       ))}
@@ -822,8 +830,8 @@ export default function EnquiriesPage() {
                     }}
                     className="data-[state=checked]:bg-blue-600"
                   />
-                  <Label htmlFor="mobileSortByStoreCountToggle" className="text-lg font-medium text-foreground">
-                    Sort by Store Count
+                  <Label htmlFor="mobileSortByStoreCountToggle" className="text-sm font-medium text-foreground">
+                    Sort by store count
                   </Label>
                 </div>
               </div>
@@ -831,9 +839,9 @@ export default function EnquiriesPage() {
                 <Button 
                   variant="outline" 
                   onClick={handleClearFilters} 
-                  className="flex-1 h-14 text-lg font-medium"
+                  className="h-9 flex-1 text-sm font-medium"
                 >
-                  Clear All
+                  Clear
                 </Button>
                 <Button 
                   onClick={() => {
@@ -841,21 +849,20 @@ export default function EnquiriesPage() {
                     setIsMobileFilterExpanded(false);
                   }}
                   disabled={dateRangeInvalid}
-                  className="flex-1 h-14 text-lg font-medium"
+                  className="h-9 flex-1 text-sm font-medium"
                 >
-                  Apply Filters
+                  Apply filters
                 </Button>
               </SheetFooter>
             </SheetContent>
           </Sheet>
 
-          {/* Main Content */}
-          {renderMainContent()}
+      {renderMainContent()}
           
           {/* Pagination */}
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-6 p-6 bg-card rounded-lg border">
-            <div className="flex items-center gap-3">
-              <Label htmlFor="pageSizeSelect" className="text-lg md:text-sm font-medium text-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="pageSizeSelect" className="text-xs font-medium text-muted-foreground">
                 Rows per page:
               </Label>
               <Select
@@ -865,7 +872,7 @@ export default function EnquiriesPage() {
                       setPageSize(parseInt(value));
                   }}
               >
-                  <SelectTrigger id="pageSizeSelect" className="w-[80px] h-14 md:h-10 text-lg md:text-sm">
+                  <SelectTrigger id="pageSizeSelect" className="h-8 w-[72px] text-xs shadow-none">
                       <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -876,30 +883,32 @@ export default function EnquiriesPage() {
               </Select>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Button 
                   variant="outline" 
+                  size="sm"
                   onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
                   disabled={currentPage === 0 || isLoading}
-                  className="h-14 md:h-10 px-4 text-lg md:text-sm disabled:opacity-50"
+                  className="h-8 px-2.5 text-xs disabled:opacity-50"
               >
-                  ← Previous
+                  <ChevronLeft className="mr-1 h-3.5 w-3.5" />
+                  Previous
               </Button>
-              <span className="text-lg md:text-sm font-medium text-foreground px-4 py-2 bg-muted rounded-lg">
+              <span className="px-1 text-xs text-muted-foreground">
                   Page {currentPage + 1} of {totalPages > 0 ? totalPages : 1}
               </span>
               <Button 
                   variant="outline" 
+                  size="sm"
                   onClick={() => setCurrentPage(prev => prev + 1)}
                   disabled={isLoading || currentPage >= totalPages - 1}
-                  className="h-14 md:h-10 px-4 text-lg md:text-sm disabled:opacity-50"
+                  className="h-8 px-2.5 text-xs disabled:opacity-50"
               >
-                  Next →
+                  Next
+                  <ChevronRight className="ml-1 h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
     </div>
 
   );

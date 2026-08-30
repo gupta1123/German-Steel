@@ -1,11 +1,19 @@
 "use client";
 
 import DashboardLayout from "@/components/dashboard-layout";
-import { ReactNode } from "react";
+import { ReactNode, useCallback, useState } from "react";
 import { usePathname } from "next/navigation";
+import {
+  DashboardHeaderConfig,
+  DashboardHeaderOverrideProvider,
+} from "@/components/dashboard-header-context";
 
 export default function Layout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [headerOverride, setHeaderOverrideState] = useState<DashboardHeaderConfig | null>(null);
+  const setHeaderOverride = useCallback((config: DashboardHeaderConfig | null) => {
+    setHeaderOverrideState(config);
+  }, []);
   
   // Define headings for each page
   const pageHeadings: Record<string, { heading: string; subheading?: string; backHref?: string }> = {
@@ -124,15 +132,18 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   // Get page heading - check dynamic routes first, then static routes
   const dynamicHeading = getDynamicPageHeading(pathname);
-  const currentPage = dynamicHeading || pageHeadings[pathname] || pageHeadings["/dashboard"];
+  const basePage = dynamicHeading || pageHeadings[pathname] || pageHeadings["/dashboard"];
 
   return (
-    <DashboardLayout 
-      heading={currentPage.heading} 
-      subheading={currentPage.subheading}
-      backHref={currentPage.backHref}
-    >
-      {children}
-    </DashboardLayout>
+    <DashboardHeaderOverrideProvider setHeader={setHeaderOverride}>
+      <DashboardLayout
+        heading={headerOverride?.heading || basePage.heading}
+        subheading={headerOverride?.subheading ?? basePage.subheading}
+        backHref={headerOverride ? undefined : basePage.backHref}
+        onBack={headerOverride?.onBack}
+      >
+        {children}
+      </DashboardLayout>
+    </DashboardHeaderOverrideProvider>
   );
 }

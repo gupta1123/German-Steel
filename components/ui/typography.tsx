@@ -8,14 +8,14 @@ const headingVariants = cva(
   {
     variants: {
       size: {
-        xs: "text-xs",
-        sm: "text-sm",
-        md: "text-base",
-        lg: "text-lg",
+        xs: "text-[11px]",
+        sm: "text-xs",
+        md: "text-sm",
+        lg: "text-base",
         xl: "text-xl",
         "2xl": "text-2xl",
-        "3xl": "text-3xl",
-        "4xl": "text-4xl",
+        "3xl": "text-[28px]",
+        "4xl": "text-3xl",
       },
       weight: {
         normal: "font-normal",
@@ -35,9 +35,9 @@ const textVariants = cva("text-foreground", {
   variants: {
     size: {
       xs: "text-xs",
-      sm: "text-sm",
-      md: "text-base",
-      lg: "text-lg",
+      sm: "text-[13px]",
+      md: "text-sm",
+      lg: "text-base",
     },
     tone: {
       default: "text-foreground",

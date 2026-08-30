@@ -7,6 +7,14 @@ export interface CityOptionLike {
 export const normalizeCityKey = (value: string | null | undefined) =>
   (value ?? '').trim().toLowerCase();
 
+export const formatCityLabel = (value: string | null | undefined) =>
+  (value ?? '')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/(^|[\s\-(/])([a-z])/g, (_, boundary: string, character: string) =>
+      `${boundary}${character.toLocaleUpperCase()}`
+    );
+
 const preferDisplayValue = (current: string, next: string) => {
   const currentValue = current.trim();
   const nextValue = next.trim();
@@ -34,7 +42,8 @@ export const buildCityOptions = <T extends CityOptionLike = CityOptionLike>(
     if (!value || !key || seen.has(key)) return;
 
     seen.add(key);
-    options.push(createOption ? createOption(value) : ({ value, label: value } as T));
+    const option = createOption ? createOption(value) : ({ value, label: value } as T);
+    options.push({ ...option, label: formatCityLabel(option.label || value) });
   });
 
   return options;
@@ -66,7 +75,7 @@ export const mergeCityOptions = <T extends CityOptionLike>(
         ...existing,
         ...option,
         value,
-        label,
+        label: formatCityLabel(label),
         ...(assignedTo.length > 0 ? { assignedTo } : {}),
       });
     });

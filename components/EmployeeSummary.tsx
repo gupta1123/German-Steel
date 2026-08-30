@@ -19,7 +19,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { API } from "@/lib/api";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
-import { DateRangeError, getDateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
+import { getDateRangeError } from "@/components/date-range-error";
+import { toast } from "sonner";
+import { getEmployeeRoleCategory } from "@/lib/employee-role";
 
 interface SummaryData {
     employeeName: string;
@@ -51,6 +53,7 @@ interface Employee {
     id: number;
     firstName: string;
     lastName: string;
+    role?: string;
 }
 
 const toFiniteNumber = (value: number | string | null | undefined): number => {
@@ -82,6 +85,10 @@ const getFullCalendarMonthRange = (dateValue: string) => {
 };
 
 const getFullMonthError = (startDate: string, endDate: string) => {
+    if (!startDate || !endDate) {
+        return "Select both From and To dates for one complete calendar month.";
+    }
+
     const dateRangeError = getDateRangeError(startDate, endDate);
     if (dateRangeError) return dateRangeError;
     const monthRange = getFullCalendarMonthRange(startDate);
@@ -90,7 +97,9 @@ const getFullMonthError = (startDate: string, endDate: string) => {
     }
 
     if (monthRange.start !== startDate || monthRange.end !== endDate) {
-        return `Select a full calendar month (${monthRange.start} to ${monthRange.end}) to view and edit adjustments.`;
+        const expectedStart = new Date(`${monthRange.start}T00:00:00`);
+        const expectedEnd = new Date(`${monthRange.end}T00:00:00`);
+        return `Select the complete month of ${format(expectedStart, "MMMM yyyy")}: ${format(expectedStart, "MMM d")} to ${format(expectedEnd, "MMM d, yyyy")}.`;
     }
 
     return null;
@@ -104,7 +113,6 @@ const EmployeeSummary: React.FC = () => {
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [startDate, setStartDate] = useState(defaultDateRange.start);
     const [endDate, setEndDate] = useState(defaultDateRange.end);
-    const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
     const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
     const [isEndDatePopoverOpen, setIsEndDatePopoverOpen] = useState(false);
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -169,14 +177,12 @@ const EmployeeSummary: React.FC = () => {
     ) => {
         setError(null);
         try {
-            if (isDateRangeInvalid(requestedStartDate, requestedEndDate)) {
+            const fullMonthError = getFullMonthError(requestedStartDate, requestedEndDate);
+            if (fullMonthError) {
+                toast.error(fullMonthError, { duration: 3000 });
                 return;
             }
             setSummaryLoading(true);
-            
-            if (!requestedStartDate || !requestedEndDate) {
-                throw new Error('Please select a valid date range');
-            }
 
             if (!token) {
                 throw new Error('Authentication token not found. Please log in.');
@@ -202,7 +208,9 @@ const EmployeeSummary: React.FC = () => {
 
             setSummaryData(data);
         } catch (error) {
-            setError(error instanceof Error ? error.message : 'An unknown error occurred');
+            const message = error instanceof Error ? error.message : 'An unknown error occurred';
+            setError(message);
+            toast.error(message, { duration: 3000 });
         } finally {
             setSummaryLoading(false);
         }
@@ -366,6 +374,10 @@ const EmployeeSummary: React.FC = () => {
     const employeeOptions = useMemo<EmployeeOption[]>(() => {
         // Use allEmployees instead of summaryData to populate dropdown
         return allEmployees
+            .filter((employee) => {
+                const category = getEmployeeRoleCategory(employee.role);
+                return category === "regional-manager" || category === "field-officer";
+            })
             .map((emp) => ({
                 value: String(emp.id),
                 label: `${emp.firstName} ${emp.lastName}`.trim(),
@@ -539,31 +551,15 @@ const EmployeeSummary: React.FC = () => {
     const projectedAdjustedTotalSalary = regularTotalSalary + previewAdjustmentAmount;
 
     return (
-        <div className="space-y-6">
-            <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-6">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <CardTitle className="text-3xl md:text-xl font-semibold text-foreground">Employee Summary</CardTitle>
-                            <p className="text-lg md:text-sm text-muted-foreground">View employee salary summaries and attendance data</p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            className="w-full md:w-auto"
-                            onClick={handleExportCsv}
-                            disabled={summaryLoading || filteredSummaryData.length === 0}
-                        >
-                            <Download className="mr-2 h-4 w-4" />
-                            Export CSV
-                        </Button>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
+        <div className="space-y-4">
+            <Card className="gap-0 border-border/70 py-0 shadow-sm">
+                <CardContent className="space-y-4 p-4">
                     {/* Filters Section */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-6 bg-muted/30 rounded-lg">
-                        <div className="space-y-3">
+                    <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-2">
+                        <div className="min-w-0 space-y-1.5 lg:w-[220px] lg:shrink-0">
                             <div className="flex items-center justify-between">
-                                <Label className="text-lg md:text-sm font-medium text-foreground">Employees (optional)</Label>
+                                <Label className="text-xs font-medium text-foreground">Employee</Label>
                                 {selectedEmployeeIds.length > 0 && (
                                     <button
                                         type="button"
@@ -581,12 +577,12 @@ const EmployeeSummary: React.FC = () => {
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
-                                        className="w-full h-14 text-lg justify-between md:h-10 md:text-sm"
+                                        className="h-9 w-full justify-between px-3 text-sm font-normal shadow-none"
                                     >
                                         <span className="flex items-center gap-2 truncate">
-                                            <Users className="h-5 w-5 text-primary" />
+                                            <Users className="h-4 w-4 text-muted-foreground" />
                                             {selectedEmployeeIds.length === 0
-                                                ? "All Employees"
+                                                ? "All employees"
                                                 : `${selectedEmployeeIds.length} employee${selectedEmployeeIds.length > 1 ? "s" : ""} selected`}
                                         </span>
                                         <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -675,13 +671,13 @@ const EmployeeSummary: React.FC = () => {
                                 </PopoverContent>
                             </Popover>
                         </div>
-                        <div className="space-y-3">
-                            <Label className="text-lg md:text-sm font-medium text-foreground">From Date</Label>
+                        <div className="space-y-1.5 lg:w-[180px] lg:shrink-0">
+                            <Label className="text-xs font-medium text-foreground">From date</Label>
                             <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
-                                        className={`w-full h-14 md:h-10 text-lg md:text-sm justify-start text-left font-normal ${!startDate && 'text-muted-foreground'}`}
+                                        className={`h-9 w-full justify-start px-3 text-left text-sm font-normal shadow-none ${!startDate && 'text-muted-foreground'}`}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
                                         {startDate ? format(new Date(startDate), 'MMM dd, yyyy') : <span>Pick start date</span>}
@@ -700,13 +696,13 @@ const EmployeeSummary: React.FC = () => {
                                 </PopoverContent>
                             </Popover>
                         </div>
-                        <div className="space-y-3">
-                            <Label className="text-lg md:text-sm font-medium text-foreground">To Date</Label>
+                        <div className="space-y-1.5 lg:w-[180px] lg:shrink-0">
+                            <Label className="text-xs font-medium text-foreground">To date</Label>
                             <Popover open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
-                                        className={`w-full h-14 md:h-10 text-lg md:text-sm justify-start text-left font-normal ${!endDate && 'text-muted-foreground'}`}
+                                        className={`h-9 w-full justify-start px-3 text-left text-sm font-normal shadow-none ${!endDate && 'text-muted-foreground'}`}
                                     >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
                                         {endDate ? format(new Date(endDate), 'MMM dd, yyyy') : <span>Pick end date</span>}
@@ -725,31 +721,48 @@ const EmployeeSummary: React.FC = () => {
                                 </PopoverContent>
                             </Popover>
                         </div>
-                        <div className="flex flex-col justify-end gap-2">
-                            <DateRangeError fromDate={startDate} toDate={endDate} />
-                            <div className="flex items-end gap-2">
+                        <div className="flex min-w-0 flex-1 flex-col justify-end gap-1.5 lg:ml-auto lg:flex-none">
+                            <div className="flex flex-nowrap items-end gap-2 lg:justify-end">
                                 <Button
                                     type="button"
                                     variant="outline"
                                     onClick={handleResetFilters}
-                                    className="h-14 flex-1 text-lg md:h-10 md:text-sm font-medium"
+                                    className="h-9 flex-1 text-sm font-medium shadow-none sm:flex-none lg:w-[92px]"
                                     disabled={summaryLoading || filtersAreAtDefaults}
                                 >
                                     <RotateCcw className="mr-2 h-4 w-4" />
-                                    Reset Filters
+                                    Reset
                                 </Button>
-                                <Button onClick={() => void fetchSummaryData()} className="h-14 flex-1 text-lg md:h-10 md:text-sm font-medium" disabled={summaryLoading || dateRangeInvalid || !startDate || !endDate}>
+                                <Button
+                                    onClick={() => void fetchSummaryData()}
+                                    className="h-9 flex-1 text-sm font-medium shadow-none sm:flex-none lg:w-[112px]"
+                                    disabled={summaryLoading}
+                                >
                                     {summaryLoading ? (
                                         <>
-                                            <Loader2 className="mr-2 h-6 w-6 md:h-4 md:w-4 animate-spin" />
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                             Loading...
                                         </>
                                     ) : (
-                                        'Apply Filter'
+                                        'Apply'
                                     )}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="h-9 flex-1 text-sm shadow-none sm:flex-none lg:w-[124px]"
+                                    onClick={handleExportCsv}
+                                    disabled={summaryLoading || filteredSummaryData.length === 0}
+                                >
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Export CSV
                                 </Button>
                             </div>
                         </div>
+                        </div>
+                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+                            Select the first and last day of one complete calendar month.
+                        </p>
                     </div>
 
                     {summaryLoading && (
@@ -826,10 +839,11 @@ const EmployeeSummary: React.FC = () => {
                     {!summaryLoading && !error && (
                         <>
                             {/* Mobile view */}
-                            <div className="md:hidden space-y-6">
+                            <div className="space-y-3 md:hidden">
                                 <Card>
-                                    <CardHeader className="pb-4">
-                                        <CardTitle className="text-3xl">Employee Salary Summary ({getDateRangeDisplay()})</CardTitle>
+                                    <CardHeader className="pb-3">
+                                        <CardTitle className="text-sm font-semibold">Summary results</CardTitle>
+                                        <p className="text-xs text-muted-foreground">{getDateRangeDisplay()}</p>
                                     </CardHeader>
                                     <CardContent className="pt-0">
                                         {summaryLoading ? (
@@ -959,9 +973,9 @@ const EmployeeSummary: React.FC = () => {
                             {/* Desktop view */}
                             <div className="hidden md:block">
                                 <div className="rounded-lg border bg-card">
-                                    <div className="p-4 border-b">
-                                        <h3 className="text-lg font-semibold text-foreground">Employee Salary Summary ({getDateRangeDisplay()})</h3>
-                                        <p className="text-sm text-muted-foreground">Overview of employee attendance and salary calculations</p>
+                                    <div className="border-b p-4">
+                                        <h3 className="text-sm font-semibold text-foreground">Summary results</h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">{getDateRangeDisplay()}</p>
                                     </div>
                                     <div className="overflow-x-auto">
                                         {summaryLoading ? (

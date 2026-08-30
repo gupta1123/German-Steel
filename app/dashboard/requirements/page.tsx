@@ -6,9 +6,9 @@ import { format, subDays, differenceInDays } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
 import { API, type TeamDataDto } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
+import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import { getTeamIds, getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
-import { motion, AnimatePresence } from 'framer-motion';
-import { sortBy, uniqBy } from 'lodash';
+import { sortBy } from 'lodash';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from '@/components/ui/input';
@@ -19,13 +19,14 @@ import { SpacedCalendar } from '@/components/ui/spaced-calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pagination, PaginationContent, PaginationLink, PaginationItem, PaginationPrevious, PaginationNext } from '@/components/ui/pagination';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from '@/components/ui/sheet';
-import { CalendarIcon, MoreHorizontal, PlusCircle, Search, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, FileText, Target, Trash2, Calendar as CalendarIcon2, X, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { CalendarIcon, MoreHorizontal, PlusCircle, Search, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, FileText, Trash2, Calendar as CalendarIcon2, ChevronLeft, ChevronRight, Check, ChevronsUpDown } from 'lucide-react';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
+import { toast } from 'sonner';
 
 interface Task {
     id: number;
@@ -48,6 +49,7 @@ interface Employee {
     id: number;
     firstName: string;
     lastName: string;
+    role: string;
 }
 
 interface Store {
@@ -115,6 +117,7 @@ const Requirements = () => {
     const [isTabLoading, setIsTabLoading] = useState(false);
     const [isStoresLoading, setIsStoresLoading] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
+    const [updatingTaskFields, setUpdatingTaskFields] = useState<Set<string>>(new Set());
     
     // SearchableSelect state variables
     const [selectedStore, setSelectedStore] = useState<string[]>([]);
@@ -389,7 +392,7 @@ const Requirements = () => {
             const raw = sessionStorage.getItem(FILTER_STATE_KEY);
             if (raw) {
                 const saved = JSON.parse(raw);
-                if (saved?.filters) setFilters((prev) => ({ ...prev, ...saved.filters }));
+                if (saved?.filters) setFilters((prev) => ({ ...prev, ...saved.filters, search: '' }));
                 if (typeof saved?.currentPage === 'number') setCurrentPage(saved.currentPage);
                 if (typeof saved?.pageSize === 'number') setPageSize(saved.pageSize);
             }
@@ -423,7 +426,9 @@ const Requirements = () => {
     }, [fetchEmployees]);
 
     // Get employees for assignment dropdown based on user role
-    const assignmentEmployees = isManager ? teamMembers : allEmployees;
+    const assignmentEmployees = (isManager ? teamMembers : allEmployees).filter(
+        (employee) => getEmployeeRoleCategory(employee.role) !== 'admin'
+    );
 
     useEffect(() => {
         if (isModalOpen) {
@@ -432,19 +437,24 @@ const Requirements = () => {
     }, [isModalOpen, fetchStores]);
 
     useEffect(() => {
-        if (tasks.length > 0) {
-            const uniqueEmployees = uniqBy(tasks.map(task => ({
-                id: task.assignedToId,
-                name: task.assignedToName
-            })), 'id');
-            const sortedEmployees = sortBy(uniqueEmployees, 'name');
-            setFilterEmployees(sortedEmployees);
-        }
-    }, [tasks]);
+        const directoryEmployees = allEmployees
+            .filter((employee) => {
+                const category = getEmployeeRoleCategory(employee.role);
+                return category === 'field-officer' || category === 'regional-manager';
+            })
+            .map((employee) => ({
+                id: employee.id,
+                name: `${employee.firstName} ${employee.lastName}`.trim(),
+            }));
+
+        setFilterEmployees(sortBy(directoryEmployees, 'name'));
+    }, [allEmployees]);
 
     // Populate employee options for SearchableSelect
     useEffect(() => {
-        const assignmentEmployees = isManager ? teamMembers : allEmployees;
+        const assignmentEmployees = (isManager ? teamMembers : allEmployees).filter(
+            (employee) => getEmployeeRoleCategory(employee.role) !== 'admin'
+        );
         const options = assignmentEmployees.map(emp => ({
             value: emp.id.toString(),
             label: `${emp.firstName} ${emp.lastName}`
@@ -536,8 +546,8 @@ const Requirements = () => {
     }, [filterEmployees, filterEmployeeSearch]);
 
     const topEmployeeDisplay = useMemo(() => {
-        if (filters.employee === '' || filters.employee === 'all') return 'All Employees';
-        return filterEmployees.find((emp) => emp.id.toString() === filters.employee)?.name || 'All Employees';
+        if (filters.employee === '' || filters.employee === 'all') return 'All employees';
+        return filterEmployees.find((emp) => emp.id.toString() === filters.employee)?.name || 'All employees';
     }, [filters.employee, filterEmployees]);
 
     const applyFilters = useCallback(() => {
@@ -699,6 +709,59 @@ const Requirements = () => {
         }
     };
 
+    const updateTaskField = async (taskId: number, field: 'priority' | 'status', value: string) => {
+        if (!token) return;
+
+        const taskKey = `${taskId}-${field}`;
+        if (updatingTaskFields.has(taskKey)) return;
+
+        const originalTask = tasks.find((task) => task.id === taskId);
+        if (!originalTask || originalTask[field] === value) return;
+
+        setUpdatingTaskFields((current) => new Set(current).add(taskKey));
+        setErrorMessage(null);
+        setTasks((current) => current.map((task) =>
+            task.id === taskId ? { ...task, [field]: value } : task
+        ));
+
+        try {
+            const response = await fetch(
+                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/updateTask?taskId=${taskId}`,
+                {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ [field]: value }),
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`Failed to update task ${field}`);
+            }
+
+            toast.success(`${field === 'priority' ? 'Priority' : 'Status'} updated`, {
+                duration: 3000,
+            });
+        } catch (updateError) {
+            setTasks((current) => current.map((task) =>
+                task.id === taskId ? { ...task, [field]: originalTask[field] } : task
+            ));
+            setErrorMessage(`Could not update ${field}. Please try again.`);
+            toast.error(`Could not update ${field}`, {
+                duration: 3000,
+            });
+            console.error(`Error updating task ${field}:`, updateError);
+        } finally {
+            setUpdatingTaskFields((current) => {
+                const next = new Set(current);
+                next.delete(taskKey);
+                return next;
+            });
+        }
+    };
+
     const deleteTask = async (taskId: number) => {
         if (!token) return;
         
@@ -826,42 +889,14 @@ const Requirements = () => {
   };
 
   return (
-        <div className="container mx-auto py-6 px-4 sm:px-6 lg:px-8">
-            <div className="mb-6 flex flex-wrap gap-4 items-center">
-                <div className="flex-grow lg:flex-grow-0 lg:w-64 flex items-center gap-2">
-                    <div className="relative w-full">
-                        <Input
-                            placeholder="Search requirements"
-                            value={filters.search}
-                            onChange={(e) => handleFilterChange('search', e.target.value)}
-                            className="w-full pr-10"
-                        />
-                        {filters.search && (
-                            <button
-                                type="button"
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                onClick={() => handleFilterChange('search', '')}
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
-                    <Button onClick={() => setIsModalOpen(true)}>
-                        <PlusCircle className="w-4 h-4 mr-2" /> New
-                    </Button>
-                </div>
-                <div className="flex-shrink-0">
-                    <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setIsFilterDrawerOpen(true)}>
-                        <Filter className="w-4 h-4 mr-2" />
-                        Filters
-                    </Button>
-                </div>
-                <div className="hidden lg:flex flex-wrap gap-4 items-center">
+        <div className="mx-auto w-full max-w-none py-4">
+            <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
                     <Popover open={filterEmployeePopoverOpen} onOpenChange={setFilterEmployeePopoverOpen}>
                         <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-[220px] justify-between">
+                            <Button variant="outline" className="h-9 w-[160px] shrink-0 justify-between px-3 text-sm font-normal shadow-none">
                                 <span className="truncate text-left">{topEmployeeDisplay}</span>
-                                <Search className="h-4 w-4 text-muted-foreground" />
+                                <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-[280px] p-0" align="start">
@@ -890,7 +925,7 @@ const Requirements = () => {
                                         setFilterEmployeeSearch('');
                                     }}
                                 >
-                                    <span>All Employees</span>
+                                    <span>All employees</span>
                                     {(filters.employee === '' || filters.employee === 'all') && <Check className="h-4 w-4 text-primary" />}
                                 </button>
                                 {filteredTopEmployeeOptions.map((employee) => {
@@ -918,7 +953,7 @@ const Requirements = () => {
                         </PopoverContent>
                     </Popover>
                     <Select value={filters.priority} onValueChange={(value) => handleFilterChange('priority', value)}>
-                        <SelectTrigger className="w-[200px]">
+                        <SelectTrigger className="h-9 w-[130px] shrink-0 text-sm shadow-none">
                             <SelectValue placeholder="Filter by priority" />
                         </SelectTrigger>
                         <SelectContent>
@@ -929,7 +964,7 @@ const Requirements = () => {
                         </SelectContent>
                     </Select>
                     <Select value={filters.status} onValueChange={(value) => handleFilterChange('status', value)}>
-                        <SelectTrigger className="w-[200px]">
+                        <SelectTrigger className="h-9 w-[140px] shrink-0 text-sm shadow-none">
                             <SelectValue placeholder="Filter by status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -941,20 +976,23 @@ const Requirements = () => {
                     </Select>
                     {/* Only show date filters for admin users */}
                     {!isManager && (
-                        <>
-                            <div className="flex items-center space-x-2">
-                                <Label htmlFor="startDate">From:</Label>
+                        <div className="flex shrink-0 items-center gap-2">
+                            <div>
+                                <Label htmlFor="startDate" className="sr-only">From date</Label>
                                 <Popover modal={false} open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                                     <PopoverTrigger asChild>
                                         <Button
                                             variant="outline"
-                                            className={`w-[140px] justify-start text-left font-normal ${!filters.startDate && 'text-muted-foreground'}`}
+                                            className={`h-9 w-[165px] justify-start gap-2 overflow-hidden px-3 text-left text-xs font-normal shadow-none ${!filters.startDate && 'text-muted-foreground'}`}
                                         >
-                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {filters.startDate ? format(new Date(filters.startDate), 'MMM dd, yyyy') : <span>Pick start date</span>}
+                                            <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+                                            <span className="shrink-0 text-muted-foreground">From</span>
+                                            <span className="min-w-0 truncate text-foreground">
+                                                {filters.startDate ? format(new Date(filters.startDate), 'MMM dd, yyyy') : 'Pick date'}
+                                            </span>
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
+                                    <PopoverContent className="w-auto p-0" align="start" side="bottom">
                                         <SpacedCalendar
                                             mode="single"
                                             selected={filters.startDate ? new Date(filters.startDate) : undefined}
@@ -967,19 +1005,22 @@ const Requirements = () => {
                                     </PopoverContent>
                                 </Popover>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <Label htmlFor="endDate">To:</Label>
+                            <div>
+                                <Label htmlFor="endDate" className="sr-only">To date</Label>
                                 <Popover modal={false} open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                                     <PopoverTrigger asChild>
                                         <Button
                                             variant="outline"
-                                            className={`w-[140px] justify-start text-left font-normal ${!filters.endDate && 'text-muted-foreground'}`}
+                                            className={`h-9 w-[165px] justify-start gap-2 overflow-hidden px-3 text-left text-xs font-normal shadow-none ${!filters.endDate && 'text-muted-foreground'}`}
                                         >
-                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {filters.endDate ? format(new Date(filters.endDate), 'MMM dd, yyyy') : <span>Pick end date</span>}
+                                            <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+                                            <span className="shrink-0 text-muted-foreground">To</span>
+                                            <span className="min-w-0 truncate text-foreground">
+                                                {filters.endDate ? format(new Date(filters.endDate), 'MMM dd, yyyy') : 'Pick date'}
+                                            </span>
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
+                                    <PopoverContent className="w-auto p-0" align="start" side="bottom">
                                         <SpacedCalendar
                                             mode="single"
                                             selected={filters.endDate ? new Date(filters.endDate) : undefined}
@@ -993,8 +1034,17 @@ const Requirements = () => {
                                 </Popover>
                             </div>
                             <DateRangeError fromDate={filters.startDate} toDate={filters.endDate} className="w-full" />
-                        </>
+                        </div>
                     )}
+                </div>
+                <div className="flex items-center gap-2 lg:ml-auto lg:shrink-0">
+                    <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setIsFilterDrawerOpen(true)}>
+                        <Filter className="mr-2 h-4 w-4" />
+                        Filters
+                    </Button>
+                    <Button size="sm" className="h-9" onClick={() => setIsModalOpen(true)}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> New
+                    </Button>
                 </div>
             </div>
 
@@ -1072,7 +1122,7 @@ const Requirements = () => {
                                                 {newTask.dueDate ? format(new Date(newTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0" align="start" side="bottom" onInteractOutside={(e)=>e.preventDefault()} onPointerDownOutside={(e)=>e.preventDefault()}>
+                                        <PopoverContent className="w-auto p-0" align="start" side="bottom">
                                             <SpacedCalendar
                                                 mode="single"
                                                 selected={newTask.dueDate ? new Date(newTask.dueDate) : undefined}
@@ -1221,33 +1271,24 @@ const Requirements = () => {
                     <p className="text-gray-500 mt-2">Try adjusting your filters or create a new requirement.</p>
           </div>
         ) : (
-                <div className="flex flex-wrap -mx-2">
-                    {paginatedTasks.map((task, index) => (
-                            <motion.div
-                                key={task.id}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3, delay: index * 0.1 }}
-                                className="w-full sm:w-1/2 lg:w-1/3 p-2"
-                            >
-                                <Card className="relative h-full overflow-visible shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-                                    <CardHeader className="pb-2">
-                                        <div className="flex justify-between items-center">
-                                            <Badge className={`${getStatusInfo(task.status).color} px-3 py-1 rounded-full font-semibold flex items-center space-x-2`}>
-                                                {getStatusInfo(task.status).icon} <span>{task.status}</span>
-                                            </Badge>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {paginatedTasks.map((task) => (
+                            <div key={task.id}>
+                                <Card className="relative h-full gap-0 overflow-visible border-border/70 py-0 shadow-sm transition-shadow hover:shadow-md">
+                                    <CardHeader className="px-4 pb-2 pt-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <CardTitle className="line-clamp-1 min-w-0 text-sm font-semibold leading-5">
+                                                {task.taskTitle || 'Untitled Requirement'}
+                                            </CardTitle>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="sm">
+                                                    <Button variant="ghost" size="icon" className="-mr-2 -mt-1 h-7 w-7 shrink-0 text-muted-foreground">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
                                                     <DropdownMenuItem onClick={() => handleViewStore(task.storeId)}>
                                                         <Building className="mr-2 h-4 w-4" /> View Store
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleStatusChange(task)}>
-                                                        <Clock className="mr-2 h-4 w-4" /> Change Status
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => deleteTask(task.id)} className="text-red-600">
@@ -1256,48 +1297,69 @@ const Requirements = () => {
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </div>
-                                        <CardTitle className="text-xl mt-2">{task.taskTitle || 'Untitled Requirement'}</CardTitle>
-                                        <CardDescription className="flex items-center mt-1 text-card-foreground">
-                                            <Building className="w-4 h-4 mr-2 text-primary" />
-                                            {task.storeName}
-                                        </CardDescription>
+                                        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-foreground">
+                                            <Building className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                            <span className="truncate">{task.storeName || 'No store assigned'}</span>
+                                        </div>
+                                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                            {task.storeCity && (
+                                                <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[10px] text-muted-foreground">
+                                                    <MapPin className="h-3 w-3" />
+                                                    {task.storeCity}
+                                                </span>
+                                            )}
+                                        </div>
                                     </CardHeader>
-                                    <CardContent>
-                                        {task.taskDesciption && (
-                                            <div className="relative group mb-4 pb-4 border-b border-border">
-                                                <p className="text-sm font-medium text-card-foreground dark:text-white line-clamp-2">
-                                                    {task.taskDesciption}
-                                                </p>
-                                                {task.taskDesciption.length > 80 && (
-                                                    <div className="pointer-events-none absolute left-1/2 bottom-full z-50 mb-3 w-full max-w-md -translate-x-1/2 -translate-y-2 rounded-xl border border-primary/40 bg-black p-4 text-white shadow-2xl opacity-0 invisible transition-all duration-200 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0">
-                                                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{task.taskDesciption}</p>
-                                                    </div>
-                                                )}
+                                    <CardContent className="space-y-3 px-4 pb-4 pt-1">
+                                        <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs">
+                                            <div className="flex min-w-0 items-center gap-1.5">
+                                                <User className="h-3.5 w-3.5 shrink-0 text-primary" />
+                                                <span className="truncate font-medium text-foreground">{task.assignedToName || 'Unassigned'}</span>
                                             </div>
-                                        )}
-                                        <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div className="flex items-center space-x-2">
-                                                <User className="w-4 h-4 text-indigo-500" />
-                                                <div>
-                                                    <span className="text-sm text-white">Assigned to</span>
-                                                    <p className="font-medium">{task.assignedToName}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center space-x-2">
-                                                <Target className="w-4 h-4 text-purple-500" />
-                                                <div>
-                                                    <span className="text-sm text-white">Priority</span>
-                                                    <p className="font-medium capitalize">{task.priority}</p>
-                                                </div>
+                                            <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                                                <CalendarIcon2 className="h-3.5 w-3.5" />
+                                                <span>{task.dueDate ? format(new Date(task.dueDate), 'MMM dd, yyyy') : 'No due date'}</span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center space-x-2 text-sm text-white">
-                                            <CalendarIcon2 className="w-4 h-4" />
-                                            <span>Due: {format(new Date(task.dueDate), 'MMM dd, yyyy')}</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="min-w-0 space-y-1">
+                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Priority</p>
+                                                <Select
+                                                    value={task.priority?.toLowerCase() || 'low'}
+                                                    onValueChange={(value) => updateTaskField(task.id, 'priority', value)}
+                                                    disabled={updatingTaskFields.has(`${task.id}-priority`)}
+                                                >
+                                                    <SelectTrigger className="h-9 w-full border-emerald-200 bg-emerald-50 px-3 text-xs font-medium capitalize text-emerald-800 shadow-none dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                                        <SelectValue placeholder="Priority" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="low">Low</SelectItem>
+                                                        <SelectItem value="medium">Medium</SelectItem>
+                                                        <SelectItem value="high">High</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="min-w-0 space-y-1">
+                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
+                                                <Select
+                                                    value={task.status}
+                                                    onValueChange={(value) => updateTaskField(task.id, 'status', value)}
+                                                    disabled={updatingTaskFields.has(`${task.id}-status`)}
+                                                >
+                                                    <SelectTrigger className={`h-9 w-full px-3 text-xs font-medium shadow-none ${getStatusInfo(task.status).color}`}>
+                                                        <SelectValue placeholder="Status" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {statusOptions.map((status) => (
+                                                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
                                         </div>
                                     </CardContent>
                                 </Card>
-                            </motion.div>
+                            </div>
                         ))}
           </div>
         )}
@@ -1438,10 +1500,10 @@ const Requirements = () => {
                             <Label className="text-sm font-medium">Employee</Label>
                             <Select value={filters.employee} onValueChange={(value) => handleFilterChange('employee', value)}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Filter by employee" />
+                                    <SelectValue placeholder="All employees" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All Employees</SelectItem>
+                                    <SelectItem value="all">All employees</SelectItem>
                                     {filterEmployees.map((employee) => (
                                         <SelectItem key={employee.id} value={employee.id.toString()}>
                                             {employee.name}

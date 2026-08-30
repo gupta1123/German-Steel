@@ -91,6 +91,9 @@ export function SearchableSelect<T = unknown>({
   };
 
   const hasOptions = options.length > 0;
+  const optionListHeight = filteredOptions.length === 0
+    ? 72
+    : Math.min(filteredOptions.length * 36, 256);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -140,7 +143,10 @@ export function SearchableSelect<T = unknown>({
                 Clear selection
               </Button>
             )}
-            <ScrollArea className="mt-2 max-h-64">
+            <ScrollArea
+              className="mt-2"
+              style={{ height: optionListHeight }}
+            >
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-sm text-muted-foreground">{noResultsMessage}</div>
               ) : (

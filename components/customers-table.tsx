@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Link from "@/components/guarded-link";
 import { format } from "date-fns";
+import { formatCityLabel } from "@/lib/city-options";
 
 interface Customer {
   id: number | string;
@@ -90,7 +91,7 @@ export default function CustomersTable({ customers }: CustomersTableProps) {
                         </Link>
                       </TableCell>
                       <TableCell className="break-words">{customer.ownerName}</TableCell>
-                      <TableCell className="break-words">{customer.city}</TableCell>
+                      <TableCell className="break-words">{formatCityLabel(customer.city)}</TableCell>
                       <TableCell className="break-words">{customer.state}</TableCell>
                       <TableCell className="break-words">{customer.phone}</TableCell>
                       <TableCell className="break-words">{customer.monthlySales}</TableCell>

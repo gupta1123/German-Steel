@@ -1,6 +1,7 @@
 // API service for WebSalesV3 - All endpoints from api.md
 // Use direct API calls to http://ec2-18-211-58-135.compute-1.amazonaws.com:8081
 import { getApiErrorMessage } from '@/lib/api-error';
+import { normalizeVisitTask } from '@/lib/visit-task';
 
 const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const SECONDARY_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
@@ -179,6 +180,13 @@ export interface Task {
   assignedTo: string;
   dueDate: string;
   visitId: number;
+  assignedToId?: number;
+  assignedBy?: string;
+  storeName?: string;
+  storeCity?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  imageCount?: number;
 }
 
 // Alias for backward compatibility
@@ -1311,7 +1319,9 @@ Please check your internet connection and try again.`);
   }
 
   async getTasksByVisit(type: string, visitId: number): Promise<Task[]> {
-    return this.makeRequest<Task[]>(`/task/getByVisit?type=${type}&visitId=${visitId}`);
+    const tasks = await this.makeRequest<Record<string, unknown>[]>(`/task/getByVisit?type=${type}&visitId=${visitId}`);
+    if (!Array.isArray(tasks)) throw new Error('Unexpected visit tasks response');
+    return tasks.map(normalizeVisitTask);
   }
 
   async getVisitsByStore(id: number): Promise<VisitDto[]> {

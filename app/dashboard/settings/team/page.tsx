@@ -26,6 +26,7 @@ import { useState, useEffect } from "react";
 import { Users, Plus, Edit, Save, X, MapPin, User, Building, Crown, Navigation, Loader2 } from "lucide-react";
 import { API } from "@/lib/api";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
+import { formatCityLabel } from "@/lib/city-options";
 
 type Team = {
   id: number;
@@ -80,7 +81,7 @@ function TeamCard({ team, onEdit }: { team: Team; onEdit: (team: Team) => void }
               {team.cities.map((city: string, index: number) => (
                 <Badge key={index} variant="outline" className="flex items-center gap-1">
                   <Navigation className="h-3 w-3" />
-                  {city}
+                  {formatCityLabel(city)}
                 </Badge>
               ))}
             </div>
@@ -472,7 +473,7 @@ export default function TeamSettings() {
                   {newTeam.cities.map((city) => (
                     <Badge key={city} variant="secondary" className="flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
-                      {city}
+                      {formatCityLabel(city)}
                       <button 
                         onClick={() => removeCityFromNewTeam(city)}
                         className="ml-1 hover:bg-muted rounded-full p-0.5"
@@ -491,7 +492,7 @@ export default function TeamSettings() {
                       .filter(city => !newTeam.cities.includes(city))
                       .map((city) => (
                         <SelectItem key={city} value={city}>
-                          {city}
+                          {formatCityLabel(city)}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -663,7 +664,7 @@ export default function TeamSettings() {
                   {editingTeam.cities.map((city: string) => (
                     <Badge key={city} variant="secondary" className="flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
-                      {city}
+                      {formatCityLabel(city)}
                       <button 
                         onClick={() => removeCityFromEditingTeam(city)}
                         className="ml-1 hover:bg-muted rounded-full p-0.5"
@@ -683,7 +684,7 @@ export default function TeamSettings() {
                       .filter(city => !editingTeam.cities.includes(city))
                       .map((city) => (
                         <SelectItem key={city} value={city}>
-                          {city}
+                          {formatCityLabel(city)}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -766,7 +767,7 @@ export default function TeamSettings() {
           <DialogHeader>
             <DialogTitle>Remove City</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove <span className="font-medium">{cityToRemove?.city}</span> from this team?
+              Are you sure you want to remove <span className="font-medium">{formatCityLabel(cityToRemove?.city)}</span> from this team?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

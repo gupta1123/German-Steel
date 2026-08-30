@@ -2,7 +2,7 @@
 
 import Link from "@/components/guarded-link";
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -56,19 +56,19 @@ interface Employee {
 
 // Status Badge Component
 const StatusBadge = ({ status, isSunday }: { status: string; isSunday: boolean }) => {
-    let colorClass = "bg-gray-100 text-gray-800 border-gray-200";
+    let colorClass = "border-border bg-muted/50 text-muted-foreground";
     
     // Normalize "present" to "absent" for all checks
     const normalizedStatus = status.toLowerCase() === "present" ? "Absent" : status;
     const statusLower = normalizedStatus.toLowerCase();
     
     if (isSunday && statusLower !== "absent") {
-        colorClass = "bg-purple-100 text-purple-800 border-purple-200";
+        colorClass = "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/35 dark:text-violet-300";
     } else {
         switch (statusLower) {
-            case "full day": colorClass = "bg-green-100 text-green-800 border-green-200"; break;
-            case "half day": colorClass = "bg-yellow-100 text-yellow-800 border-yellow-200"; break;
-            case "absent": colorClass = "bg-red-100 text-red-800 border-red-200"; break;
+            case "full day": colorClass = "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-300"; break;
+            case "half day": colorClass = "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-300"; break;
+            case "absent": colorClass = "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/35 dark:text-rose-300"; break;
         }
     }
 
@@ -314,41 +314,37 @@ const DailyBreakdown: React.FC = () => {
     }, [dailyBreakdownData]);
 
     return (
-        <div className="relative space-y-6 pb-24">
-            <Card className="border-0 shadow-sm bg-background">
-                <CardHeader className="pb-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div>
-                            <CardTitle className="text-xl md:text-2xl font-semibold">Attendance & Breakdown</CardTitle>
-                            <p className="text-sm text-muted-foreground">Manage daily attendance and view salary calculations</p>
+        <div className="relative space-y-4 pb-24">
+            <Card className="gap-0 border-border/70 py-0 shadow-sm">
+                <CardContent className="space-y-4 p-4">
+                    {hasNegativeDistance && (
+                        <div className="rounded-md border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-left dark:border-amber-900/50 dark:bg-amber-950/25">
+                            <DistanceIssueNote href={distanceRecalculationHref} />
                         </div>
-                        {hasNegativeDistance && (
-                            <div className="max-w-xs rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-left dark:border-amber-900/40 dark:bg-amber-950/20">
-                                <DistanceIssueNote href={distanceRecalculationHref} />
-                            </div>
-                        )}
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    {/* Filters - (Keeping your existing layout compact) */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 p-4 bg-muted/30 rounded-xl border">
+                    )}
+
+                    <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-2">
                         {/* Employee Select */}
-                        <div className="lg:col-span-3 space-y-2">
-                            <Label className="text-xs font-semibold uppercase text-muted-foreground">Employee</Label>
+                        <div className="min-w-0 space-y-1.5 lg:w-[220px] lg:shrink-0">
+                            <Label className="text-xs font-medium text-foreground">Employee</Label>
                             <Popover open={isEmployeePopoverOpen} onOpenChange={setIsEmployeePopoverOpen}>
                                 <PopoverTrigger asChild>
-                                    <Button variant="outline" className="w-full justify-between bg-card">
-                                        <span className="truncate">{selectedEmployeeLabel}</span>
-                                        <User className="h-4 w-4 opacity-50" />
+                                    <Button variant="outline" className="h-9 w-full justify-between px-3 text-sm font-normal shadow-none">
+                                        <span className="flex min-w-0 items-center gap-2 truncate">
+                                            <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                            <span className="truncate">{selectedEmployeeLabel}</span>
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-[280px] p-0" align="start">
-                                    <div className="p-2 border-b">
+                                <PopoverContent className="w-[320px] p-0" align="start">
+                                    <div className="border-b p-3">
                                         <Input
-                                            placeholder="Search..."
+                                            placeholder="Search employees..."
                                             value={employeeSearchTerm}
                                             onChange={e => setEmployeeSearchTerm(e.target.value)}
-                                            className="h-8"
+                                            className="h-9"
                                         />
                                     </div>
                                     <div className="max-h-60 overflow-y-auto">
@@ -361,10 +357,11 @@ const DailyBreakdown: React.FC = () => {
                                                 {filteredEmployees.map(e => (
                                                     <button
                                                         key={e.id}
+                                                        type="button"
                                                         onClick={() => {setSelectedEmployee(e.id.toString()); setIsEmployeePopoverOpen(false)}}
                                                         className={cn(
-                                                            "w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted flex items-center justify-between",
-                                                            selectedEmployee === e.id.toString() && "bg-muted font-medium"
+                                                            "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50",
+                                                            selectedEmployee === e.id.toString() && "bg-primary/10 font-medium text-primary"
                                                         )}
                                                     >
                                                         {e.name} {selectedEmployee === e.id.toString() && <Check className="h-3 w-3" />}
@@ -378,32 +375,31 @@ const DailyBreakdown: React.FC = () => {
                         </div>
 
                         {/* Date Pickers */}
-                        <div className="lg:col-span-3 space-y-2">
-                            <Label className="text-xs font-semibold uppercase text-muted-foreground">Start Date</Label>
+                        <div className="min-w-0 space-y-1.5 lg:w-[180px] lg:shrink-0">
+                            <Label className="text-xs font-medium text-foreground">From date</Label>
                             <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                                 <PopoverTrigger asChild>
-                                    <Button variant="outline" className="w-full justify-start text-left font-normal bg-card">
+                                    <Button variant="outline" className="h-9 w-full justify-start px-3 text-left text-sm font-normal shadow-none">
                                         <CalendarIcon className="mr-2 h-4 w-4" />{startDate ? format(new Date(startDate), 'MMM dd, yyyy') : "Select"}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0"><SpacedCalendar mode="single" selected={startDate ? new Date(startDate) : undefined} onSelect={d => {setStartDate(formatDateForFilter(d)); setIsStartDatePopoverOpen(false)}} /></PopoverContent>
                             </Popover>
                         </div>
-                        <div className="lg:col-span-3 space-y-2">
-                            <Label className="text-xs font-semibold uppercase text-muted-foreground">End Date</Label>
+                        <div className="min-w-0 space-y-1.5 lg:w-[180px] lg:shrink-0">
+                            <Label className="text-xs font-medium text-foreground">To date</Label>
                             <Popover open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                                 <PopoverTrigger asChild>
-                                    <Button variant="outline" className="w-full justify-start text-left font-normal bg-card">
+                                    <Button variant="outline" className="h-9 w-full justify-start px-3 text-left text-sm font-normal shadow-none">
                                         <CalendarIcon className="mr-2 h-4 w-4" />{endDate ? format(new Date(endDate), 'MMM dd, yyyy') : "Select"}
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0"><SpacedCalendar mode="single" selected={endDate ? new Date(endDate) : undefined} onSelect={d => {setEndDate(formatDateForFilter(d)); setIsEndDatePopoverOpen(false)}} /></PopoverContent>
                             </Popover>
                         </div>
-
+                        </div>
+                        <DateRangeError fromDate={startDate} toDate={endDate} />
                     </div>
-
-                    <DateRangeError fromDate={startDate} toDate={endDate} />
 
                     {/* Content Area */}
                     {isLoading ? (
@@ -422,7 +418,7 @@ const DailyBreakdown: React.FC = () => {
                                         checked={selectedRecords.size === dailyBreakdownData.length && dailyBreakdownData.length > 0}
                                         onCheckedChange={toggleAll}
                                     />
-                                    <Label htmlFor="select-all-mobile" className="text-sm font-medium">Select All</Label>
+                                    <Label htmlFor="select-all-mobile" className="text-sm font-medium">Select all</Label>
                                 </div>
                                 {dailyBreakdownData.map((day) => {
                                     const key = getRecordKey(day.date, day.employeeId);
@@ -469,7 +465,7 @@ const DailyBreakdown: React.FC = () => {
                             <div className="hidden md:block rounded-md border">
                                 <Table>
                                     <TableHeader>
-                                        <TableRow className="bg-muted/50">
+                                        <TableRow className="bg-muted/30">
                                             <TableHead className="w-[50px]">
                                                 <Checkbox 
                                                     checked={selectedRecords.size === dailyBreakdownData.length && dailyBreakdownData.length > 0}

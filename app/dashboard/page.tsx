@@ -11,7 +11,6 @@ import {
 } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -19,11 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MapPin, Users, Calendar, ArrowLeft, Building, Loader2, CalendarIcon } from "lucide-react";
+import { MapPin, Users, Calendar, Building, Loader2, CalendarIcon } from "lucide-react";
 import OverviewSection from "@/components/dashboard/OverviewSection";
 import StateSection from "@/components/dashboard/StateSection";
 import EmployeeDetailSection from "@/components/dashboard/EmployeeDetailSection";
-import { Heading, Text } from "@/components/ui/typography";
+import { useDashboardHeader } from "@/components/dashboard-header-context";
 import { API, type EmployeeUserDto, type AttendanceLogItem, type LiveLocationDto, type TeamDataDto, type CurrentUserDto } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -756,6 +755,24 @@ export default function DashboardPage() {
     }
   }, [view, selectedState]);
 
+  useDashboardHeader({
+    heading:
+      view === "dashboard"
+        ? "Dashboard"
+        : view === "state"
+          ? selectedState?.name || "Employees"
+          : selectedEmployee?.name || "Employee details",
+    subheading:
+      view === "dashboard"
+        ? isManager
+          ? "Team activity and performance overview"
+          : "Sales and employee activity overview"
+        : view === "state"
+          ? `${stateEmployees.length} active ${stateEmployees.length === 1 ? "employee" : "employees"} in ${selectedState?.name || "this state"}`
+          : [selectedEmployee?.position, selectedState?.name].filter(Boolean).join(" · "),
+    onBack: view === "dashboard" ? undefined : handleBack,
+  });
+
   const handleStateSelect = useCallback((state: { id: number; name: string; employeeCount: number; color?: string }) => {
     if (!state) return;
     const normalizedState: StateItem = {
@@ -1117,47 +1134,12 @@ export default function DashboardPage() {
   // This effect is no longer needed since we load all locations immediately
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <Heading as="h1" size="3xl" weight="bold">
-              {view === "dashboard"
-                ? "Dashboard"
-                : view === "state" && selectedState
-                ? selectedState.name
-                : "Employee Details"}
-            </Heading>
-            {isRoleDetermined && (
-              <Badge variant={isManager ? "secondary" : "default"} className="text-xs">
-                {isManager ? "Manager View" : "Admin View"}
-              </Badge>
-            )}
-          </div>
-          <Text tone="muted">
-            {view === "dashboard"
-              ? isManager 
-                ? "Overview of your team's activities and performance."
-                : "Overview of sales and employee activities."
-              : selectedState
-              ? `Details for ${selectedState.name}`
-              : "Deep dive into employee performance."}
-          </Text>
-        </div>
-        <div className="flex items-center gap-4">
-          {view !== "dashboard" && (
-            <Button
-              variant="outline"
-              onClick={handleBack}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
-          )}
+    <div className="space-y-4">
+      <div className="flex min-h-9 flex-wrap items-center justify-end gap-2">
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Select value={selectedDateRange} onValueChange={handleDateRangeChange}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="h-9 w-[170px] text-xs">
                 <SelectValue placeholder="Select date range" />
               </SelectTrigger>
               <SelectContent>
@@ -1173,7 +1155,7 @@ export default function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-[140px] justify-start text-left font-normal">
+                    <Button variant="outline" className="h-9 w-[140px] justify-start text-left text-xs font-normal">
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {customStartDate ? format(customStartDate, 'MMM dd, yyyy') : 'Start date'}
                     </Button>
@@ -1194,7 +1176,7 @@ export default function DashboardPage() {
                 
                 <Popover open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-[140px] justify-start text-left font-normal">
+                    <Button variant="outline" className="h-9 w-[140px] justify-start text-left text-xs font-normal">
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {customEndDate ? format(customEndDate, 'MMM dd, yyyy') : 'End date'}
                     </Button>
