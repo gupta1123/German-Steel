@@ -593,20 +593,6 @@ export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDeta
         <VisitsByPurposeChart data={visitsByPurposeChartData} />
       </div>
 
-      <section className="space-y-2.5" aria-labelledby="activity-summary-heading">
-        <div>
-          <h2 id="activity-summary-heading" className="text-sm font-semibold">Additional activity</h2>
-          <p className="text-xs text-muted-foreground">Expenses and pricing recorded for this period.</p>
-        </div>
-        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
-          <KPICard title="Expenses" value={employeeSummary?.expenseSummary.expenseCount || 0} />
-          <KPICard title="Amount" value={`₹${(employeeSummary?.expenseSummary.totalAmount || 0).toFixed(2)}`} />
-          <KPICard title="Approved" value={employeeSummary?.expenseSummary.approvedCount || 0} />
-          <KPICard title="Pending" value={employeeSummary?.expenseSummary.pendingCount || 0} />
-          <KPICard title="Pricing entries" value={employeeSummary?.brandSummary.pricingEntryCount || 0} />
-          <KPICard title="Distinct brands" value={employeeSummary?.brandSummary.distinctBrandCount || 0} />
-        </div>
-      </section>
     </div>
   );
 }
