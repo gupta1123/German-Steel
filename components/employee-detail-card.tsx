@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,8 @@ import {
   ChevronRight,
   ChevronLeft
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell } from "recharts";
+import { summarizeVisitPurposes } from "@/lib/visit-purpose-summary";
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
@@ -74,34 +75,41 @@ interface VisitsByPurposeChartProps {
 
 const VisitsByPurposeChart = ({ data }: VisitsByPurposeChartProps) => {
   const hasData = data.some((item) => item.visits > 0);
+  const total = data.reduce((sum, item) => sum + item.visits, 0);
 
   return (
-    <Card className="h-full rounded-lg shadow-none">
+    <Card className="min-w-0 gap-0 rounded-lg py-0 shadow-none">
       <CardHeader className="border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-muted-foreground" />
           <CardTitle className="text-sm font-semibold">Visits by purpose</CardTitle>
         </div>
+        <p className="text-xs text-muted-foreground">{total} visits · selected period</p>
       </CardHeader>
       <CardContent className="p-4">
         {hasData ? (
-          <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+          <ResponsiveContainer width="100%" height={Math.max(160, data.length * 42 + 24)}>
+            <BarChart accessibilityLayer layout="vertical" data={data} margin={{ top: 4, right: 28, left: 0, bottom: 0 }}>
+              <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
               <XAxis
-                dataKey="purpose"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              />
-              <YAxis
+                type="number"
+                domain={[0, 'dataMax']}
                 allowDecimals={false}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
               />
+              <YAxis
+                type="category"
+                dataKey="purpose"
+                width={105}
+                interval={0}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12, fill: "hsl(var(--foreground))" }}
+              />
               <Tooltip
-                cursor={{ fill: "hsl(var(--muted) / 0.55)" }}
+                cursor={{ fill: "hsl(var(--muted))" }}
                 contentStyle={{
                   backgroundColor: "hsl(var(--popover))",
                   border: "1px solid hsl(var(--border))",
@@ -111,7 +119,10 @@ const VisitsByPurposeChart = ({ data }: VisitsByPurposeChartProps) => {
                   boxShadow: "0 8px 24px hsl(var(--foreground) / 0.08)",
                 }}
               />
-              <Bar dataKey="visits" name="Visits" fill="hsl(var(--primary))" radius={[5, 5, 0, 0]} maxBarSize={54} />
+              <Bar dataKey="visits" name="Visits" fill="hsl(var(--primary))" radius={[0, 3, 3, 0]} maxBarSize={18}>
+                {data.map(item => <Cell key={item.purpose} fill={item.purpose === 'Others' ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))'} />)}
+                <LabelList dataKey="visits" position="right" style={{ fill: 'hsl(var(--foreground))', fontSize: 12, fontVariantNumeric: 'tabular-nums' }} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         ) : (
@@ -119,6 +130,7 @@ const VisitsByPurposeChart = ({ data }: VisitsByPurposeChartProps) => {
             No visit-purpose data for this range
           </div>
         )}
+        {data.some(item => item.purpose === 'Others') && <p className="mt-3 text-xs text-muted-foreground">Others includes custom and unspecified purposes.</p>}
       </CardContent>
     </Card>
   );
@@ -194,7 +206,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
       <CardHeader className="border-b px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-sm font-semibold">Recent completed visits</CardTitle>
-          <span className="text-xs text-muted-foreground">{totalElements} in range</span>
+          <span className="text-xs text-muted-foreground">{totalElements} total visits in range</span>
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -275,7 +287,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                   )}
                 </th>
                 <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('employeeState')}>
-                  City
+                  State
                   {lastClickedColumn === 'employeeState' && (
                     sortOrder === 'asc' ? (
                       <ChevronUpIcon className="w-3 h-3 md:w-4 md:h-4 inline-block ml-1" />
@@ -290,7 +302,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
             </thead>
             <tbody>
               {visitsToDisplay.map((visit) => {
-                const { emoji, status } = getOutcomeStatus(visit);
+                const { status } = getOutcomeStatus(visit);
                 return (
                   <tr key={visit.id} className="border-b last:border-b-0 hover:bg-muted/25">
                     <td className="max-w-[190px] truncate px-3 py-2.5 text-xs font-medium">{visit.customer}</td>
@@ -324,7 +336,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
       </CardContent>
       {totalElements > 0 && (
         <div className="flex flex-col gap-2 border-t px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-xs text-muted-foreground">{totalElements} visits in this range</div>
+          <div className="text-xs text-muted-foreground">Completed visits shown from {totalElements} total visits</div>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -455,10 +467,7 @@ export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDeta
   }, [employee.id, dateRange.start, dateRange.end]);
 
   const visitsByPurposeChartData = useMemo(() => {
-    return (employeeSummary?.visitSummary.visitsByPurpose || []).map(({ purpose, count }) => ({
-      purpose: purpose.charAt(0).toUpperCase() + purpose.slice(1),
-      visits: count,
-    }));
+    return summarizeVisitPurposes(employeeSummary?.visitSummary.visitsByPurpose || []);
   }, [employeeSummary]);
 
   const handleViewDetails = (visitId: number) => {
