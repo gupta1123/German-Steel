@@ -1,6 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validCoordinates, locationTimestamp, locationAge, latestLocationMarkers, journeyLocationMarkers, groupNearbyPoints } from '../lib/employee-locations.ts';
+import { validCoordinates, locationTimestamp, locationAge, latestLocationMarkers, journeyLocationMarkers, groupNearbyPoints, sortEmployeesByLocationUpdate } from '../lib/employee-locations.ts';
+
+test('employee panel sorts by latest GPS timestamp, then case-insensitive name', () => {
+  const employees = [
+    { id: 1, name: 'Zoya', hasLocation: true, locationTimestamp: 300 },
+    { id: 2, name: 'Arun', hasLocation: true, locationTimestamp: 100 },
+    { id: 3, name: 'Bhargav', hasLocation: true, locationTimestamp: 200 },
+    { id: 4, name: 'ashish', hasLocation: true, locationTimestamp: 200 },
+  ];
+  const original = structuredClone(employees);
+  assert.deepEqual(sortEmployeesByLocationUpdate(employees).map(e => e.id), [1, 4, 3, 2]);
+  assert.deepEqual(employees, original);
+});
+
+test('missing or invalid update times and employees without GPS sort last A–Z', () => {
+  const employees = [
+    { id: 1, name: 'Zoya', hasLocation: true, locationTimestamp: NaN },
+    { id: 2, name: 'Bhargav', hasLocation: false, locationTimestamp: 999 },
+    { id: 3, name: 'Arun', hasLocation: true, locationTimestamp: null },
+    { id: 4, name: 'Yash', hasLocation: true, locationTimestamp: 100 },
+    { id: 5, name: 'Chirag', hasLocation: true, locationTimestamp: Infinity },
+    { id: 6, name: 'Deepak' },
+  ];
+  assert.deepEqual(sortEmployeesByLocationUpdate(employees).map(e => e.id), [4, 3, 2, 5, 6, 1]);
+});
+
+test('location refresh reorders employees and identical names have stable ID ties', () => {
+  const employees = [
+    { id: 2, name: 'Arun', hasLocation: true, locationTimestamp: 100 },
+    { id: 1, name: 'arun', hasLocation: true, locationTimestamp: 100 },
+  ];
+  assert.deepEqual(sortEmployeesByLocationUpdate(employees).map(e => e.id), [1, 2]);
+  employees[0].locationTimestamp = 200;
+  assert.deepEqual(sortEmployeesByLocationUpdate(employees).map(e => e.id), [2, 1]);
+  assert.deepEqual(sortEmployeesByLocationUpdate([]), []);
+});
 
 test('coordinates reject missing, infinite, out-of-range and null-island values', () => {
   for (const point of [[null, 72], ['', 72], [NaN, 72], [Infinity, 72], [91, 72], [18, 181], [0, 0]]) assert.equal(validCoordinates(...point), false);

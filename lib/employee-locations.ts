@@ -14,6 +14,20 @@ export interface LocationMarker {
   coordinateSource?: string;
 }
 
+/** Most recently updated GPS first; unknown updates last, with A–Z ties. */
+export function sortEmployeesByLocationUpdate<T extends {
+  id: number; name: string; hasLocation?: boolean; locationTimestamp?: number | null;
+}>(employees: readonly T[]): T[] {
+  const timestamp = (employee: T) => employee.hasLocation &&
+    employee.locationTimestamp != null && Number.isFinite(employee.locationTimestamp)
+    ? employee.locationTimestamp : -Infinity;
+  return [...employees].sort((left, right) => {
+    const leftTime = timestamp(left), rightTime = timestamp(right);
+    if (leftTime !== rightTime) return leftTime > rightTime ? -1 : 1;
+    return left.name.trim().localeCompare(right.name.trim(), 'en', { sensitivity: 'base' }) || left.id - right.id;
+  });
+}
+
 export function validCoordinates(lat: unknown, lng: unknown): boolean {
   if (lat == null || lng == null || lat === '' || lng === '') return false;
   const a = Number(lat), b = Number(lng);

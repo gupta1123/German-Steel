@@ -118,7 +118,7 @@ export default function LeafletMap({ center, zoom, highlightedEmployee, markers 
   const validMarkers = useMemo(() => markers.filter(marker => !String(marker.id).startsWith('no-location-') && validCoordinates(marker.lat, marker.lng))
     .map(marker => ({ ...marker, lat: Number(marker.lat), lng: Number(marker.lng) })), [markers]);
   return <div className="employee-location-map relative h-full w-full">
-    <MapContainer center={center} zoom={zoom} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
+    <MapContainer center={center} zoom={zoom} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
       <MapViewport markers={validMarkers} center={center} zoom={zoom} fitMarkers={fitMarkers} viewKey={viewKey} />
       <TileLayer key={tileRetry} url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar, Users, MapPin, Home, Search, RefreshCw, RotateCcw, ChevronRight, AlertCircle, LocateFixed } from 'lucide-react';
-import { formatLocationTime, locationAge, type LocationMarker } from '@/lib/employee-locations';
+import { formatLocationTime, locationAge, sortEmployeesByLocationUpdate, type LocationMarker } from '@/lib/employee-locations';
 
 const LeafletMap = dynamic(() => import('@/components/leaflet-map'), {
   ssr: false, loading: () => <div className="grid h-full place-items-center text-sm text-muted-foreground">Loading map…</div>,
@@ -49,12 +49,12 @@ export default function OverviewSection(props: OverviewSectionProps) {
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer); }, []);
   const cities = useMemo(() => [...new Set(employeeList.map(e => e.location.split(',')[0].trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [employeeList]);
-  const filtered = useMemo(() => employeeList.filter(employee => {
+  const filtered = useMemo(() => sortEmployeesByLocationUpdate(employeeList.filter(employee => {
     const recent = employee.hasLocation && locationAge(employee.locationTimestamp, now).fresh;
     return (!search.trim() || `${employee.name} ${employee.position} ${employee.location}`.toLowerCase().includes(search.trim().toLowerCase()))
       && (city === 'all' || employee.location.split(',')[0].trim() === city)
       && (freshness === 'all' || (freshness === 'recent' ? recent : freshness === 'missing' ? !employee.hasLocation : employee.hasLocation && !recent));
-  }), [employeeList, search, city, freshness, now]);
+  })), [employeeList, search, city, freshness, now]);
   const ids = useMemo(() => new Set(filtered.map(employee => employee.id)), [filtered]);
   const selectedId = highlightedEmployee?.id;
   useEffect(() => { if (selectedId != null && !ids.has(selectedId)) onResetView(); }, [ids, selectedId, onResetView]);
@@ -109,16 +109,18 @@ export default function OverviewSection(props: OverviewSectionProps) {
       </div>
       <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className={`${mobileView === 'map' ? 'flex' : 'hidden'} min-w-0 flex-col overflow-hidden rounded-lg border bg-card lg:flex`}>
-          <div className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 border-b px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b px-3 py-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><LocateFixed className="h-3.5 w-3.5" />Last known</span>
             {selectedId != null && <><span className="inline-flex items-center gap-1.5"><Home className="h-3.5 w-3.5" />Home</span><span>1, 2, 3 · visits in order</span></>}
             <span className="ml-auto">{selectedId != null ? periodLabel : 'Latest available updates'}</span>
           </div>
-          <div className="relative isolate h-[55dvh] min-h-[360px] lg:h-[calc(100dvh-350px)] lg:max-h-[650px]">
-            <LeafletMap center={props.mapCenter} zoom={props.mapZoom} markers={visibleMarkers} highlightedEmployee={highlightedEmployee as unknown as Record<string, unknown> | null} onMarkerClick={onMarkerClick} fitMarkers viewKey={`${selectedId ?? 'all'}:${selectedId != null ? periodLabel : ''}:${search}:${city}:${freshness}:${mapResetKey}`} />
+          <div className="relative isolate h-[55dvh] min-h-[360px] grow lg:h-[calc(100dvh-350px)]">
+            <div className="absolute inset-0">
+              <LeafletMap center={props.mapCenter} zoom={props.mapZoom} markers={visibleMarkers} highlightedEmployee={highlightedEmployee as unknown as Record<string, unknown> | null} onMarkerClick={onMarkerClick} fitMarkers viewKey={`${selectedId ?? 'all'}:${selectedId != null ? periodLabel : ''}:${search}:${city}:${freshness}:${mapResetKey}`} />
+            </div>
             {visibleMarkers.length === 0 && <div className="pointer-events-none absolute inset-0 z-[500] grid place-items-center p-6"><p role="status" className="max-w-sm rounded-lg border bg-card/95 px-4 py-3 text-center text-sm shadow-sm">{locationsLoading || journeyLoading ? 'Loading locations…' : selectedId != null ? 'No mapped locations for this employee in the selected period.' : filtered.length ? 'No last-known positions for these employees.' : 'No employees match your filters.'}</p></div>}
           </div>
-          {selectedId != null && <div className="border-t px-3 py-2.5 text-xs" aria-live="polite">
+          {selectedId != null && <div className="shrink-0 border-t px-3 py-2.5 text-xs" aria-live="polite">
             <div className="flex flex-wrap items-center justify-between gap-1"><span className="font-medium">{highlightedEmployee?.name}</span><span className="text-muted-foreground">{journeyLoading ? 'Loading home and visits…' : `${journeySummary.total} ${journeySummary.total === 1 ? 'visit' : 'visits'} · ${journeySummary.hasHome ? 'Home available' : 'No saved home location'}`}</span></div>
             {!journeyLoading && journeySummary.unmapped > 0 && <p className="mt-1 text-muted-foreground">{journeySummary.unmapped} visits have no valid coordinates. Numbering preserves their place in the sequence.</p>}
             {journeyError && <div role="alert" className="mt-1 flex items-center gap-2 text-destructive">{journeyError}<button type="button" className="underline" onClick={onRetryJourney}>Retry</button></div>}
