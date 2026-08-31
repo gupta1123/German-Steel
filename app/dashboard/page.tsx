@@ -23,7 +23,7 @@ import OverviewSection from "@/components/dashboard/OverviewSection";
 import StateSection from "@/components/dashboard/StateSection";
 import EmployeeDetailSection from "@/components/dashboard/EmployeeDetailSection";
 import { useDashboardHeader } from "@/components/dashboard-header-context";
-import { API, type EmployeeUserDto, type AttendanceLogItem, type LiveLocationDto, type TeamDataDto, type CurrentUserDto } from "@/lib/api";
+import { API, type EmployeeUserDto, type AttendanceLogItem, type TeamDataDto, type CurrentUserDto } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import DailyPricingModal from "@/components/DailyPricingModal";
@@ -32,27 +32,13 @@ import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { isManagerRoleValue, getCorrectedRoleFlags } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
+import { isAdminEmployeeRole, getEmployeeRoleLabel } from "@/lib/employee-role";
+import { latestLocationMarkers, journeyLocationMarkers, validCoordinates, type LocationMarker } from "@/lib/employee-locations";
 
 
-const DEFAULT_MAP_CENTER: [number, number] = [22.5726, 88.3639];
+const DEFAULT_MAP_CENTER: [number, number] = [20.5937, 78.9629];
 const DEFAULT_MAP_ZOOM = 5;
 const DATE_FILTER_STATE_KEY = "dashboard.dateFilter.v1";
-
-const CITY_COORDINATES: Record<string, [number, number]> = {
-  Mumbai: [19.076, 72.8777],
-  Bangalore: [12.9716, 77.5946],
-  Chennai: [13.0827, 80.2707],
-  Hyderabad: [17.385, 78.4867],
-  Kolkata: [22.5726, 88.3639],
-  Delhi: [28.6139, 77.209],
-};
-
-const resolveCoordinates = (location: string): [number, number] => {
-  const match = Object.entries(CITY_COORDINATES).find(([city]) =>
-    location.includes(city)
-  );
-  return match ? match[1] : DEFAULT_MAP_CENTER;
-};
 
 const normalizeCityName = (city?: string | null): string => {
   if (!city) return "";
@@ -88,19 +74,11 @@ type ExtendedEmployee = Employee & {
   listId: string;
   visits: number;
   formattedLastUpdated: string;
+  locationTimestamp?: number | null;
+  hasLocation?: boolean;
 };
 
-type MapMarker = {
-  id: number | string;
-  name?: string;
-  lat: number;
-  lng: number;
-  subtitle?: string;
-  type?: "live" | "house" | "visit";
-  tooltipLines?: string[];
-  employeeId?: number;
-  order?: number;
-};
+type MapMarker = LocationMarker;
 
 type StateItem = { id: number; name: string; employeeCount: number; color: string };
 type SelectedState = StateItem | null;
@@ -181,6 +159,16 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState({ totalVisits: 0, activeEmployees: 0, liveLocations: 0 });
   const [countsByEmployee, setCountsByEmployee] = useState<Map<number, number>>(new Map());
   const [markers, setMarkers] = useState<MapMarker[]>([]);
+  const [locationRefresh, setLocationRefresh] = useState(0);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
+  const [locationsSyncedAt, setLocationsSyncedAt] = useState<number | null>(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const [journeyError, setJourneyError] = useState<string | null>(null);
+  const [journeySummary, setJourneySummary] = useState({ total: 0, unmapped: 0, hasHome: false });
+  const [journeyRetry, setJourneyRetry] = useState(0);
+  const [mapResetKey, setMapResetKey] = useState(0);
+  const journeyRequest = useRef(0);
   const [selectedEmployeeMarkers, setSelectedEmployeeMarkers] = useState<MapMarker[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isManager, setIsManager] = useState(false);
@@ -589,84 +577,39 @@ export default function DashboardPage() {
     run();
   }, [dateRange.start, dateRange.end, isRoleDetermined, hasHydratedDateFilter]);
 
-  // Fetch live locations for employees based on role
+  // Last-known GPS is independent of the date filter, which applies to visits only.
   useEffect(() => {
-    if (!hasHydratedDateFilter) return;
+    if (!isRoleDetermined) return;
     let cancelled = false;
+    setLocationsLoading(true);
     const run = async () => {
-      if (!isRoleDetermined) return;
-      
       try {
-        // Use API service to get live locations
-        const liveLocations = await API.getAllEmployeeLocations();
-        const now = new Date();
-        
-        const results: MapMarker[] = [];
-        
-        liveLocations.forEach((loc: LiveLocationDto) => {
-          if (loc.latitude != null && loc.longitude != null && 
-              loc.latitude !== 0 && loc.longitude !== 0 && 
-              loc.latitude !== 0.0 && loc.longitude !== 0.0) {
-          
-            let shouldShow = true;
-            
-            if (isManager) {
-              // Check if this employee is under the manager's team
-              shouldShow = teamMembers.some(emp => emp.id === loc.empId);
-            }
-            
-            if (!shouldShow) {
-              console.log(`Skipping employee ${loc.empName} (ID: ${loc.empId}) - not in team`);
-              return;
-            }
-            
-            // Check if location falls within the selected date range
-            const timePart = String(loc.updatedTime).split('.')[0];
-            const ts = new Date(`${loc.updatedAt}T${timePart}`);
-            const locationDate = ts.toISOString().split('T')[0]; // Get YYYY-MM-DD format
-            
-            // Check if location date is within the selected date range
-            const startDateStr = dateRange.start.toISOString().split('T')[0];
-            const endDateStr = dateRange.end.toISOString().split('T')[0];
-            
-            console.log(`Location date check for ${loc.empName}:`, {
-              locationDate,
-              startDateStr,
-              endDateStr,
-              inRange: locationDate >= startDateStr && locationDate <= endDateStr
-            });
-            
-            if (locationDate >= startDateStr && locationDate <= endDateStr) {
-              results.push({
-                id: loc.empId,
-                name: loc.empName,
-                lat: loc.latitude,
-                lng: loc.longitude,
-                // Display date like 11 Aug '25 plus time
-                subtitle: `${format(ts, "MMM dd, yyyy")} ${timePart}`.trim(),
-                type: "live",
-                employeeId: loc.empId,
-                tooltipLines: [
-                  `Employee: ${loc.empName}`,
-                  `Last updated: ${format(ts, "MMM dd, yyyy, hh:mm a")}`,
-                ],
-              });
-            }
-          }
-        });
-
+        const rows = await API.getAllEmployeeLocations();
+        const scoped = isManager ? rows.filter(row => teamMembers.some(emp => emp.id === row.empId)) : rows;
         if (!cancelled) {
-          // Sort by name
-          results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-          setMarkers(results);
+          setMarkers(latestLocationMarkers(scoped));
+          setLocationsError(null);
+          setLocationsSyncedAt(Date.now());
         }
-      } catch (e) {
-        if (!cancelled) setMarkers([]);
+      } catch {
+        // Keep the last successful snapshot visible, but explicitly mark sync failure.
+        if (!cancelled) setLocationsError('Could not refresh locations. Previously loaded positions may be out of date.');
+      } finally {
+        if (!cancelled) setLocationsLoading(false);
       }
     };
-    run();
+    void run();
     return () => { cancelled = true; };
-  }, [isManager, teamMembers, isRoleDetermined, dateRange.start, dateRange.end, hasHydratedDateFilter]);
+  }, [isManager, teamMembers, isRoleDetermined, locationRefresh]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible') setLocationRefresh(value => value + 1);
+    };
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
+  }, []);
 
   // Keep KPI liveLocations in sync with markers count
   useEffect(() => {
@@ -696,22 +639,16 @@ export default function DashboardPage() {
   }, [displayEmployees, countsByEmployee]);
 
   const employeeList = useMemo<ExtendedEmployee[]>(() => {
-    // Build list only for employees with live markers (current location data)
-    const byId = new Map<number, { lat: number; lng: number; subtitle?: string }>();
-    markers.forEach(m => {
-      byId.set(Number(m.id), { lat: m.lat, lng: m.lng, subtitle: m.subtitle });
-    });
-    const list = displayEmployees
-      .filter(e => byId.has(e.id)) // Only show employees with live location data
-      .map((employee) => ({
-        ...employee,
-        listId: String(employee.id),
-        visits: countsByEmployee.get(employee.id) ?? 0,
-        formattedLastUpdated: byId.get(employee.id)?.subtitle || '',
-      }));
-    // Sorted by employee name similar to example list
-    list.sort((a, b) => a.name.localeCompare(b.name));
-    return list;
+    const byId = new Map(markers.map(marker => [Number(marker.id), marker]));
+    return displayEmployees.filter(employee => !isAdminEmployeeRole(employee.position)).map(employee => ({
+      ...employee,
+      position: getEmployeeRoleLabel(employee.position),
+      listId: String(employee.id),
+      visits: countsByEmployee.get(employee.id) ?? 0,
+      formattedLastUpdated: byId.get(employee.id)?.subtitle || '',
+      locationTimestamp: byId.get(employee.id)?.updatedAt,
+      hasLocation: byId.has(employee.id),
+    })).sort((a, b) => Number(b.hasLocation) - Number(a.hasLocation) || a.name.localeCompare(b.name));
   }, [displayEmployees, countsByEmployee, markers]);
 
   const stateEmployees = useMemo(() => {
@@ -847,139 +784,72 @@ export default function DashboardPage() {
   ]);
 
 
-  const handleEmployeeSelect = useCallback(async (employee: ExtendedEmployee) => {
-    if (!hasHydratedDateFilter) return;
-    console.log('=== EMPLOYEE SELECTION (AUTO-JOURNEY) ===');
-    console.log('Selected employee:', employee);
-
-    const liveMarker = markers.find(m => Number(m.id) === employee.id);
-
-    // reset state and set highlight; mark journey as visible immediately to avoid intermediate UI
+  const handleEmployeeSelect = useCallback((employee: ExtendedEmployee) => {
+    if (highlightedEmployee?.id === employee.id) return;
+    journeyRequest.current += 1;
     setSelectedEmployeeMarkers([]);
+    setJourneyError(null);
     setHighlightedEmployee(employee);
     setShowVisitLocations(true);
+  }, [highlightedEmployee?.id]);
 
-    try {
-      // 1) Load house marker if available
-      const employeeDetail = await API.getEmployeeById(employee.id);
-      const allMarkers: MapMarker[] = [];
+  const resetLocationView = useCallback(() => {
+    journeyRequest.current += 1;
+    setHighlightedEmployee(null);
+    setSelectedEmployeeMarkers([]);
+    setJourneyError(null);
+    setJourneyLoading(false);
+    setShowVisitLocations(false);
+    setMapResetKey(value => value + 1);
+  }, []);
 
-      if (employeeDetail && employeeDetail.houseLatitude != null && employeeDetail.houseLongitude != null &&
-          !isNaN(Number(employeeDetail.houseLatitude)) && !isNaN(Number(employeeDetail.houseLongitude))) {
-        const houseLat = Number(employeeDetail.houseLatitude);
-        const houseLng = Number(employeeDetail.houseLongitude);
-        if (houseLat !== 0 && houseLng !== 0 && houseLat !== 0.0 && houseLng !== 0.0) {
-          const placeParts = [employeeDetail.city, employeeDetail.state, employeeDetail.country]
-            .filter(Boolean)
-            .join(", ");
-          allMarkers.push({
-            id: `house-${employeeDetail.id}`,
-            name: `${employee.name}'s Home`,
-            lat: houseLat,
-            lng: houseLng,
-            subtitle: placeParts,
-            type: "house",
-            employeeId: employeeDetail.id,
-            tooltipLines: [],
-          });
-        }
-      }
-
-      // 2) Load visit markers for selected range (auto journey)
-      const start = format(dateRange.start, "yyyy-MM-dd");
-      const end = format(dateRange.end, "yyyy-MM-dd");
-      const visits = await API.getEmployeeJourney(employee.id, start, end);
-
-      const formatDateTime = (dateStr?: string | null, timeStr?: string | null) => {
-        if (!dateStr) return "Not available";
-        const time = timeStr ? timeStr.split(".")[0] : null;
-        const normalizedTime = time && time.length === 8 ? time : time ? `${time}` : "00:00:00";
-        const dateTime = new Date(`${dateStr}T${normalizedTime ?? "00:00:00"}`);
-        if (Number.isNaN(dateTime.getTime())) return dateStr;
-        return format(dateTime, "MMM dd, yyyy, hh:mm a");
-      };
-
-      const visitMarkers: MapMarker[] = [];
-      // Sort visits by time to determine order
-      const sortedVisits = [...visits].sort((a, b) => {
-        const aDate = a.checkinDate || a.visitDate || '';
-        const aTime = (a.checkinTime || '00:00:00').split('.')[0];
-        const bDate = b.checkinDate || b.visitDate || '';
-        const bTime = (b.checkinTime || '00:00:00').split('.')[0];
-        const aDT = new Date(`${aDate}T${aTime || '00:00:00'}`);
-        const bDT = new Date(`${bDate}T${bTime || '00:00:00'}`);
-        return aDT.getTime() - bDT.getTime();
-      });
-
-      sortedVisits.forEach((visit, idx) => {
-        const lat = visit.lat;
-        const lng = visit.lng;
-        if (lat == null || lng == null || lat === 0 || lng === 0 || lat === 0.0 || lng === 0.0) return;
-
-        const checkIn = formatDateTime(visit.checkinDate, visit.checkinTime);
-        const checkOut = visit.checkoutDate || visit.checkoutTime ? formatDateTime(visit.checkoutDate, visit.checkoutTime) : "Not recorded";
-        const place = [visit.city, visit.state, visit.country].filter(Boolean).join(", ");
-
-        visitMarkers.push({
-          id: `visit-${visit.id}`,
-          name: visit.storeName || "Visit",
-          lat: Number(lat),
-          lng: Number(lng),
-          subtitle: `${visit.storeName || "Visit"} - ${visit.purpose || "Visit"}`,
-          type: "visit",
-          employeeId: visit.employeeId,
-          order: idx + 1,
-          tooltipLines: [
-            `Store: ${visit.storeName || "N/A"}`,
-            `Employee: ${visit.employeeName || employee.name}`,
-            `Check-in: ${checkIn}`,
-            `Check-out: ${checkOut}`,
-            ...(place ? [`Address: ${place}`] : []),
-          ],
-        });
-      });
-
-      const updatedMarkers = [...allMarkers, ...visitMarkers];
-      setSelectedEmployeeMarkers(updatedMarkers);
-
-      // 3) Fit map to show all current locations (house + visits + live)
-      const allLocations: Array<{ lat: number; lng: number }> = [...updatedMarkers];
-      if (liveMarker) allLocations.push(liveMarker);
-
-      if (allLocations.length > 0) {
-        const lats = allLocations.map((loc) => loc.lat);
-        const lngs = allLocations.map((loc) => loc.lng);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-        const centerLat = (minLat + maxLat) / 2;
-        const centerLng = (minLng + maxLng) / 2;
-
-        const latDiff = maxLat - minLat;
-        const lngDiff = maxLng - minLng;
-        const maxDiff = Math.max(latDiff, lngDiff);
-
-        let zoomLevel = 11;
-        if (maxDiff > 1) zoomLevel = 8;
-        else if (maxDiff > 0.5) zoomLevel = 9;
-        else if (maxDiff > 0.1) zoomLevel = 10;
-        else zoomLevel = 12;
-
-        setMapCenter([centerLat, centerLng]);
-        setMapZoom(zoomLevel);
-      } else if (liveMarker) {
-        setMapCenter([liveMarker.lat, liveMarker.lng]);
-        setMapZoom(13);
-      } else {
-        const cityCoords = resolveCoordinates(employee.location);
-        setMapCenter(cityCoords);
-        setMapZoom(10);
-      }
-    } catch (error) {
-      console.error('Failed to load employee journey:', error);
+  const selectedLocationEmployee = highlightedEmployee?.id;
+  const selectedLocationName = highlightedEmployee?.name;
+  const journeyStart = format(dateRange.start, 'yyyy-MM-dd');
+  const journeyEnd = format(dateRange.end, 'yyyy-MM-dd');
+  useEffect(() => {
+    const request = ++journeyRequest.current;
+    let cancelled = false;
+    setSelectedEmployeeMarkers([]);
+    setJourneySummary({ total: 0, unmapped: 0, hasHome: false });
+    setJourneyError(null);
+    if (selectedLocationEmployee == null || !hasHydratedDateFilter || customDateRangeInvalid) {
+      setJourneyLoading(false);
+      return;
     }
-  }, [markers, dateRange.start, dateRange.end, hasHydratedDateFilter]);
+    setJourneyLoading(true);
+    const run = async () => {
+      const [home, journey] = await Promise.allSettled([
+        API.getEmployeeById(selectedLocationEmployee),
+        API.getEmployeeJourney(selectedLocationEmployee, journeyStart, journeyEnd),
+      ]);
+      if (cancelled || request !== journeyRequest.current) return;
+      const points: MapMarker[] = [];
+      const problems: string[] = [];
+      let total = 0, unmapped = 0;
+      if (home.status === 'fulfilled') {
+        const employee = home.value;
+        if (employee && validCoordinates(employee.houseLatitude, employee.houseLongitude)) {
+          points.push({ id: `house-${employee.id}`, employeeId: employee.id,
+            name: `${selectedLocationName || 'Employee'} · Home`, type: 'house',
+            lat: Number(employee.houseLatitude), lng: Number(employee.houseLongitude),
+            subtitle: 'Saved home location' });
+        }
+      } else problems.push('Home location could not be loaded.');
+      if (journey.status === 'fulfilled') {
+        const result = journeyLocationMarkers(journey.value, journeyStart, journeyEnd);
+        points.push(...result.markers);
+        total = result.total;
+        unmapped = result.unmapped;
+      } else problems.push('Visits could not be loaded.');
+      setSelectedEmployeeMarkers(points);
+      setJourneySummary({ total, unmapped, hasHome: points.some(point => point.type === 'house') });
+      setJourneyError(problems.length ? problems.join(' ') : null);
+      setJourneyLoading(false);
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [selectedLocationEmployee, selectedLocationName, journeyStart, journeyEnd, hasHydratedDateFilter, customDateRangeInvalid, journeyRetry]);
 
   const handleEmployeeDetailSelect = useCallback((employee: Employee) => {
     pushHistoryState({
@@ -990,135 +860,6 @@ export default function DashboardPage() {
     setSelectedEmployee(employee);
     setView("employeeDetail");
   }, [pushHistoryState, selectedState]);
-
-  const handleShowVisitLocations = useCallback(async () => {
-    if (!highlightedEmployee || !hasHydratedDateFilter) return;
-
-    try {
-      const start = format(dateRange.start, "yyyy-MM-dd");
-      const end = format(dateRange.end, "yyyy-MM-dd");
-      
-      console.log('=== VISIT LOCATIONS DEBUG ===');
-      console.log('Fetching optimized journey for employee:', highlightedEmployee.id);
-      console.log('Date range:', { start, end });
-
-      const visits = await API.getEmployeeJourney(highlightedEmployee.id, start, end);
-      console.log('Journey response:', visits);
-
-      const visitMarkers: MapMarker[] = [];
-
-      // Add visit locations
-      const formatDateTime = (dateStr?: string | null, timeStr?: string | null) => {
-        if (!dateStr) return "Not available";
-        const time = timeStr ? timeStr.split(".")[0] : null;
-        const normalizedTime = time && time.length === 8 ? time : time ? `${time}` : "00:00:00";
-        const dateTime = new Date(`${dateStr}T${normalizedTime ?? "00:00:00"}`);
-        if (Number.isNaN(dateTime.getTime())) {
-          return dateStr;
-        }
-        return format(dateTime, "MMM dd, yyyy, hh:mm a");
-      };
-
-      console.log('Processing visits:', visits.length, 'visits found');
-      
-      visits.forEach((visit, index) => {
-        const lat = visit.lat;
-        const lng = visit.lng;
-
-        console.log(`Visit ${index + 1}:`, {
-          visitId: visit.id,
-          storeName: visit.storeName,
-          coordinateSource: visit.coordinateSource,
-          finalLat: lat,
-          finalLng: lng
-        });
-
-        if (lat == null || lng == null || lat === 0 || lng === 0 || lat === 0.0 || lng === 0.0) {
-          console.log(`Visit ${index + 1} skipped: No valid coordinates`, {
-            lat,
-            lng,
-            storeName: visit.storeName
-          });
-          return;
-        }
-
-        const checkIn = formatDateTime(visit.checkinDate, visit.checkinTime);
-        const checkOut =
-          visit.checkoutDate || visit.checkoutTime
-            ? formatDateTime(visit.checkoutDate, visit.checkoutTime)
-            : "Not recorded";
-        const place = [visit.city, visit.state, visit.country].filter(Boolean).join(", ");
-
-        const tooltipLines = [
-          `Store: ${visit.storeName || "N/A"}`,
-          `Employee: ${visit.employeeName || highlightedEmployee.name}`,
-          `Check-in: ${checkIn}`,
-          `Check-out: ${checkOut}`,
-          visit.purpose ? `Purpose: ${visit.purpose}` : null,
-          place ? `Address: ${place}` : null,
-        ].filter(Boolean) as string[];
-
-        const visitMarker: MapMarker = {
-          id: `visit-${visit.id}`,
-          name: visit.storeName || "Visit",
-          lat: Number(lat),
-          lng: Number(lng),
-          subtitle: `${visit.storeName || "Visit"} - ${visit.purpose || "Visit"}`,
-          type: "visit" as const,
-          employeeId: visit.employeeId,
-          tooltipLines,
-        };
-        
-        visitMarkers.push(visitMarker);
-        console.log(`Added visit marker ${index + 1}:`, visitMarker);
-      });
-
-      console.log('Total visit markers created:', visitMarkers.length);
-
-      // Add visit markers to existing markers
-      const updatedMarkers = [...selectedEmployeeMarkers, ...visitMarkers];
-      console.log('Updated markers (existing + visits):', updatedMarkers);
-      setSelectedEmployeeMarkers(updatedMarkers);
-      setShowVisitLocations(true);
-
-      // Recalculate map bounds to include visit locations
-      const liveMarker = markers.find(m => Number(m.id) === highlightedEmployee.id);
-      const allLocations = [...updatedMarkers];
-      if (liveMarker) {
-        allLocations.push(liveMarker);
-      }
-
-      if (allLocations.length > 0) {
-        const lats = allLocations.map(loc => loc.lat);
-        const lngs = allLocations.map(loc => loc.lng);
-        
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-        
-        const centerLat = (minLat + maxLat) / 2;
-        const centerLng = (minLng + maxLng) / 2;
-        
-        // Calculate zoom level based on the spread of locations
-        const latDiff = maxLat - minLat;
-        const lngDiff = maxLng - minLng;
-        const maxDiff = Math.max(latDiff, lngDiff);
-        
-        // Adjust zoom level based on the spread of locations
-        let zoomLevel = 11;
-        if (maxDiff > 1) zoomLevel = 8; // Very spread out
-        else if (maxDiff > 0.5) zoomLevel = 9; // Moderately spread out
-        else if (maxDiff > 0.1) zoomLevel = 10; // Close together
-        else zoomLevel = 12; // Very close together
-        
-        setMapCenter([centerLat, centerLng]);
-        setMapZoom(zoomLevel);
-      }
-    } catch (error) {
-      console.error("Failed to load visit locations:", error);
-    }
-  }, [highlightedEmployee, dateRange.start, dateRange.end, markers, selectedEmployeeMarkers, hasHydratedDateFilter]);
 
   const handleMarkerClick = useCallback(async (marker: MapMarker) => {
     if (marker.type === 'live') {
@@ -1326,20 +1067,25 @@ export default function DashboardPage() {
               markers={markers}
               highlightedEmployee={highlightedEmployee}
               selectedEmployeeMarkers={selectedEmployeeMarkers}
-              onResetView={() => {
-                setMapCenter(DEFAULT_MAP_CENTER);
-                setMapZoom(DEFAULT_MAP_ZOOM);
-                setHighlightedEmployee(null);
-                setSelectedEmployeeMarkers([]);
-                setShowVisitLocations(false);
-              }}
+              onResetView={resetLocationView}
               mapCenter={mapCenter}
               mapZoom={mapZoom}
-              onMarkerClick={handleMarkerClick as unknown as (marker: Record<string, unknown>) => void}
-              onEmployeeSelect={handleEmployeeSelect as unknown as (employee: Record<string, unknown>) => void}
+              onMarkerClick={handleMarkerClick}
+              onEmployeeSelect={(employee) => {
+                const scopedEmployee = employeeList.find(item => item.id === employee.id);
+                if (scopedEmployee) handleEmployeeSelect(scopedEmployee);
+              }}
               employeeList={employeeList}
-              showVisitLocations={showVisitLocations}
-              onShowVisitLocations={handleShowVisitLocations}
+              locationsLoading={locationsLoading}
+              locationsError={locationsError}
+              locationsSyncedAt={locationsSyncedAt}
+              onRefreshLocations={() => setLocationRefresh(value => value + 1)}
+              journeyLoading={journeyLoading}
+              journeyError={journeyError}
+              journeySummary={journeySummary}
+              onRetryJourney={() => setJourneyRetry(value => value + 1)}
+              periodLabel={`${format(dateRange.start, 'd MMM')} – ${format(dateRange.end, 'd MMM yyyy')}`}
+              mapResetKey={mapResetKey}
             />
           )}
 
