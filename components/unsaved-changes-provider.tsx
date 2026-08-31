@@ -14,6 +14,8 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { createDeferredAction } from "@/lib/deferred-action";
+import { isPageQuerySyncInProgress } from "@/lib/page-query-sync";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +44,7 @@ interface BrowserNavigation extends EventTarget {
 }
 
 interface BrowserNavigateEvent extends Event {
+  navigationType?: 'push' | 'replace' | 'reload' | 'traverse';
   canIntercept?: boolean;
   destination?: { url: string; key?: string };
   downloadRequest?: string | null;
@@ -142,9 +145,11 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const navigation = getBrowserNavigation();
     if (!navigation) return;
+    const deferredConfirmation = createDeferredAction();
 
     const handleNavigate = (event: BrowserNavigateEvent) => {
       if (
+        isPageQuerySyncInProgress() ||
         blockersRef.current.size === 0 ||
         event.downloadRequest ||
         event.canIntercept === false
@@ -176,19 +181,27 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
       if (!event.cancelable) return;
 
       event.preventDefault();
-      requestNavigation(() => {
-        const destinationKey = event.destination?.key;
-        if (destinationKey && navigation.traverseTo) {
-          navigation.traverseTo(destinationKey);
-          return;
-        }
-        if (destinationUrl) window.location.assign(destinationUrl);
+      const destinationKey = event.destination?.key;
+      const navigationType = event.navigationType;
+      // Next's HistoryUpdater emits navigate synchronously from useInsertionEffect.
+      // Cancel the browser event now, but never schedule React state in that stack.
+      deferredConfirmation.schedule(() => {
+        requestNavigation(() => {
+          if (navigationType === 'traverse' && destinationKey && navigation.traverseTo) {
+            navigation.traverseTo(destinationKey);
+            return;
+          }
+          if (destinationUrl) window.location.assign(destinationUrl);
+        });
       });
     };
 
     navigation.addEventListener("navigate", handleNavigate);
-    return () => navigation.removeEventListener("navigate", handleNavigate);
-  }, [requestNavigation]);
+    return () => {
+      navigation.removeEventListener("navigate", handleNavigate);
+      deferredConfirmation.cancel();
+    };
+  }, [requestNavigation, pathname]);
 
   useEffect(() => {
     if (previousPathnameRef.current === pathname) return;

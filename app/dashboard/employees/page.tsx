@@ -20,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { API } from "@/lib/api";
+import { syncPageQuery } from "@/lib/page-query-sync";
 import { useAuth } from "@/components/auth-provider";
 import { isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
@@ -144,7 +145,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const resetPasswordDraftIsDirty = isResetPasswordOpen && (newPassword.length > 0 || confirmPassword.length > 0);
   const usernameDraftIsDirty = isEditUsernameModalOpen && Boolean(editingUsername) && editingUsername?.username !== persistedUsername;
   const employeeAccountDraftIsDirty = resetPasswordDraftIsDirty || usernameDraftIsDirty;
-  const { requestDiscard } = useUnsavedChanges(employeeAccountDraftIsDirty);
+  const { requestDiscard, markSaved } = useUnsavedChanges(employeeAccountDraftIsDirty);
 
   const { token, userRole, userData, currentUser } = useAuth();
   const employeeId = userData?.employeeId ? String(userData.employeeId) : (typeof window !== 'undefined' ? localStorage.getItem('employeeId') : null);
@@ -267,9 +268,9 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       return;
     }
 
-    const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
-    router.replace(nextUrl, { scroll: false });
-  }, [searchQuery, selectedRoleFilter, currentPage, itemsPerPage, isHydrated, pathname, router, searchParamsString]);
+    const nextUrl = `${pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`;
+    syncPageQuery(nextUrl);
+  }, [searchQuery, selectedRoleFilter, currentPage, itemsPerPage, isHydrated, pathname, searchParamsString]);
 
   const fetchArchivedEmployees = async () => {
     try {
@@ -385,6 +386,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       );
 
       if (response.ok) {
+        markSaved();
         setIsResetPasswordOpen(false);
         setNewPassword('');
         setConfirmPassword('');
@@ -442,6 +444,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
         const text = await response.text().catch(() => '');
         if (response.ok) {
+          markSaved();
           API.invalidateEmployeeDirectory();
           setIsEditUsernameModalOpen(false);
           setEditingUsername(null);
@@ -514,6 +517,8 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
 
   const handleResetPassword = (userId: number | string) => {
+    setNewPassword('');
+    setConfirmPassword('');
     setResetPasswordUserId(userId);
     setIsResetPasswordOpen(true);
   };
@@ -976,6 +981,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               <Input
                 id="newPassword"
                 type="password"
+                value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </div>
@@ -984,6 +990,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               <Input
                 id="confirmPassword"
                 type="password"
+                value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />
             </div>
