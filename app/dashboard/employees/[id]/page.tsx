@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import EmployeeDetailPage from "@/components/employee-detail-page";
+import { EmployeeManagedTeams } from "@/components/employee-managed-teams";
 import { API, type EmployeeUserDto } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -150,5 +151,10 @@ export default function EmployeeDetail() {
     );
   }
 
-  return <EmployeeDetailPage employee={employeeData} />;
+  return (
+    <div className="space-y-4">
+      <EmployeeManagedTeams employeeId={employeeData.id} role={employeeData.position} />
+      <EmployeeDetailPage employee={employeeData} />
+    </div>
+  );
 }

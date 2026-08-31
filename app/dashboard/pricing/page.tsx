@@ -390,10 +390,10 @@ const PricingPage = () => {
                 </p>
             )}
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
-                <Card className="overflow-hidden shadow-none">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,36rem),1fr))] items-start gap-4">
+                <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none">
                     <CardHeader className="border-b px-4 py-3">
-                        <CardTitle className="text-sm font-semibold">Competitor pricing</CardTitle>
+                        <CardTitle className="text-sm font-semibold">Recorded prices</CardTitle>
                         <p className="text-xs text-muted-foreground">Recorded prices for the selected day and market.</p>
                     </CardHeader>
                     <CardContent className="p-0">
@@ -403,24 +403,24 @@ const PricingPage = () => {
                                 <span className="text-sm">Loading pricing…</span>
                             </div>
                         ) : (
-                            <div className="max-h-[360px] overflow-auto">
-                                <Table className="text-xs">
+                            <div className="max-h-[420px] overflow-auto">
+                                <Table className="table-fixed text-xs">
                                     <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                                         <TableRow>
-                                            <TableHead className="h-9 text-xs">Brand</TableHead>
-                                            <TableHead className="h-9 text-right text-xs">Price/ton</TableHead>
-                                            <TableHead className="h-9 text-xs">City</TableHead>
-                                            <TableHead className="h-9 text-xs">Field officer</TableHead>
+                                            <TableHead className="h-10 w-[30%] whitespace-normal text-xs">Brand</TableHead>
+                                            <TableHead className="h-10 w-[21%] whitespace-normal text-right text-xs">Price/ton</TableHead>
+                                            <TableHead className="h-10 w-[21%] whitespace-normal text-xs">City</TableHead>
+                                            <TableHead className="h-10 w-[28%] whitespace-normal text-xs">Field officer</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {filteredBrands.length > 0 ? (
                                             filteredBrands.map((brand) => (
                                                 <TableRow key={brand.id}>
-                                                    <TableCell className="max-w-[160px] truncate font-medium" title={brand.brandName}>{brand.brandName}</TableCell>
-                                                    <TableCell className="text-right font-medium tabular-nums">{formatPrice(brand.price)}</TableCell>
-                                                    <TableCell><span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground" />{formatCityLabel(getBrandCity(brand))}</span></TableCell>
-                                                    <TableCell className="max-w-[170px] truncate" title={brand.employeeDto ? `${brand.employeeDto.firstName} ${brand.employeeDto.lastName}` : undefined}>
+                                                    <TableCell className="whitespace-normal py-3 align-top font-medium leading-5 [overflow-wrap:anywhere]">{brand.brandName}</TableCell>
+                                                    <TableCell className="whitespace-normal py-3 text-right align-top font-medium leading-5 tabular-nums [overflow-wrap:anywhere]">{formatPrice(brand.price)}</TableCell>
+                                                    <TableCell className="whitespace-normal py-3 align-top leading-5 [overflow-wrap:anywhere]"><span className="inline-flex items-start gap-1"><MapPin className="mt-1 hidden h-3 w-3 shrink-0 text-muted-foreground sm:block" />{formatCityLabel(getBrandCity(brand))}</span></TableCell>
+                                                    <TableCell className="whitespace-normal py-3 align-top leading-5 [overflow-wrap:anywhere]">
                                                         {isGermanSteelsBrand(brand.brandName)
                                                             ? '—'
                                                             : brand.employeeDto
@@ -447,7 +447,7 @@ const PricingPage = () => {
                     </CardContent>
                 </Card>
 
-                <Card className="overflow-hidden shadow-none">
+                <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none">
                     <CardHeader className="border-b px-4 py-3">
                         <CardTitle className="text-sm font-semibold">Price comparison by brand</CardTitle>
                         <p className="text-xs text-muted-foreground">German Steels and competitor rates per ton.</p>
@@ -465,7 +465,8 @@ const PricingPage = () => {
                                 <span className="text-xs">Pricing entries will appear here.</span>
                             </div>
                         ) : (
-                                <div className="h-[320px]">
+                                <div className="max-h-[420px] overflow-y-auto overflow-x-hidden">
+                                  <div style={{ height: Math.max(220, chartData.length * 56 + 64) }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart
                                             layout="vertical"
@@ -478,18 +479,19 @@ const PricingPage = () => {
                                             }}
                                         >
                                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-                                            <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(value) => `₹${value}`} />
-                                            <YAxis type="category" dataKey="brand" width={105} tick={{ fontSize: 11 }} />
+                                            <XAxis type="number" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} tickFormatter={(value) => `₹${value}`} />
+                                            <YAxis type="category" dataKey="brand" width={105} interval={0} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />
                                             <Tooltip 
                                                 formatter={(value) => [formatPrice(Number(value)), "Price"]}
                                                 labelFormatter={(value) => `Brand: ${value}`}
-                                                contentStyle={{ borderRadius: 8, borderColor: 'hsl(var(--border))', fontSize: 12 }}
+                                                contentStyle={{ borderRadius: 8, borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--card))', color: 'hsl(var(--card-foreground))', fontSize: 12 }}
                                             />
                                             <Legend wrapperStyle={{ fontSize: 11 }} />
-                                            <Bar dataKey="ourPrice" name="Our price" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
-                                            <Bar dataKey="competitorPrice" name="Competitor price" fill="#16a085" radius={[0, 4, 4, 0]} />
+                                            <Bar dataKey="ourPrice" name="Our price" stackId="price" maxBarSize={24} fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
+                                            <Bar dataKey="competitorPrice" name="Competitor price" stackId="price" maxBarSize={24} fill="#16a085" radius={[0, 4, 4, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
+                                  </div>
                                 </div>
                         )}
                     </CardContent>

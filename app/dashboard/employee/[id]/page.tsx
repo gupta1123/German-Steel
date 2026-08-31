@@ -24,6 +24,7 @@ import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-erro
 import { useDashboardHeader } from '@/components/dashboard-header-context';
 import { getEmployeeRoleLabel } from '@/lib/employee-role';
 import { formatCityLabel } from '@/lib/city-options';
+import { EmployeeManagedTeams } from '@/components/employee-managed-teams';
 
 const ACTIVITY_TABS = [
   { value: 'visits', label: 'Visits', icon: 'fas fa-map-marked-alt' },
@@ -453,7 +454,10 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
           </Card>
         </aside>
 
-        <section className="min-w-0">
+        <section className="min-w-0 space-y-4">
+          {employeeData?.id === Number(id) && (
+            <EmployeeManagedTeams employeeId={employeeData.id} role={employeeData.role} />
+          )}
           <Card className="gap-0 py-0 shadow-none">
             <CardContent className="p-0">
               <div className="space-y-4 p-4">
