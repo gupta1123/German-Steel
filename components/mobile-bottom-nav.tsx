@@ -11,14 +11,12 @@ import {
   ThumbsUp,
   Tag,
   FileText,
-  Phone,
   User,
   CheckCircle,
   DollarSign,
   BarChart,
   Settings,
-  MoreHorizontal,
-  Handshake
+  MoreHorizontal
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import MoreNavSheet from "@/components/more-nav-sheet";
@@ -50,13 +48,11 @@ export default function MobileBottomNav({ sidebarCategories, isManager }: Mobile
     // Add most important pages first
     const importantPages = [
       { name: "Visits", href: "/dashboard/visits", icon: Calendar },
-      { name: "Meetings", href: "/dashboard/meetings", icon: Handshake },
       { name: "Customers", href: "/dashboard/customers", icon: Users },
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
       { name: "Pricing", href: "/dashboard/pricing", icon: Tag },
       { name: "Approvals", href: "/dashboard/approvals", icon: FileText },
-      { name: "Enquiries", href: "/dashboard/enquiries", icon: Phone },
     ];
 
     // Add important pages that are allowed for the current role

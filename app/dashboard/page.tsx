@@ -32,7 +32,7 @@ import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { isManagerRoleValue, getCorrectedRoleFlags } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
-import { isAdminEmployeeRole, getEmployeeRoleLabel } from "@/lib/employee-role";
+import { isAdminEmployee, isAdminEmployeeRole, getEmployeeRoleLabel } from "@/lib/employee-role";
 import { latestLocationMarkers, journeyLocationMarkers, validCoordinates, type LocationMarker } from "@/lib/employee-locations";
 
 
@@ -477,7 +477,7 @@ export default function DashboardPage() {
       try {
         setIsLoading(true);
         const data: EmployeeUserDto[] = await API.getAllEmployees();
-        const mapped: Employee[] = (data || []).map((e) => ({
+        const mapped: Employee[] = (data || []).filter(e => !isAdminEmployee(e)).map((e) => ({
           id: e.id,
           name: [e.firstName, e.lastName].filter(Boolean).join(' ') || String(e.id),
           position: e.role || 'Employee',
@@ -620,7 +620,6 @@ export default function DashboardPage() {
   // Use displayEmployees to respect role-based filtering (managers see only their team)
   useEffect(() => {
     // Build states once we have employees and countsByEmployee
-    if (!displayEmployees.length) return;
     const byState = new Map<string, number>();
     displayEmployees.forEach((emp) => {
       const visits = countsByEmployee.get(emp.id) ?? 0;

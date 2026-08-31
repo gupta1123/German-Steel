@@ -28,3 +28,19 @@ export const getEmployeeRoleLabel = (role: unknown): string => {
 };
 
 export const isAdminEmployeeRole = (role: unknown) => getEmployeeRoleCategory(role) === 'admin';
+
+/** Match the employee form's option values, not their display labels. */
+export const getEmployeeRoleFormValue = (role: unknown): string => {
+  const category = getEmployeeRoleCategory(role);
+  if (category === 'regional-manager') return 'Manager';
+  if (category === 'field-officer') return 'Field Officer';
+  // Do not silently reassign an unsupported or missing role.
+  return String(role ?? '').trim();
+};
+
+/** Account roles can identify an admin even when the employee job role is blank. */
+export const isAdminEmployee = (employee: { role?: unknown; userDto?: { roles?: unknown } | null }) => {
+  const roles = [employee.role, employee.userDto?.roles].flatMap(value =>
+    Array.isArray(value) ? value : String(value ?? '').split(/[,;|]/));
+  return roles.some(isAdminEmployeeRole);
+};

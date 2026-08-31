@@ -874,6 +874,10 @@ export class API {
     return apiService.deleteEmployee(id);
   }
 
+  static async getArchivedEmployees(): Promise<EmployeeUserDto[]> {
+    return apiService.getArchivedEmployees();
+  }
+
   static async resetPassword(username: string, password: string): Promise<unknown> {
     return apiService.resetPassword(username, password);
   }
@@ -1624,6 +1628,10 @@ Please check your internet connection and try again.`);
   }
 
   // Employee-related methods
+  async getArchivedEmployees(): Promise<EmployeeUserDto[]> {
+    return this.makeRequest<EmployeeUserDto[]>('/employee/getAllInactive');
+  }
+
   async getAllEmployees<T = EmployeeUserDto>(options: { forceRefresh?: boolean } = {}): Promise<T[]> {
     await this.loadToken();
     const requestToken = this.token;

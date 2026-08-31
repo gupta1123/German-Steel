@@ -32,11 +32,13 @@ import { format } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
 import { API, type StoreDto, type StoreResponse, type TeamDataDto, type EmployeeUserDto, type ClientTypeDto, type LocationMasterDto } from "@/lib/api";
 import { formatCityLabel } from "@/lib/city-options";
+import { formatClientTypeLabel } from "@/lib/client-type-label";
+import { isAdminEmployee } from "@/lib/employee-role";
 import AddCustomerModal from "@/components/AddCustomerModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/components/auth-provider";
 import { isManagerRoleValue, normalizeRoleValue, getCorrectedRoleFlags } from "@/lib/auth";
-import { getTeamIds, getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
+import { getTeamIds, getUniqueFieldOfficersFromTeams, getUniqueManagersFromTeams } from "@/lib/team-access";
 import { formatDateToUserFriendly } from "@/lib/utils";
 import { useGuardedRouter } from "@/components/unsaved-changes-provider";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
@@ -273,7 +275,7 @@ function CustomerListContent() {
     const [isFieldOfficer, setIsFieldOfficer] = useState(false);
     const [teamId, setTeamId] = useState<number | null>(null);
     const [teamIds, setTeamIds] = useState<number[]>([]);
-    const [scopedEmployees, setScopedEmployees] = useState<EmployeeUserDto[]>([]);
+    const [scopedEmployeeIds, setScopedEmployeeIds] = useState<number[]>([]);
     const [teamLoading, setTeamLoading] = useState(false);
     const [teamError, setTeamError] = useState<string | null>(null);
     const [isRoleDetermined, setIsRoleDetermined] = useState(false);
@@ -470,8 +472,9 @@ function CustomerListContent() {
     ]);
 
     const employeesForOptions = useMemo(
-        () => (isManager || isFieldOfficer ? scopedEmployees : employees),
-        [employees, isFieldOfficer, isManager, scopedEmployees]
+        () => employees.filter(employee => !isAdminEmployee(employee) &&
+            (!(isManager || isFieldOfficer) || scopedEmployeeIds.includes(employee.id))),
+        [employees, isFieldOfficer, isManager, scopedEmployeeIds]
     );
 
     const employeeOptions = useMemo<SearchableOption<{ fullName: string }>[]>(() => {
@@ -491,7 +494,7 @@ function CustomerListContent() {
 
         base.sort((a, b) => a.label.localeCompare(b.label));
 
-        return [{ value: "all", label: "All Field Officers" }, ...base];
+        return [{ value: "all", label: "All employees" }, ...base];
     }, [employeesForOptions]);
 
     const stateOptions = useMemo(
@@ -531,7 +534,8 @@ function CustomerListContent() {
                 desktopFilters.clientType,
                 mobileFilters.clientType,
             ],
-            'All Client Types',
+            'All client types',
+            formatClientTypeLabel,
         ),
         [clientTypes, customers, desktopFilters.clientType, filterSourceCustomers, mobileFilters.clientType],
     );
@@ -632,19 +636,22 @@ function CustomerListContent() {
                     const accessibleTeamIds = getTeamIds(teamData);
                     setTeamIds(accessibleTeamIds);
                     setTeamId(accessibleTeamIds[0] ?? null);
-                    setScopedEmployees(getUniqueFieldOfficersFromTeams(teamData));
+                    setScopedEmployeeIds([...new Set([
+                        ...getUniqueFieldOfficersFromTeams(teamData).map(employee => employee.id),
+                        ...getUniqueManagersFromTeams(teamData).map(employee => employee.id),
+                    ])]);
                 } else {
                     setTeamError('No team data found for this user');
                     setTeamId(null);
                     setTeamIds([]);
-                    setScopedEmployees([]);
+                    setScopedEmployeeIds([]);
                 }
             } catch (err) {
                 console.error('Failed to load team data:', err);
                 setTeamError('Failed to load team data');
                 setTeamId(null);
                 setTeamIds([]);
-                setScopedEmployees([]);
+                setScopedEmployeeIds([]);
             } finally {
                 setTeamLoading(false);
                 // Mark role as determined after team data is loaded (or failed)
@@ -1213,7 +1220,7 @@ function CustomerListContent() {
                                     { value: 'monthlySales', label: 'Mon Sale' },
                                     { value: 'intentLevel', label: 'Intent' },
                                     { value: 'fieldOfficer', label: 'Field Officer' },
-                                    { value: 'clientType', label: 'Client Type' },
+                                    { value: 'clientType', label: 'Client type' },
                                     { value: 'totalVisits', label: '#Vists' },
                                     { value: 'lastVisitDate', label: 'Last Visit Date' }
                                 ].map((column) => (
@@ -1268,14 +1275,14 @@ function CustomerListContent() {
                                 {renderFilterSelect('state', 'State', stateOptions, false)}
                                 {renderFilterSelect('city', 'City', cityOptions, false)}
                                 {renderFilterInput('primaryContact', 'Phone', <Phone className="h-4 w-4" />, false)}
-                                {renderFilterSelect('clientType', 'Client Type', clientTypeOptions, false)}
+                                {renderFilterSelect('clientType', 'Client type', clientTypeOptions, false)}
                                 <div className="min-w-0">
-                                    <Label className="sr-only">Field Officer</Label>
+                                    <Label className="sr-only">Employee</Label>
                                     <SearchableSelect
                                         options={employeeOptions}
                                         value={selectedEmployeeId}
                                         onSelect={handleDesktopEmployeeSelect}
-                                        placeholder="Field Officer"
+                                        placeholder="Employee"
                                         loading={isLoadingEmployees}
                                         triggerClassName="h-8 w-full justify-between bg-background text-xs shadow-none"
                                         contentClassName="w-[var(--radix-popover-trigger-width)]"
@@ -1321,14 +1328,14 @@ function CustomerListContent() {
                             {renderFilterSelect('state', 'State', stateOptions, true)}
                             {renderFilterSelect('city', 'City', cityOptions, true)}
                             {renderFilterInput('primaryContact', 'Phone', <Phone className="h-4 w-4" />, true)}
-                            {renderFilterSelect('clientType', 'Client Type', clientTypeOptions, true)}
+                            {renderFilterSelect('clientType', 'Client type', clientTypeOptions, true)}
                             <div className="space-y-1">
-                                <Label className="sr-only">Field Officer</Label>
+                                <Label className="sr-only">Employee</Label>
                                 <SearchableSelect
                                     options={employeeOptions}
                                     value={mobileSelectedEmployeeId}
                                     onSelect={handleMobileEmployeeSelect}
-                                    placeholder="Field Officer"
+                                    placeholder="Employee"
                                     loading={isLoadingEmployees}
                                     triggerClassName="w-full justify-between h-11"
                                     contentClassName="w-[var(--radix-popover-trigger-width)]"
@@ -1408,7 +1415,7 @@ function CustomerListContent() {
                                         </div>
                                         {customer.clientType && (
                                             <Badge variant="outline">
-                                                {customer.clientType}
+                                                {formatClientTypeLabel(customer.clientType)}
                                             </Badge>
                                         )}
                                     </div>
@@ -1580,8 +1587,8 @@ function CustomerListContent() {
                                     </TableHead>
                                 )}
                                 {selectedColumns.includes('clientType') && (
-                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Client Type" onClick={() => handleSort('clientType')}>
-                                        Client Type
+                                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis" title="Client type" onClick={() => handleSort('clientType')}>
+                                        Client type
                                         {sortColumn === 'clientType' && (
                                             <span className="text-black text-sm">{sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
                                         )}
@@ -1679,7 +1686,7 @@ function CustomerListContent() {
                                         {selectedColumns.includes('clientType') && (
                                             <TableCell className="overflow-hidden">
                                                 <Badge variant="outline" className="max-w-full">
-                                                    <Ellipsis value={customer.clientType || ''} />
+                                                    <Ellipsis value={formatClientTypeLabel(customer.clientType)} />
                                                 </Badge>
                                             </TableCell>
                                         )}

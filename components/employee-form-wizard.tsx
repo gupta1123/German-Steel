@@ -39,6 +39,8 @@ import {
 
 import { API, EmployeeUserDto } from "@/lib/api";
 import { formatCityLabel } from "@/lib/city-options";
+import { getEmployeeRoleFormValue } from "@/lib/employee-role";
+import { employeeIdExists, suggestEmployeeId } from "@/lib/employee-id";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { useDashboardHeader } from "@/components/dashboard-header-context";
 
@@ -97,8 +99,7 @@ const mapEmployeeDtoToState = (employee: EmployeeUserDto): NewEmployeeState => {
   const normalizedDoJ = employee.dateOfJoining
     ? employee.dateOfJoining.split('T')[0]
     : "";
-  const normalizedRole =
-    employee.role === "Office Manager" ? "Manager" : employee.role || "";
+  const normalizedRole = getEmployeeRoleFormValue(employee.role);
 
   return {
     employeeId: employee.employeeId
@@ -168,6 +169,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [primaryContactError, setPrimaryContactError] = useState<string | null>(null);
   const [secondaryContactError, setSecondaryContactError] = useState<string | null>(null);
   const [cityError, setCityError] = useState<string | null>(null);
+  const [isSuggestingId, setIsSuggestingId] = useState(false);
   
   // IDs for accessibility
   const rawUsernameId = useId();
@@ -270,6 +272,25 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
       }
     };
   }, [isEditMode, employeeId]);
+
+  useEffect(() => {
+    if (isEditMode || !token) return;
+    let cancelled = false;
+    setIsSuggestingId(true);
+    Promise.all([API.getAllEmployees({ forceRefresh: true }), API.getArchivedEmployees()])
+      .then(([active, archived]) => {
+        if (cancelled) return;
+        if (!Array.isArray(active) || !Array.isArray(archived)) throw new Error('Invalid employee list');
+        const suggestion = suggestEmployeeId([...active, ...archived]);
+        setNewEmployee(current => current.employeeId ? current : { ...current, employeeId: suggestion });
+        setBaselineEmployee(current => current.employeeId ? current : { ...current, employeeId: suggestion });
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Could not suggest an employee ID. Please enter one manually.', { duration: 3000 });
+      })
+      .finally(() => { if (!cancelled) setIsSuggestingId(false); });
+    return () => { cancelled = true; };
+  }, [isEditMode, token]);
 
   useEffect(() => {
     if (isEditMode || usernameWasEdited) return;
@@ -419,6 +440,15 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
       };
 
       if (!isEditMode) {
+        const [active, archived] = await Promise.all([
+          API.getAllEmployees({ forceRefresh: true }), API.getArchivedEmployees(),
+        ]);
+        if (!Array.isArray(active) || !Array.isArray(archived)) throw new Error('Could not verify employee ID. Please try again.');
+        const existing = [...active, ...archived];
+        if (employeeIdExists(existing, newEmployee.employeeId)) {
+          throw new Error(`Employee ID is already used. Try ${suggestEmployeeId(existing)} instead.`);
+        }
+        employeePayload.employeeId = employeePayload.employeeId.trim();
         const requestBody = {
           user: {
             username: newEmployee.userName,
@@ -514,7 +544,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl py-3 text-foreground">
+    <div className="mx-auto w-full max-w-6xl pb-3 pt-0 text-foreground">
       {isEditMode && (
         <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-slate-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
@@ -522,8 +552,8 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         </div>
       )}
 
-      <Card className="mx-auto flex flex-col overflow-hidden border-border/80 shadow-sm">
-                {!isEditMode && <CardHeader className="border-b border-border/60 px-5 py-4">
+      <Card className="mx-auto flex flex-col gap-0 overflow-hidden border-border/80 py-0 shadow-sm">
+                {!isEditMode && <CardHeader className="border-b border-border/60 px-5 py-3 [.border-b]:pb-3">
                     <div className="flex items-center gap-3">
                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                          <User className="h-4 w-4" />
@@ -535,7 +565,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                     </div>
                 </CardHeader>}
                 
-                <CardContent className={cn("flex-1", isEditMode ? "p-4" : "px-5 py-5")}>
+                <CardContent className={cn("flex-1", isEditMode ? "p-4" : "px-5 pb-5 pt-4")}>
                     <div className="space-y-5">
                             {/* STEP 1: PERSONAL */}
                             {(
@@ -559,7 +589,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                     
                                     <div className="space-y-2 xl:col-span-2">
                                         <Label htmlFor="employeeId">Employee ID <span className="text-red-500">*</span></Label>
-                                        <Input id="employeeId" name="employeeId" placeholder="EMP-001" value={newEmployee.employeeId} onChange={handleInputChange} disabled={isEditMode} className="h-9 bg-background font-mono uppercase disabled:opacity-70" />
+                                        <Input id="employeeId" name="employeeId" placeholder={isSuggestingId ? 'Finding next ID…' : 'EMP-001'} value={newEmployee.employeeId} onChange={handleInputChange} disabled={isEditMode || isSuggestingId} aria-busy={isSuggestingId} className="h-9 bg-background font-mono uppercase disabled:opacity-70" />
                                     </div>
                                     </div>
 

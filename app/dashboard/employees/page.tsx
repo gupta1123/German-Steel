@@ -23,7 +23,7 @@ import { API } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
-import { getEmployeeRoleCategory, getEmployeeRoleLabel } from "@/lib/employee-role";
+import { getEmployeeRoleCategory, getEmployeeRoleLabel, isAdminEmployee } from "@/lib/employee-role";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { toast } from "sonner";
@@ -176,15 +176,16 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
         setTeamData(teamData);
         const scopedFieldOfficers = getUniqueFieldOfficersFromTeams(teamData);
-        setUsers(scopedFieldOfficers.map((user: User) => ({ ...user, userName: user.userDto?.username || "" })));
+        setUsers(scopedFieldOfficers.filter((user: User) => !isAdminEmployee(user)).map((user: User) => ({ ...user, userName: user.userDto?.username || "" })));
       } else {
         const data = await API.getAllEmployees<User>();
         if (!data) {
             throw new Error('No data received when fetching all employees');
         }
 
-        setUsers(data.map((user: User) => ({ ...user, userName: user.userDto?.username || "" })));
-        setAssignedCities(data.filter((user: User) => user.city).map((user: User) => user.city));
+        const employees = data.filter((user: User) => !isAdminEmployee(user));
+        setUsers(employees.map((user: User) => ({ ...user, userName: user.userDto?.username || "" })));
+        setAssignedCities(employees.filter((user: User) => user.city).map((user: User) => user.city));
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'An unknown error occurred');
@@ -554,6 +555,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     const query = searchQuery.trim().toLowerCase();
 
     return users.filter((user) => {
+      if (isAdminEmployee(user)) return false;
       const matchesRole = selectedRoleFilter === 'all' || getEmployeeRoleCategory(user.role) === selectedRoleFilter;
       if (!matchesRole) return false;
       if (!query) return true;
@@ -579,7 +581,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   const filteredArchivedEmployees = useMemo(() => {
     console.log('Filtering archived employees:', archivedEmployees.length, 'employees, search query:', archiveSearchQuery);
-    const filtered = archivedEmployees.filter((employee) =>
+    const filtered = archivedEmployees.filter((employee) => !isAdminEmployee(employee)).filter((employee) =>
       `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
       employee.role.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
       employee.departmentName.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||

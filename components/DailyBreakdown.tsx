@@ -16,6 +16,7 @@ import { SpacedCalendar } from "@/components/ui/spaced-calendar";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { API } from "@/lib/api";
+import { isAdminEmployee } from "@/lib/employee-role";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 import {
     Dialog,
@@ -50,6 +51,7 @@ interface Employee {
     firstName: string;
     lastName: string;
     role: string;
+    userDto?: { roles?: string | null } | null;
 }
 
 // --- Helper Components ---
@@ -135,9 +137,9 @@ const DailyBreakdown: React.FC = () => {
         try {
             const data = await API.getAllEmployees<Employee>();
             if (data) {
-                const officers = data.filter((e: Employee) => e.role === 'Field Officer')
-                    .sort((a: Employee, b: Employee) => a.firstName.localeCompare(b.firstName));
-                setEmployees(officers);
+                const eligibleEmployees = data.filter((employee) => !isAdminEmployee(employee))
+                    .sort((a, b) => `${a.firstName ?? ''} ${a.lastName ?? ''}`.trim().localeCompare(`${b.firstName ?? ''} ${b.lastName ?? ''}`.trim()));
+                setEmployees(eligibleEmployees);
             }
         } catch (err) { console.error(err); }
     }, [token]);

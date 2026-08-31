@@ -15,7 +15,6 @@ import {
   ClipboardList,
   BarChart,
   User,
-  Phone,
   ChevronDown,
   ChevronRight,
   Building,
@@ -25,7 +24,6 @@ import {
   TrendingUp,
   Target,
   MapPin,
-  Handshake,
   PanelLeftClose,
   PanelLeftOpen
 } from "lucide-react";
@@ -40,6 +38,7 @@ import { CurrentUserDto, hasManagerPrivileges, normalizeRoleValue } from "@/lib/
 import MobileBottomNav from "@/components/mobile-bottom-nav";
 import BrandLogo from "@/components/brand-logo";
 import { useNavigationGuard } from "@/components/unsaved-changes-provider";
+import { isAdminEmployeeRole } from "@/lib/employee-role";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -56,7 +55,6 @@ const allSidebarCategories = [
     icon: Users,
     items: [
       { name: "Customers", href: "/dashboard/customers", icon: Users },
-      { name: "Enquiries", href: "/dashboard/enquiries", icon: Phone },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
     ]
   },
@@ -65,7 +63,6 @@ const allSidebarCategories = [
     icon: Building,
     items: [
       { name: "Visits", href: "/dashboard/visits", icon: Calendar },
-      { name: "Meetings", href: "/dashboard/meetings", icon: Handshake },
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
       { name: "Pricing", href: "/dashboard/pricing", icon: Tag },
     ]
@@ -125,7 +122,7 @@ export default function DashboardLayout({
   backHref,
   onBack,
 }: DashboardLayoutProps) {
-  const { userRole, currentUser } = useAuth();
+  const { userRole, currentUser, isLoading: isAuthLoading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const { requestNavigation } = useNavigationGuard();
@@ -163,6 +160,8 @@ export default function DashboardLayout({
 
   // Check if user is manager
   const isManager = hasManagerPrivileges(userRole, currentUser);
+  const viewRole = isAuthLoading ? undefined : isManager ? 'manager' :
+    (isAdminEmployeeRole(userRole) || currentUser?.authorities?.some(auth => isAdminEmployeeRole(auth.authority))) ? 'admin' : undefined;
 
   useEffect(() => {
     if (!isManager) return;
@@ -421,7 +420,7 @@ export default function DashboardLayout({
       {/* Main content area */}
       <div className="flex min-w-0 flex-col">
         {/* Topbar */}
-        <Topbar heading={heading} subheading={subheading} backHref={backHref} onBack={onBack} />
+        <Topbar heading={heading} subheading={subheading} backHref={backHref} onBack={onBack} viewRole={viewRole} />
         
         {/* Page content */}
         <main className="flex min-w-0 flex-1 flex-col gap-4 p-3 lg:gap-6 lg:p-4 pb-24 md:pb-6">
