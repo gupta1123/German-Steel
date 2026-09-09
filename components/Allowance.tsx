@@ -24,27 +24,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DollarSign, Truck, Loader2, ChevronLeft, ChevronRight, Search, RotateCcw, ChevronsUpDown, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { API } from "@/lib/api";
+import { useAuth } from '@/components/auth-provider';
 import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
+import { allowanceApi, AllowanceEmployee, AllowanceTravelRate } from '@/lib/allowance-api';
 import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import { toast } from 'sonner';
-
-interface Employee {
-    id: number;
-    firstName: string;
-    lastName: string;
-    travelAllowance?: number;
-    dearnessAllowance?: number;
-    fullMonthSalary?: number;
-    role?: string;
-}
-
-interface TravelRate {
-    id: number;
-    employeeId: number;
-    carRatePerKm: number;
-    bikeRatePerKm: number;
-}
 
 const ALLOWANCE_AMOUNT_FIELDS = [
     'travelAllowance',
@@ -67,11 +51,12 @@ function Ellipsis({ value }: { value: string | number | null | undefined }) {
 }
 
 const Allowance: React.FC = () => {
-    const [employees, setEmployees] = useState<Employee[]>([]);
+    const { token } = useAuth();
+    const [employees, setEmployees] = useState<AllowanceEmployee[]>([]);
     const [editMode, setEditMode] = useState<{ [key: number]: boolean }>({});
     const [editedData, setEditedData] = useState<{ [key: number]: Record<string, unknown> }>({});
     const [currentPage, setCurrentPage] = useState<number>(1);
-    const [travelRates, setTravelRates] = useState<TravelRate[]>([]);
+    const [travelRates, setTravelRates] = useState<AllowanceTravelRate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -81,7 +66,7 @@ const Allowance: React.FC = () => {
     const [employeeFilterOpen, setEmployeeFilterOpen] = useState(false);
     const [roleFilter, setRoleFilter] = useState('all');
 
-    const employeeAllowanceIsDirty = (employee: Employee) => {
+    const employeeAllowanceIsDirty = (employee: AllowanceEmployee) => {
         if (!editMode[employee.id] || !editedData[employee.id]) return false;
         const draft = editedData[employee.id];
         const travelRate = travelRates.find((rate) => rate.employeeId === employee.id);
@@ -94,10 +79,7 @@ const Allowance: React.FC = () => {
     const allowanceChangesAreDirty = employees.some(employeeAllowanceIsDirty);
     const { requestDiscard } = useUnsavedChanges(allowanceChangesAreDirty);
 
-    // Get auth data from localStorage instead of props
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-
-    const fetchEmployees = useCallback(async (forceRefresh = false, showLoading = true) => {
+    const fetchAllowanceData = useCallback(async (showLoading = true) => {
         if (!token) {
             setError('Authentication token not found. Please log in.');
             return;
@@ -106,9 +88,15 @@ const Allowance: React.FC = () => {
         if (showLoading) setIsLoading(true);
         setError(null);
         try {
-            const data = await API.getAllEmployees<Employee>({ forceRefresh });
-            const sortedData = data.sort((a: Employee, b: Employee) => a.firstName.localeCompare(b.firstName));
+            const data = await allowanceApi.getEmployees(token);
+            const sortedData = data.sort((a, b) => a.firstName.localeCompare(b.firstName));
+            const salaryEmployees = sortedData.filter((employee) => {
+                const category = getEmployeeRoleCategory(employee.role);
+                return category === 'regional-manager' || category === 'field-officer';
+            });
+            const rates = await allowanceApi.getEffectiveTravelRates(token, salaryEmployees);
             setEmployees(sortedData);
+            setTravelRates(rates);
         } catch (error) {
             setError(error instanceof Error ? error.message : 'An unknown error occurred');
         } finally {
@@ -116,32 +104,11 @@ const Allowance: React.FC = () => {
         }
     }, [token]);
 
-    const fetchTravelRates = useCallback(async () => {
-        if (!token) return;
-
-        try {
-            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/getAll', {
-                cache: 'no-store',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-            });
-            if (!response.ok) {
-                throw new Error('Failed to fetch travel rates');
-            }
-            const data = await response.json();
-            setTravelRates(data);
-        } catch (error) {
-            console.error('Error fetching travel rates:', error);
-        }
-    }, [token]);
-
     useEffect(() => {
         if (token) {
-            fetchEmployees();
-            fetchTravelRates();
+            void fetchAllowanceData();
         }
-    }, [fetchEmployees, fetchTravelRates]);
+    }, [fetchAllowanceData, token]);
 
     const handleInputChange = (employeeId: number, field: string, value: string) => {
         setEditedData(prevData => ({
@@ -161,7 +128,7 @@ const Allowance: React.FC = () => {
     const updateSalary = async (employeeId: number) => {
         const employee = editedData[employeeId];
         const savedEmployee = employees.find((candidate) => candidate.id === employeeId);
-        if (!employee || !savedEmployee || !isEmployeeEditValid(employeeId) || !employeeAllowanceIsDirty(savedEmployee)) return;
+        if (!token || !employee || !savedEmployee || !isEmployeeEditValid(employeeId) || !employeeAllowanceIsDirty(savedEmployee)) return;
 
         const updatedSalary = {
             travelAllowance: Number(employee.travelAllowance),
@@ -169,76 +136,54 @@ const Allowance: React.FC = () => {
             fullMonthSalary: Number(employee.fullMonthSalary),
         };
         const updatedTravelRate = {
-            employeeId,
             carRatePerKm: Number(employee.carRatePerKm),
             bikeRatePerKm: Number(employee.bikeRatePerKm),
         };
+        const existingTravelRate = travelRates.find(rate => rate.employeeId === employeeId);
+        const compensationChanged =
+            updatedSalary.travelAllowance !== savedEmployee.travelAllowance ||
+            updatedSalary.dearnessAllowance !== savedEmployee.dearnessAllowance ||
+            updatedSalary.fullMonthSalary !== savedEmployee.fullMonthSalary;
+        const travelRateChanged =
+            updatedTravelRate.carRatePerKm !== (existingTravelRate?.carRatePerKm ?? 0) ||
+            updatedTravelRate.bikeRatePerKm !== (existingTravelRate?.bikeRatePerKm ?? 0);
 
         setIsSaving(true);
         try {
-            const salaryResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/setSalary`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    ...updatedSalary,
+            if (compensationChanged) {
+                await allowanceApi.updateEmployeeCompensation(token, savedEmployee, updatedSalary);
+            }
+            const savedTravelRate = travelRateChanged
+                ? await allowanceApi.saveTravelRate(
+                    token,
                     employeeId,
-                }),
-            });
+                    updatedTravelRate,
+                    Boolean(existingTravelRate),
+                )
+                : existingTravelRate;
 
-            if (!salaryResponse.ok) {
-                throw new Error('Failed to update salary');
-            }
-
-            const existingTravelRate = travelRates.find(rate => rate.employeeId === employeeId);
-            let travelRateResponse;
-            if (existingTravelRate) {
-                travelRateResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/edit?id=${existingTravelRate.id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(updatedTravelRate),
-                });
-            } else {
-                travelRateResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/travel-rates/create`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(updatedTravelRate),
-                });
-            }
-
-            if (!travelRateResponse.ok) {
-                throw new Error('Failed to update travel rates');
-            }
-
-            // Reconcile the acknowledged values immediately. The employee directory is
-            // cached, so a normal refetch here would otherwise restore the pre-save row.
             setEmployees((currentEmployees) => currentEmployees.map((currentEmployee) => (
                 currentEmployee.id === employeeId
-                    ? { ...currentEmployee, ...updatedSalary }
+                    ? {
+                        ...currentEmployee,
+                        ...updatedSalary,
+                        updatePayload: { ...currentEmployee.updatePayload, ...updatedSalary },
+                    }
                     : currentEmployee
             )));
-            setTravelRates((currentRates) => {
+            if (savedTravelRate) setTravelRates((currentRates) => {
                 const currentRate = currentRates.find((rate) => rate.employeeId === employeeId);
                 if (currentRate) {
                     return currentRates.map((rate) => (
                         rate.employeeId === employeeId
-                            ? { ...rate, ...updatedTravelRate }
+                            ? savedTravelRate
                             : rate
                     ));
                 }
 
-                return [...currentRates, { id: -employeeId, ...updatedTravelRate }];
+                return [...currentRates, savedTravelRate];
             });
 
-            API.invalidateEmployeeDirectory();
             setEditMode(prevMode => ({
                 ...prevMode,
                 [employeeId]: false
@@ -250,15 +195,13 @@ const Allowance: React.FC = () => {
             });
             setError(null);
             toast.success('Allowance details updated', { duration: 3000 });
-
-            // Revalidate without replacing the table with a loading state. This also
-            // replaces the temporary id used when a travel-rate record was just created.
-            void Promise.all([fetchEmployees(true, false), fetchTravelRates()]);
+            void fetchAllowanceData(false);
         } catch (error) {
             console.error('Error saving changes:', error);
             const message = error instanceof Error ? error.message : 'Error saving changes';
             setError(message);
             toast.error(message, { duration: 3000 });
+            void fetchAllowanceData(false);
         } finally {
             setIsSaving(false);
         }
@@ -456,8 +399,7 @@ const Allowance: React.FC = () => {
                                     size="sm"
                                     onClick={() => {
                                         setError(null);
-                                        fetchEmployees();
-                                        fetchTravelRates();
+                                        void fetchAllowanceData();
                                     }}
                                 >
                                     Try Again

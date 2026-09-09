@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupOfficerTargets, summarizeTargets, targetAchieved } from '../lib/officer-targets.ts';
+import { groupOfficerTargets, isTargetFieldOfficer, summarizeTargets, targetAchieved } from '../lib/officer-targets.ts';
 
 const employees = [
   { id: 1, firstName: 'Bangalore', lastName: 'Officer', role: 'ROLE_FIELD_OFFICER', employeeId: 101 },
@@ -8,6 +8,13 @@ const employees = [
   { id: 3, firstName: 'Admin', role: 'ROLE_ADMIN' },
   { id: 4, firstName: 'Manager', role: 'office manager' },
 ];
+
+test('recognizes the new CRM field-officer roles', () => {
+  assert.equal(isTargetFieldOfficer({ role: 'RETAIL_FE' }), true);
+  assert.equal(isTargetFieldOfficer({ role: 'INSTITUTION_PROJECT_FE' }), true);
+  assert.equal(isTargetFieldOfficer({ role: 'DUAL_FE' }), true);
+  assert.equal(isTargetFieldOfficer({ role: 'ZONAL_SUPERVISOR' }), false);
+});
 const target = (overrides = {}) => ({ id: 10, employeeId: 1, storeId: 42, targetTons: 10, effectiveFulfilledTons: 2, targetType: 'MONTHLY', month: 8, year: 2026, ...overrides });
 
 test('groups store allocations by officer and includes unassigned officers, never admins/managers', () => {

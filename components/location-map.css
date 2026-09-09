@@ -6,6 +6,7 @@
 .location-marker-live { background: #334155; }
 .location-marker-house { background: #64748b; border-radius: 9px; }
 .location-marker-visit { background: #2563eb; }
+.location-marker-tracking { background: #2563eb; }
 .location-cluster { width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2px solid white; border-radius: 50%; background: #334155; color: white; box-shadow: 0 1px 5px #0f172a40; font-size: 14px; font-weight: 600; line-height: 1; }
 .location-cluster small { margin-top: 3px; font-size: 8px; font-weight: 400; }
 .employee-location-map .leaflet-marker-icon:focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; border-radius: 50%; }

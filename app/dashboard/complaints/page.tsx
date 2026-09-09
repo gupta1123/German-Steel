@@ -4,10 +4,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactSelect, { type SingleValue, type StylesConfig } from 'react-select';
 import { format, subDays, differenceInDays } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
-import { API, type TeamDataDto } from '@/lib/api';
+import { dashboardApi } from '@/lib/dashboard-api';
+import { RetailAPI } from '@/lib/retail-api';
+import { tasksApi, type SharedTask, type SharedTaskPriority, type SharedTaskStatus } from '@/lib/tasks-api';
 import { hasManagerPrivileges } from '@/lib/auth';
 import { getEmployeeRoleCategory } from '@/lib/employee-role';
-import { getTeamIds, getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { sortBy } from 'lodash';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pagination, PaginationContent, PaginationLink, PaginationItem, PaginationPrevious, PaginationNext } from '@/components/ui/pagination';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from '@/components/ui/sheet';
-import { CalendarIcon, MoreHorizontal, PlusCircle, Search, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, Image as ImageIcon, Trash2, Calendar as CalendarIcon2, ChevronLeft, ChevronRight, Check, ChevronsUpDown } from 'lucide-react';
+import { CalendarIcon, MoreHorizontal, PlusCircle, Search, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, Trash2, Calendar as CalendarIcon2, ChevronLeft, ChevronRight, Check, ChevronsUpDown } from 'lucide-react';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 import { toast } from 'sonner';
@@ -43,11 +44,11 @@ interface Task {
     storeName: string;
     storeCity: string;
     taskType: string;
-    imageCount: number;
 }
 
 interface Employee {
     id: number;
+    employeeCode: string;
     firstName: string;
     lastName: string;
     role: string;
@@ -58,13 +59,49 @@ interface Store {
     storeName: string;
 }
 
-interface AttachmentResponse {
-    fileName: string;
-    fileDownloadUri: string;
-    fileType: string;
-    tag: string;
-    size: number;
-}
+const getEmployeeName = (employee: Employee): string => (
+    [employee.firstName, employee.lastName].filter(Boolean).join(' ').trim()
+    || employee.employeeCode
+    || `Employee ${employee.id}`
+);
+
+const statusFromApi = (status: SharedTaskStatus): string => ({
+    OPEN: 'Assigned',
+    IN_PROGRESS: 'Work In Progress',
+    COMPLETED: 'Complete',
+    CANCELLED: 'Cancelled',
+}[status]);
+
+const statusToApi = (status: string): SharedTaskStatus => ({
+    Assigned: 'OPEN',
+    'Work In Progress': 'IN_PROGRESS',
+    Complete: 'COMPLETED',
+    Cancelled: 'CANCELLED',
+}[status] as SharedTaskStatus | undefined) ?? 'OPEN';
+
+const priorityToApi = (priority: string): SharedTaskPriority => {
+    const normalized = priority.toUpperCase();
+    return ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(normalized)
+        ? normalized as SharedTaskPriority
+        : 'MEDIUM';
+};
+
+const toComplaintTask = (task: SharedTask): Task => ({
+    id: task.id,
+    taskTitle: task.taskTitle,
+    taskDesciption: task.taskDescription,
+    dueDate: task.dueDate,
+    assignedToId: task.assignedToEmployeeId ?? 0,
+    assignedToName: task.assignedToEmployeeName || 'Unknown',
+    assignedById: task.assignedByEmployeeId ?? 0,
+    status: statusFromApi(task.status),
+    priority: task.priority.toLowerCase(),
+    category: 'Complaint',
+    storeId: task.clientAccountId ?? 0,
+    storeName: task.clientAccountName,
+    storeCity: task.clientAccountCity,
+    taskType: 'complaint',
+});
 
 const Complaints = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -83,8 +120,7 @@ const Complaints = () => {
         storeId: 0,
         storeName: '',
         storeCity: '',
-        taskType: 'complaint',
-        imageCount: 0
+        taskType: 'complaint'
     });
     const router = useGuardedRouter();
     const FILTER_STATE_KEY = 'complaints.filters.v1';
@@ -119,17 +155,11 @@ const Complaints = () => {
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState<string>('');
     const [taskToUpdate, setTaskToUpdate] = useState<number | null>(null);
-    const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
-    const [taskImages, setTaskImages] = useState<string[]>([]);
-    const [currentImageIndex, setCurrentImageIndex] = useState(0);
-    const [isLoadingImages, setIsLoadingImages] = useState(false);
     const [isTabLoading, setIsTabLoading] = useState(false);
     const [isStoresLoading, setIsStoresLoading] = useState(false);
-    const [teamId, setTeamId] = useState<number | null>(null);
-    const [teamIds, setTeamIds] = useState<number[]>([]);
-    const [isManager, setIsManager] = useState(false);
-    const dateRangeInvalid = !isManager && isDateRangeInvalid(filters.startDate, filters.endDate);
-    const [teamMembers, setTeamMembers] = useState<Employee[]>([]);
+    const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
+    const [employeeLoadError, setEmployeeLoadError] = useState<string | null>(null);
+    const dateRangeInvalid = isDateRangeInvalid(filters.startDate, filters.endDate);
     const [isCreating, setIsCreating] = useState(false);
     const [updatingTaskFields, setUpdatingTaskFields] = useState<Set<string>>(new Set());
     
@@ -154,59 +184,13 @@ const Complaints = () => {
     const statusDraftIsDirty = isStatusModalOpen && Boolean(selectedTask) && selectedStatus !== selectedTask?.status;
     const { requestDiscard } = useUnsavedChanges(taskDraftIsDirty || statusDraftIsDirty);
 
-    const statusOptions = ['Assigned', 'Work In Progress', 'Complete'] as const;
+    const statusOptions = ['Assigned', 'Work In Progress', 'Complete', 'Cancelled'] as const;
 
     const { token, userRole, userData, currentUser } = useAuth();
-
-    // Determine user role and load team data for managers
-    useEffect(() => {
-        const checkUserRole = () => {
-            // Check both userRole and currentUser authorities
-            const isManagerRole = hasManagerPrivileges(userRole, currentUser);
-            setIsManager(isManagerRole);
-        };
-        checkUserRole();
-    }, [userRole, currentUser]);
-
-    // Load team data for managers
-    useEffect(() => {
-        const loadTeamData = async () => {
-            if (!isManager || !userData?.employeeId) return;
-            
-            try {
-                console.log('Loading team data for manager with employeeId:', userData.employeeId);
-                const teamData: TeamDataDto[] = await API.getTeamByEmployee(userData.employeeId);
-                
-                if (teamData && teamData.length > 0) {
-                    const accessibleTeamIds = getTeamIds(teamData);
-                    setTeamIds(accessibleTeamIds);
-                    setTeamId(accessibleTeamIds[0] ?? null);
-                    console.log('Team IDs loaded:', accessibleTeamIds);
-
-                    const teamMemberIds = new Set(getUniqueFieldOfficersFromTeams(teamData).map((fo) => fo.id));
-                    const filteredTeamMembers = allEmployees.filter((emp) => teamMemberIds.has(emp.id));
-                    setTeamMembers(filteredTeamMembers);
-                    console.log('Team members loaded:', filteredTeamMembers.length);
-                } else {
-                    console.warn('No team data found for manager');
-                    setTeamId(null);
-                    setTeamIds([]);
-                    setTeamMembers([]);
-                    setErrorMessage('No team data found for this manager');
-                }
-            } catch (err) {
-                console.error('Failed to load team data:', err);
-                setTeamId(null);
-                setTeamIds([]);
-                setTeamMembers([]);
-                setErrorMessage('Failed to load team data');
-            }
-        };
-        
-        if (isManager && userData?.employeeId && allEmployees.length > 0) {
-            loadTeamData();
-        }
-    }, [isManager, userData?.employeeId, allEmployees]);
+    const isManager = useMemo(
+        () => hasManagerPrivileges(userRole, currentUser),
+        [userRole, currentUser]
+    );
 
     useEffect(() => {
         if (errorMessage) {
@@ -261,153 +245,90 @@ const Complaints = () => {
             return;
         }
 
-        // For managers, wait until we have teamId
-        if (isManager && teamIds.length === 0) {
-            console.log('⏳ Manager detected but no teamId yet - waiting for team data');
-            return;
-        }
-        
-        console.log('Fetching tasks with:', { userRole, userData, isManager, teamId, token: token ? 'present' : 'missing' });
-        
         setIsLoading(true);
+        setErrorMessage(null);
         try {
-            let url: string;
-            
-            // Use different API endpoints based on user role
-            if (isManager) {
-                const responses = await Promise.all(teamIds.map((id) =>
-                    fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByTeam?id=${id}`, {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    })
-                ));
-
-                const failedResponse = responses.find((response) => !response.ok);
-                if (failedResponse) {
-                    const errorText = await failedResponse.text();
-                    throw new Error(`API request failed: ${failedResponse.status} ${errorText}`);
-                }
-
-                const payloads = await Promise.all(responses.map((response) => response.json()));
-                const uniqueTasks = new Map<number, Record<string, unknown>>();
-                payloads.flatMap((payload) => Array.isArray(payload) ? payload : []).forEach((task) => {
-                    uniqueTasks.set(Number(task.id) || uniqueTasks.size, task);
-                });
-
-                const tasksArray = Array.from(uniqueTasks.values())
-                    .filter((task: Record<string, unknown>) => task.taskType === 'complaint')
-                    .map((task: Record<string, unknown>) => ({
-                        id: Number(task.id) || 0,
-                        taskTitle: String(task.taskTitle || ''),
-                        taskDesciption: String(task.taskDesciption || ''),
-                        dueDate: String(task.dueDate || ''),
-                        assignedToId: Number(task.assignedToId) || 0,
-                        assignedToName: String(task.assignedToName || 'Unknown'),
-                        assignedById: Number(task.assignedById) || 0,
-                        status: String(task.status || ''),
-                        priority: String(task.priority || ''),
-                        category: String(task.category || ''),
-                        storeId: Number(task.storeId) || 0,
-                        storeName: String(task.storeName || ''),
-                        storeCity: String(task.storeCity || ''),
-                        taskType: String(task.taskType || ''),
-                        imageCount: Number(task.imageCount) || 0,
-                    } as Task))
-                    .sort((a: Task, b: Task) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-
-                setTasks(tasksArray);
-                setIsLoading(false);
-                return;
-            } else {
-                // For admins, use date-based API
-            const formattedStartDate = format(new Date(filters.startDate), 'yyyy-MM-dd');
-            const formattedEndDate = format(new Date(filters.endDate), 'yyyy-MM-dd');
-                url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getByDate?start=${formattedStartDate}&end=${formattedEndDate}`;
-                console.log('Using ADMIN API:', url, 'User Role:', userRole);
-            }
-
-            const response = await fetch(url, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('API Error:', response.status, errorText);
-                throw new Error(`API request failed: ${response.status} ${errorText}`);
-            }
-
-            const data = await response.json();
-            console.log('API Response:', data);
-
-            // Ensure data is an array
-            const tasksArray = (Array.isArray(data) ? data : [])
-                .filter((task: Record<string, unknown>) => task.taskType === 'complaint')
-                .map((task: Record<string, unknown>) => ({
-                    id: Number(task.id) || 0,
-                    taskTitle: String(task.taskTitle || ''),
-                    taskDesciption: String(task.taskDesciption || ''),
-                    dueDate: String(task.dueDate || ''),
-                    assignedToId: Number(task.assignedToId) || 0,
-                    assignedToName: String(task.assignedToName || 'Unknown'),
-                    assignedById: Number(task.assignedById) || 0,
-                    status: String(task.status || ''),
-                    priority: String(task.priority || ''),
-                    category: String(task.category || ''),
-                    storeId: Number(task.storeId) || 0,
-                    storeName: String(task.storeName || ''),
-                    storeCity: String(task.storeCity || ''),
-                    taskType: String(task.taskType || ''),
-                    imageCount: Number(task.imageCount) || 0,
-                } as Task))
+            // The shared endpoint applies the logged-in user's access scope. Managers
+            // therefore no longer need one legacy request per team.
+            const tasksArray = (await tasksApi.getAll(token))
+                .filter((task) => task.taskType === 'COMPLAINT')
+                .map(toComplaintTask)
                 .sort((a: Task, b: Task) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
 
             setTasks(tasksArray);
-            setIsLoading(false);
         } catch (error) {
             console.error('Error fetching tasks:', error);
+            setTasks([]);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to load complaints');
+        } finally {
             setIsLoading(false);
         }
-    }, [token, userRole, userData, isManager, teamIds, filters.startDate, filters.endDate, dateRangeInvalid]);
+    }, [token, dateRangeInvalid]);
 
     const fetchEmployees = useCallback(async () => {
         if (!token) return;
-        
+
+        if (isManager && !userData?.employeeId) {
+            setAllEmployees([]);
+            setEmployeeLoadError('Your employee profile could not be identified. Please sign in again.');
+            return;
+        }
+
+        setIsEmployeesLoading(true);
+        setEmployeeLoadError(null);
         try {
-            const data = await API.getAllEmployees<Employee>();
-            const sortedEmployees = sortBy(data, (emp: Employee) => `${emp.firstName} ${emp.lastName}`);
+            const data = await dashboardApi.getEmployees(
+                token,
+                isManager ? { managerId: userData!.employeeId } : {}
+            );
+            const sortedEmployees = sortBy(
+                data.map((employee) => ({
+                    id: employee.id,
+                    employeeCode: employee.employeeCode,
+                    firstName: employee.firstName,
+                    lastName: employee.lastName,
+                    role: employee.role,
+                })),
+                getEmployeeName
+            );
             setAllEmployees(sortedEmployees);
         } catch (error) {
             console.error('Error fetching employees:', error);
+            setAllEmployees([]);
+            setEmployeeLoadError(error instanceof Error ? error.message : 'Failed to load employees');
+        } finally {
+            setIsEmployeesLoading(false);
         }
-    }, [token]);
+    }, [token, isManager, userData?.employeeId]);
 
-    const fetchStores = useCallback(async (employeeId?: number, searchTerm: string = '', page: number = 0, size: number = 500, sortBy: string = 'storeName', sortOrder: string = 'asc') => {
+    const fetchStores = useCallback(async (employeeId?: number, searchTerm: string = '') => {
         if (!token || !employeeId) return;
         
         setIsStoresLoading(true);
         try {
-            const params = new URLSearchParams({
-                employeeId: employeeId.toString(),
-                searchTerm,
-                page: page.toString(),
-                size: size.toString(),
-                sortBy,
-                sortOrder,
+            const first = await RetailAPI.getAccounts(token, {
+                ownerEmployeeId: employeeId,
+                q: searchTerm || undefined,
+                active: true,
+                page: 0,
+                size: 200,
             });
-            const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/store/getStoreNamesByEmployee?${params.toString()}`;
-            
-            const response = await fetch(url, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-            const data = await response.json();
-            setStores(data.content || []);
+            const remaining = await Promise.all(
+                Array.from({ length: Math.max(0, first.totalPages - 1) }, (_, index) =>
+                    RetailAPI.getAccounts(token, {
+                        ownerEmployeeId: employeeId,
+                        q: searchTerm || undefined,
+                        active: true,
+                        page: index + 1,
+                        size: first.size,
+                    })
+                )
+            );
+            const accounts = [first, ...remaining].flatMap((page) => page.content);
+            setStores(accounts.map((account) => ({ id: account.id, storeName: account.accountName })));
         } catch (error) {
             console.error('Error fetching stores:', error);
+            setStores([]);
         } finally {
             setIsStoresLoading(false);
         }
@@ -441,7 +362,7 @@ const Complaints = () => {
     useEffect(() => {
         if (!isFiltersHydrated) return;
         fetchTasks();
-    }, [fetchTasks, teamId, isFiltersHydrated]);
+    }, [fetchTasks, isFiltersHydrated]);
 
     // Reset to first page when filters change
     useEffect(() => {
@@ -452,8 +373,9 @@ const Complaints = () => {
         fetchEmployees();
     }, [fetchEmployees]);
 
-    // Get employees for assignment dropdown based on user role
-    const assignmentEmployees = (isManager ? teamMembers : allEmployees).filter(
+    // The new employee directory endpoint already applies the manager filter and
+    // the logged-in user's access scope.
+    const assignmentEmployees = allEmployees.filter(
         (employee) => getEmployeeRoleCategory(employee.role) !== 'admin'
     );
 
@@ -484,15 +406,12 @@ const Complaints = () => {
             const matchesStatus =
                 filters.status === '' ||
                 filters.status === 'all'
-                    ? task.status !== 'Complete'
+                    ? task.status !== 'Complete' && task.status !== 'Cancelled'
                     : task.status === filters.status;
 
             const matchesDateRange =
-                isManager ||
-                (
-                    (filters.startDate === '' || new Date(task.dueDate) >= new Date(filters.startDate)) &&
-                    (filters.endDate === '' || new Date(task.dueDate) <= new Date(filters.endDate))
-                );
+                (filters.startDate === '' || new Date(task.dueDate) >= new Date(filters.startDate)) &&
+                (filters.endDate === '' || new Date(task.dueDate) <= new Date(filters.endDate));
 
             return matchesSearch && matchesEmployee && matchesPriority && matchesStatus && matchesDateRange;
         });
@@ -506,7 +425,7 @@ const Complaints = () => {
         } else if (currentPage >= nextTotalPages) {
             setCurrentPage(Math.max(0, nextTotalPages - 1));
         }
-    }, [tasks, filters, isManager, pageSize, currentPage]);
+    }, [tasks, filters, pageSize, currentPage]);
 
     useEffect(() => {
         const directoryEmployees = allEmployees
@@ -516,7 +435,7 @@ const Complaints = () => {
             })
             .map((employee) => ({
                 id: employee.id,
-                name: `${employee.firstName} ${employee.lastName}`.trim(),
+                name: getEmployeeName(employee),
             }));
 
         setFilterEmployees(sortBy(directoryEmployees, 'name'));
@@ -528,15 +447,15 @@ const Complaints = () => {
 
     // Populate employee options for SearchableSelect
     useEffect(() => {
-        const assignmentEmployees = (isManager ? teamMembers : allEmployees).filter(
+        const assignmentEmployees = allEmployees.filter(
             (employee) => getEmployeeRoleCategory(employee.role) !== 'admin'
         );
         const options = assignmentEmployees.map(emp => ({
             value: emp.id.toString(),
-            label: `${emp.firstName} ${emp.lastName}`
+            label: getEmployeeName(emp)
         })).sort((a, b) => a.label.localeCompare(b.label));
         setEmployeeOptions(options);
-    }, [allEmployees, teamMembers, isManager]);
+    }, [allEmployees]);
 
     // Populate store options for SearchableSelect
     useEffect(() => {
@@ -615,34 +534,20 @@ const Complaints = () => {
         setIsCreating(true);
         try {
             const taskToCreate = {
-                ...newTask,
-                assignedById,
-                taskDesciption: newTask.taskDesciption, // Backend expects taskDesciption without 'r'
-                taskType: 'complaint',
+                taskTitle: newTask.taskTitle.trim(),
+                taskDescription: newTask.taskDesciption.trim() || null,
+                taskType: 'COMPLAINT',
+                status: 'OPEN' as const,
+                priority: priorityToApi(newTask.priority),
+                assignedToEmployeeId: newTask.assignedToId,
+                assignedByEmployeeId: assignedById,
+                dueDate: newTask.dueDate,
+                clientAccountId: newTask.storeId,
+                visitActivityId: null,
             };
 
-            const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(taskToCreate),
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || `Failed to create complaint (${response.status})`);
-            }
-            const data = await response.json();
-
-            const createdTask = {
-                ...taskToCreate,
-                id: data.id,
-                assignedToName: assignmentEmployees.find(emp => emp.id === newTask.assignedToId)?.firstName + ' ' + assignmentEmployees.find(emp => emp.id === newTask.assignedToId)?.lastName || 'Unknown',
-                storeName: stores.find(store => store.id === newTask.storeId)?.storeName || '',
-            };
-
-            setTasks(prevTasks => [createdTask, ...prevTasks]);
+            await tasksApi.create(taskToCreate, token);
+            await fetchTasks();
 
             setIsModalOpen(false);
             resetForm();
@@ -681,30 +586,16 @@ const Complaints = () => {
         }
         
         try {
-            const response = await fetch(
-                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/updateTask?taskId=${taskToUpdate}`,
-                {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ status: selectedStatus }),
-                }
+            await tasksApi.update(taskToUpdate, { status: statusToApi(selectedStatus) }, token);
+            setTasks((prevTasks) =>
+                prevTasks.map((task) =>
+                    task.id === taskToUpdate ? { ...task, status: selectedStatus } : task
+                )
             );
-
-            if (response.ok) {
-                setTasks((prevTasks) =>
-                    prevTasks.map((task) =>
-                        task.id === taskToUpdate ? { ...task, status: selectedStatus } : task
-                    )
-                );
-                resetStatusModal();
-            } else {
-                console.error('Failed to update task status');
-            }
+            resetStatusModal();
         } catch (error) {
             console.error('Error updating task status:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to update complaint status');
         }
     };
 
@@ -724,21 +615,13 @@ const Complaints = () => {
         ));
 
         try {
-            const response = await fetch(
-                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/updateTask?taskId=${taskId}`,
-                {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ [field]: value }),
-                }
+            await tasksApi.update(
+                taskId,
+                field === 'priority'
+                    ? { priority: priorityToApi(value) }
+                    : { status: statusToApi(value) },
+                token,
             );
-
-            if (!response.ok) {
-                throw new Error(`Failed to update task ${field}`);
-            }
 
             toast.success(`${field === 'priority' ? 'Priority' : 'Status'} updated`, {
                 duration: 3000,
@@ -765,15 +648,12 @@ const Complaints = () => {
         if (!token) return;
         
         try {
-            await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/deleteById?taskId=${taskId}`, {
-                method: 'DELETE',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-            fetchTasks();
+            await tasksApi.delete(taskId, token);
+            await fetchTasks();
+            toast.success('Complaint deleted');
         } catch (error) {
             console.error('Error deleting task:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to delete complaint');
         }
     };
 
@@ -804,7 +684,7 @@ const Complaints = () => {
         setNewTask({
             ...newTask,
             assignedToId: parseInt(value, 10),
-            assignedToName: selectedEmp ? `${selectedEmp.firstName} ${selectedEmp.lastName}` : 'Unknown',
+            assignedToName: selectedEmp ? getEmployeeName(selectedEmp) : 'Unknown',
             storeId: 0,
             storeName: ''
         });
@@ -853,8 +733,7 @@ const Complaints = () => {
             storeId: 0,
             storeName: '',
             storeCity: '',
-            taskType: 'complaint',
-            imageCount: 0
+            taskType: 'complaint'
         });
         setSelectedStore([]);
         setStores([]);
@@ -882,57 +761,12 @@ const Complaints = () => {
                 return { icon: <Loader className="w-4 h-4 animate-spin" />, color: 'bg-blue-100 text-blue-800' };
             case 'complete':
                 return { icon: <CheckCircle className="w-4 h-4" />, color: 'bg-green-100 text-green-800' };
+            case 'cancelled':
+                return { icon: <AlertTriangle className="w-4 h-4" />, color: 'bg-gray-100 text-gray-800' };
             default:
                 return { icon: <AlertTriangle className="w-4 h-4" />, color: 'bg-gray-100 text-gray-800' };
         }
     };
-
-    const fetchTaskImages = async (taskId: number) => {
-        setIsLoadingImages(true);
-        try {
-            // First, fetch the task details
-            const taskResponse = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/getById?id=${taskId}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-            if (!taskResponse.ok) {
-                throw new Error('Failed to fetch task details');
-            }
-            const taskData = await taskResponse.json();
-    
-            // Extract file names from the attachmentResponse
-            const fileNames = taskData.attachmentResponse
-                .filter((attachment: AttachmentResponse) => attachment.tag === 'check-in')
-                .map((attachment: AttachmentResponse) => attachment.fileName);
-    
-            // Now fetch each image using the file names
-            const imageUrls = await Promise.all(
-                fileNames.map(async (fileName: string) => {
-                    const imageResponse = await fetch(
-                        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/downloadFile/${taskId}/check-in/${fileName}`,
-                        {
-                            headers: {
-                                Authorization: `Bearer ${token}`,
-                            },
-                        }
-                    );
-                    if (imageResponse.ok) {
-                        const blob = await imageResponse.blob();
-                        return URL.createObjectURL(blob);
-                    }
-                    return null;
-                })
-            );
-    
-            setTaskImages(imageUrls.filter((url): url is string => url !== null));
-            setIsImagePreviewOpen(true);
-        } catch (error) {
-            console.error('Error fetching task images:', error);
-        } finally {
-            setIsLoadingImages(false);
-        }
-  };
 
     const filteredEmployeeOptions = useMemo(() => {
         const query = employeeSearchTerm.trim().toLowerCase();
@@ -1040,6 +874,7 @@ const Complaints = () => {
                             <SelectItem value="low">Low</SelectItem>
                             <SelectItem value="medium">Medium</SelectItem>
                             <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="urgent">Urgent</SelectItem>
                         </SelectContent>
                     </Select>
                     <Select value={filters.status} onValueChange={(value) => handleFilterChange('status', value)}>
@@ -1051,11 +886,10 @@ const Complaints = () => {
                             <SelectItem value="Assigned">Assigned</SelectItem>
                             <SelectItem value="Work In Progress">Work In Progress</SelectItem>
                             <SelectItem value="Complete">Complete</SelectItem>
+                            <SelectItem value="Cancelled">Cancelled</SelectItem>
                         </SelectContent>
                     </Select>
-                    {/* Only show date filters for admin users */}
-                    {!isManager && (
-                        <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                     <div>
                         <Label htmlFor="startDate" className="sr-only">From date</Label>
                                 <Popover modal={false} open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
@@ -1113,8 +947,7 @@ const Complaints = () => {
                                 </Popover>
                     </div>
                     <DateRangeError fromDate={filters.startDate} toDate={filters.endDate} className="w-full" />
-                        </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
@@ -1216,12 +1049,12 @@ const Complaints = () => {
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="assignedToId">
-                                        Assigned To {isManager && teamMembers.length > 0 && <span className="text-xs text-muted-foreground">(Team Members Only)</span>}
+                                        Assigned To {isManager && <span className="text-xs text-muted-foreground">(Direct Reports)</span>}
                                     </Label>
                                     <Popover
                                         open={isAssignPopoverOpen}
                                         onOpenChange={(open) => {
-                                            if (employeeOptions.length === 0) return;
+                                            if (isEmployeesLoading || employeeOptions.length === 0) return;
                                             setIsAssignPopoverOpen(open);
                                         }}
                                     >
@@ -1229,12 +1062,14 @@ const Complaints = () => {
                                             <Button
                                                 variant="outline"
                                                 className="w-[280px] justify-between text-left font-normal"
-                                                disabled={employeeOptions.length === 0}
+                                                disabled={isEmployeesLoading || employeeOptions.length === 0}
                                             >
                                                 <span className={`truncate ${selectedEmployeeLabel ? 'text-foreground' : 'text-muted-foreground'}`}>
                                                     {selectedEmployeeLabel ||
-                                                        (isManager && teamMembers.length === 0 && allEmployees.length > 0
-                                                            ? "Loading team members..."
+                                                        (isEmployeesLoading
+                                                            ? "Loading employees..."
+                                                            : employeeLoadError
+                                                            ? "Could not load employees"
                                                             : employeeOptions.length === 0
                                                             ? "No employees available"
                                                             : "Select an employee")}
@@ -1280,7 +1115,15 @@ const Complaints = () => {
                                             </div>
                                         </PopoverContent>
                                     </Popover>
-          </div>
+                                    {employeeLoadError && (
+                                        <div className="flex items-center gap-2 text-sm text-destructive">
+                                            <span>{employeeLoadError}</span>
+                                            <Button type="button" variant="link" className="h-auto p-0 text-sm" onClick={() => void fetchEmployees()}>
+                                                Retry
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="priority">Priority</Label>
                                     <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
@@ -1291,6 +1134,7 @@ const Complaints = () => {
                                             <SelectItem value="low">Low</SelectItem>
                                             <SelectItem value="medium">Medium</SelectItem>
                                             <SelectItem value="high">High</SelectItem>
+                                            <SelectItem value="urgent">Urgent</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -1359,11 +1203,6 @@ const Complaints = () => {
                                                     <DropdownMenuItem onClick={() => handleViewStore(task.storeId)}>
                                                         <Building className="mr-2 h-4 w-4" /> View Store
                                                     </DropdownMenuItem>
-                                                    {task.imageCount > 0 && (
-                                                        <DropdownMenuItem onClick={() => fetchTaskImages(task.id)}>
-                                                            <ImageIcon className="mr-2 h-4 w-4" /> View Images
-                                                        </DropdownMenuItem>
-                                                    )}
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => deleteTask(task.id)} className="text-red-600">
                                                         <Trash2 className="mr-2 h-4 w-4" /> Delete Complaint
@@ -1416,6 +1255,7 @@ const Complaints = () => {
                                                         <SelectItem value="low">Low</SelectItem>
                                                         <SelectItem value="medium">Medium</SelectItem>
                                                         <SelectItem value="high">High</SelectItem>
+                                                        <SelectItem value="urgent">Urgent</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </div>
@@ -1485,55 +1325,6 @@ const Complaints = () => {
                         </Button>
                     </div>
                 </div>
-            )}
-
-            {isImagePreviewOpen && (
-                <Dialog open={isImagePreviewOpen} onOpenChange={setIsImagePreviewOpen}>
-                    <DialogContent className="max-w-3xl">
-                        <DialogHeader>
-                            <DialogTitle>Image Preview</DialogTitle>
-                        </DialogHeader>
-                        {isLoadingImages ? (
-                            <div className="flex justify-center items-center h-64">
-                                <Loader className="w-8 h-8 animate-spin text-primary" />
-                                <span className="ml-2">Loading images...</span>
-          </div>
-        ) : (
-                            <>
-                                <div className="relative">
-                                    <img
-                                        src={taskImages[currentImageIndex]}
-                                        alt={`Image ${currentImageIndex + 1}`}
-                                        className="w-full h-auto"
-                                    />
-                                    {taskImages.length > 1 && (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="absolute left-2 top-1/2 transform -translate-y-1/2"
-                                                onClick={() => setCurrentImageIndex((prev) => (prev === 0 ? taskImages.length - 1 : prev - 1))}
-                                            >
-                                                <ChevronLeft className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="absolute right-2 top-1/2 transform -translate-y-1/2"
-                                                onClick={() => setCurrentImageIndex((prev) => (prev === taskImages.length - 1 ? 0 : prev + 1))}
-                                            >
-                                                <ChevronRight className="h-4 w-4" />
-                                            </Button>
-                                        </>
-                                    )}
-          </div>
-                                <p className="text-center mt-2">
-                                    Image {currentImageIndex + 1} of {taskImages.length}
-                                </p>
-                            </>
-                        )}
-                    </DialogContent>
-                </Dialog>
             )}
 
             {/* Status Update Modal */}
@@ -1654,6 +1445,7 @@ const Complaints = () => {
                                     <SelectItem value="low">Low</SelectItem>
                                     <SelectItem value="medium">Medium</SelectItem>
                                     <SelectItem value="high">High</SelectItem>
+                                    <SelectItem value="urgent">Urgent</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -1670,13 +1462,13 @@ const Complaints = () => {
                                     <SelectItem value="Assigned">Assigned</SelectItem>
                                     <SelectItem value="Work In Progress">Work In Progress</SelectItem>
                                     <SelectItem value="Complete">Complete</SelectItem>
+                                    <SelectItem value="Cancelled">Cancelled</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
 
-                        {/* Date Filters - Only show for admin users */}
-                        {!isManager && (
-                            <>
+                        {/* Date filters apply to every role; access scope comes from the backend token. */}
+                        <>
                                 <div className="space-y-2">
                                     <Label className="text-sm font-medium">Start Date</Label>
                                     <Popover modal={false} open={isFilterStartDatePopoverOpen} onOpenChange={setIsFilterStartDatePopoverOpen}>
@@ -1729,8 +1521,7 @@ const Complaints = () => {
                                     </Popover>
                                 </div>
                                 <DateRangeError fromDate={filters.startDate} toDate={filters.endDate} className="col-span-full" />
-                            </>
-                        )}
+                        </>
                     </div>
                     <SheetFooter className="flex gap-2">
                         <Button variant="outline" onClick={() => {

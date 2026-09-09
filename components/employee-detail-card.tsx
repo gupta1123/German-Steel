@@ -21,7 +21,12 @@ import { summarizeVisitPurposes } from "@/lib/visit-purpose-summary";
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
-import { API, type VisitDto, type EmployeeStatsWithVisits, type EmployeeDashboardSummary } from "@/lib/api";
+import { useAuth } from '@/components/auth-provider';
+import {
+  dashboardApi,
+  type DashboardAttendanceLog,
+  type DashboardVisit,
+} from '@/lib/dashboard-api';
 
 interface Employee {
   id: number;
@@ -151,10 +156,8 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
   const [lastClickedColumn, setLastClickedColumn] = useState<keyof VisitRow | null>(null);
 
   const getOutcomeStatus = (visit: VisitRow): { emoji: React.ReactNode; status: string } => {
-    if (visit.checkinTime && visit.checkoutTime) {
+    if (visit.status === 'completed' || visit.checkoutTime) {
       return { emoji: '✅', status: 'Completed' };
-    } else if (visit.checkoutTime) {
-      return { emoji: '⏱️', status: 'Checked Out' };
     } else if (visit.checkinTime) {
       return { emoji: '🕰️', status: 'On Going' };
     }
@@ -206,7 +209,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
       <CardHeader className="border-b px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-sm font-semibold">Recent completed visits</CardTitle>
-          <span className="text-xs text-muted-foreground">{totalElements} total visits in range</span>
+          <span className="text-xs text-muted-foreground">{totalElements} completed visits in range</span>
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -336,7 +339,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
       </CardContent>
       {totalElements > 0 && (
         <div className="flex flex-col gap-2 border-t px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-xs text-muted-foreground">Completed visits shown from {totalElements} total visits</div>
+          <div className="text-xs text-muted-foreground">{totalElements} completed visits in the selected period</div>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -372,10 +375,9 @@ interface EmployeeDetailCardProps {
 }
 
 export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDetailCardProps) {
-  const [employeeDetails, setEmployeeDetails] = useState<EmployeeStatsWithVisits | null>(null);
-  const [employeeSummary, setEmployeeSummary] = useState<EmployeeDashboardSummary | null>(null);
-  const [visitTotalPages, setVisitTotalPages] = useState(1);
-  const [visitTotalElements, setVisitTotalElements] = useState(0);
+  const { token } = useAuth();
+  const [visitData, setVisitData] = useState<DashboardVisit[]>([]);
+  const [attendanceLogs, setAttendanceLogs] = useState<DashboardAttendanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -432,43 +434,44 @@ export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDeta
     setCurrentPage(1);
   }, [employee.id, dateRange.start, dateRange.end]);
 
-  // Visits + stats loaded using parent-provided date range
+  // Visits and attendance are both scoped to this employee and selected period.
   useEffect(() => {
     const run = async () => {
+      if (!token) return;
       setLoading(true);
       setError(null);
       try {
         const start = format(dateRange.start, 'yyyy-MM-dd');
         const end = format(dateRange.end, 'yyyy-MM-dd');
-        const data = await API.getEmployeeStatsOptimized(employee.id, start, end, currentPage - 1, 10, 'id,desc');
-        setEmployeeDetails({ statsDto: data.statsDto, visitDto: data.visitPage.content || [] });
-        setVisitTotalPages(Math.max(data.visitPage.totalPages || 1, 1));
-        setVisitTotalElements(data.visitPage.totalElements || 0);
+        const [visits, attendance] = await Promise.all([
+          dashboardApi.getVisits(token, start, end, employee.id),
+          dashboardApi.getAttendanceLogs(token, employee.id, start, end),
+        ]);
+        setVisitData(visits);
+        setAttendanceLogs(attendance);
       } catch (e) {
         setError((e as Error)?.message || 'Failed to load employee details');
       } finally {
         setLoading(false);
       }
     };
-    run();
-  }, [employee.id, dateRange.start, dateRange.end, currentPage]);
+    void run();
+  }, [employee.id, dateRange.start, dateRange.end, token]);
 
-  useEffect(() => {
-    const run = async () => {
-      try {
-        const start = format(dateRange.start, 'yyyy-MM-dd');
-        const end = format(dateRange.end, 'yyyy-MM-dd');
-        setEmployeeSummary(await API.getEmployeeDashboardSummary(employee.id, start, end));
-      } catch (e) {
-        setError((e as Error)?.message || 'Failed to load employee summary');
-      }
-    };
-    run();
-  }, [employee.id, dateRange.start, dateRange.end]);
+  const completedVisits = useMemo(() => visitData.filter((visit) => (
+    Boolean(visit.actualCheckoutAt) || ['COMPLETED', 'CHECKED_OUT'].includes(visit.status)
+  )), [visitData]);
 
   const visitsByPurposeChartData = useMemo(() => {
-    return summarizeVisitPurposes(employeeSummary?.visitSummary.visitsByPurpose || []);
-  }, [employeeSummary]);
+    const counts = new Map<string, number>();
+    completedVisits.forEach((visit) => {
+      const purpose = visit.purpose || '';
+      counts.set(purpose, (counts.get(purpose) ?? 0) + 1);
+    });
+    return summarizeVisitPurposes(
+      [...counts].map(([purpose, count]) => ({ purpose, count })),
+    );
+  }, [completedVisits]);
 
   const handleViewDetails = (visitId: number) => {
     // Persist parent view state to ensure return lands back here
@@ -549,19 +552,28 @@ export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDeta
     );
   }
 
-  const visits: VisitRow[] = (employeeDetails?.visitDto || []).map((v: VisitDto) => ({
-    id: v.id,
-    date: v.visit_date,
-    customer: v.storeName,
-    purpose: v.purpose || '—',
+  const completedRows: VisitRow[] = completedVisits.map((visit) => ({
+    id: visit.id,
+    date: visit.scheduledVisitDate || format(dateRange.start, 'yyyy-MM-dd'),
+    customer: visit.customerName || 'Customer visit',
+    purpose: visit.purpose || '—',
     status: 'completed',
     duration: '-',
-    checkinTime: v.checkinTime,
-    checkoutTime: v.checkoutTime,
-    employeeState: v.state,
+    checkinTime: visit.actualCheckinAt,
+    checkoutTime: visit.actualCheckoutAt || 'Completed',
+    employeeState: visit.state,
   }));
-
-  const totalCompletedVisits = employeeSummary?.visitSummary.completedVisits || 0;
+  const pageSize = 10;
+  const visitTotalElements = completedRows.length;
+  const visitTotalPages = Math.max(1, Math.ceil(visitTotalElements / pageSize));
+  const safeCurrentPage = Math.min(currentPage, visitTotalPages);
+  const visits = completedRows.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize);
+  const attendanceCounts = attendanceLogs.reduce((counts, log) => {
+    if (log.status === 'FULL_DAY') counts.fullDays += 1;
+    else if (log.status === 'HALF_DAY') counts.halfDays += 1;
+    else if (log.status === 'ABSENT') counts.absences += 1;
+    return counts;
+  }, { fullDays: 0, halfDays: 0, absences: 0 });
 
   return (
     <div className="space-y-4 pb-12 md:pb-0">
@@ -569,22 +581,22 @@ export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDeta
         <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
           <KPICard
             title="Completed visits"
-            value={totalCompletedVisits}
+            value={visitTotalElements}
             icon={<CheckCircle2 className="h-4 w-4" />}
           />
           <KPICard
             title="Full days"
-            value={employeeDetails?.statsDto?.fullDays || 0}
+            value={attendanceCounts.fullDays}
             icon={<CalendarCheck2 className="h-4 w-4" />}
           />
           <KPICard
             title="Half days"
-            value={employeeDetails?.statsDto?.halfDays || 0}
+            value={attendanceCounts.halfDays}
             icon={<Clock3 className="h-4 w-4" />}
           />
           <KPICard
             title="Absences"
-            value={employeeDetails?.statsDto?.absences || 0}
+            value={attendanceCounts.absences}
             icon={<UserRoundX className="h-4 w-4" />}
           />
         </div>
@@ -594,7 +606,7 @@ export default function EmployeeDetailCard({ employee, dateRange }: EmployeeDeta
         <VisitsTable
           visits={visits}
           onViewDetails={handleViewDetails}
-          currentPage={currentPage}
+          currentPage={safeCurrentPage}
           onPageChange={setCurrentPage}
           totalPages={visitTotalPages}
           totalElements={visitTotalElements}

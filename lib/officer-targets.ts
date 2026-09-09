@@ -1,7 +1,9 @@
 import type { EmployeeUserDto, SalesTargetDto } from "./api";
 
-export const isTargetFieldOfficer = (employee: Pick<EmployeeUserDto, "role">) =>
-  employee.role?.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/^role /, "") === "field officer";
+export const isTargetFieldOfficer = (employee: Pick<EmployeeUserDto, "role">) => {
+  const role = employee.role?.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/^role /, "");
+  return role?.includes("field officer") || role === "retail fe" || role === "institution project fe" || role === "dual fe";
+};
 
 export const targetAchieved = (target: SalesTargetDto) =>
   Number(target.effectiveFulfilledTons ?? target.fulfilledTons ?? target.salesTons ?? 0) || 0;

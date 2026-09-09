@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validCoordinates, locationTimestamp, locationAge, latestLocationMarkers, journeyLocationMarkers, groupNearbyPoints, sortEmployeesByLocationUpdate } from '../lib/employee-locations.ts';
+import { validCoordinates, locationTimestamp, locationAge, latestLocationMarkers, journeyLocationMarkers, trackingLocationMarkers, groupNearbyPoints, sortEmployeesByLocationUpdate } from '../lib/employee-locations.ts';
 
 test('employee panel sorts by latest GPS timestamp, then case-insensitive name', () => {
   const employees = [
@@ -73,6 +73,20 @@ test('journeys obey local date boundaries, stable chronological order and preser
   assert.equal(result.unmapped, 1);
   assert.deepEqual(result.markers.map(m => [m.visitId, m.order]), [[1, 1], [3, 3]]);
   assert.equal(result.markers[0].coordinateSource, 'CHECKIN');
+});
+test('tracking history is deduplicated, chronological and keeps invalid-coordinate gaps', () => {
+  const point = { id: 1, employeeId: 32, latitude: 12, longitude: 77, capturedAt: '2026-09-09T10:00:00', provider: 'GPS', accuracyMeters: 10, batteryPercent: 80 };
+  const result = trackingLocationMarkers([
+    { ...point, id: 3, capturedAt: '2026-09-09T11:00:00' },
+    { ...point, id: 2, capturedAt: '2026-09-09T10:30:00', latitude: 0, longitude: 0 },
+    point,
+    point,
+  ]);
+  assert.equal(result.total, 3);
+  assert.equal(result.unmapped, 1);
+  assert.deepEqual(result.markers.map(marker => [marker.id, marker.order]), [['tracking-1', 1], ['tracking-3', 3]]);
+  assert.equal(result.markers[0].type, 'tracking');
+  assert.equal(result.markers[0].coordinateSource, 'GPS');
 });
 test('overlapping points group without mutating GPS or losing records', () => {
   const points = [{ x: 1, y: 2, id: 1 }, { x: 1, y: 2, id: 2 }, { x: 200, y: 200, id: 3 }];

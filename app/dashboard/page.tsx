@@ -5,9 +5,7 @@ import {
   format,
   subDays,
   startOfWeek,
-  endOfWeek,
   startOfMonth,
-  endOfMonth,
 } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,17 +21,20 @@ import OverviewSection from "@/components/dashboard/OverviewSection";
 import StateSection from "@/components/dashboard/StateSection";
 import EmployeeDetailSection from "@/components/dashboard/EmployeeDetailSection";
 import { useDashboardHeader } from "@/components/dashboard-header-context";
-import { API, type EmployeeUserDto, type AttendanceLogItem, type TeamDataDto, type CurrentUserDto } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { Skeleton } from "@/components/ui/skeleton";
-import DailyPricingModal from "@/components/DailyPricingModal";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SpacedCalendar } from "@/components/ui/spaced-calendar";
-import { isManagerRoleValue, getCorrectedRoleFlags } from "@/lib/auth";
-import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
+import { getCorrectedRoleFlags } from "@/lib/auth";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 import { isAdminEmployee, isAdminEmployeeRole, getEmployeeRoleLabel } from "@/lib/employee-role";
-import { latestLocationMarkers, journeyLocationMarkers, validCoordinates, type LocationMarker } from "@/lib/employee-locations";
+import {
+  latestLocationMarkers,
+  trackingLocationMarkers,
+  validCoordinates,
+  type LocationMarker,
+} from "@/lib/employee-locations";
+import { dashboardApi, type DashboardEmployee } from "@/lib/dashboard-api";
 
 
 const DEFAULT_MAP_CENTER: [number, number] = [20.5937, 78.9629];
@@ -46,6 +47,12 @@ const normalizeCityName = (city?: string | null): string => {
     .trim()
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const isDashboardAdminEmployee = (employee: DashboardEmployee): boolean => {
+  if (isAdminEmployee(employee)) return true;
+  const role = employee.role.trim().toUpperCase().replace(/^ROLE[_\s-]+/, '').replace(/[_-]+/g, ' ');
+  return ['ADMIN', 'HO ADMIN', 'OWNER', 'DEVELOPER'].includes(role);
 };
 
 const colorPalette = [
@@ -69,6 +76,8 @@ type Employee = {
   lastUpdated: string;
   status: string;
   location: string;
+  houseLatitude?: number | null;
+  houseLongitude?: number | null;
 };
 type ExtendedEmployee = Employee & {
   listId: string;
@@ -154,7 +163,7 @@ export default function DashboardPage() {
   const [highlightedEmployee, setHighlightedEmployee] =
     useState<ExtendedEmployee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [teamMembers, setTeamMembers] = useState<Employee[]>([]);
+  const [employeeRecords, setEmployeeRecords] = useState<DashboardEmployee[]>([]);
   const [states, setStates] = useState<StateItem[]>([]);
   const [kpis, setKpis] = useState({ totalVisits: 0, activeEmployees: 0, liveLocations: 0 });
   const [countsByEmployee, setCountsByEmployee] = useState<Map<number, number>>(new Map());
@@ -170,19 +179,12 @@ export default function DashboardPage() {
   const [mapResetKey, setMapResetKey] = useState(0);
   const journeyRequest = useRef(0);
   const [selectedEmployeeMarkers, setSelectedEmployeeMarkers] = useState<MapMarker[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [isManager, setIsManager] = useState(false);
   const [isRoleDetermined, setIsRoleDetermined] = useState(false);
-  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDateRangeLoading, setIsDateRangeLoading] = useState(false);
-  const [showVisitLocations, setShowVisitLocations] = useState(false);
-  const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
-  const [hasCheckedPricing, setHasCheckedPricing] = useState(false);
-  const [isPricingDismissed, setIsPricingDismissed] = useState(false);
   const [hasHydratedViewState, setHasHydratedViewState] = useState(false);
   const VIEW_STATE_KEY = 'dashboard.view.state.v1';
-  const PRICING_MODAL_DISMISS_KEY = 'pricingModalDismissed';
   const [hasHydratedDateFilter, setHasHydratedDateFilter] = useState(false);
   const [isStateSectionLoading, setIsStateSectionLoading] = useState(false);
   const stateSkeletonTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -219,7 +221,6 @@ export default function DashboardPage() {
           setSelectedEmployee(null);
           setHighlightedEmployee(null);
           setSelectedEmployeeMarkers([]);
-          setShowVisitLocations(false);
           setMapCenter(DEFAULT_MAP_CENTER);
           setMapZoom(DEFAULT_MAP_ZOOM);
         }
@@ -332,90 +333,8 @@ export default function DashboardPage() {
     console.log('Dashboard - Role detection - final isAdmin:', roleFlags.isAdmin);
 
     setIsManager(roleFlags.isManager);
-    setCurrentUserRole(userRole);
     setIsRoleDetermined(true);
   }, [userRole, currentUser, teamId, correctedRoleFlags]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const dismissed = sessionStorage.getItem(PRICING_MODAL_DISMISS_KEY) === 'true';
-    setIsPricingDismissed(dismissed);
-  }, []);
-
-  const handlePricingModalDismiss = useCallback(() => {
-    setIsPricingModalOpen(false);
-    if (!isPricingDismissed) {
-      setIsPricingDismissed(true);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem(PRICING_MODAL_DISMISS_KEY, 'true');
-      }
-    }
-  }, [isPricingDismissed]);
-
-  useEffect(() => {
-    console.log('Pricing check useEffect triggered:', {
-      token: token ? 'present' : 'missing',
-      isPricingDismissed,
-      hasCheckedPricing,
-      isRoleDetermined,
-      currentUserRole
-    });
-    
-    if (!token || isPricingDismissed || hasCheckedPricing || !isRoleDetermined) return;
-
-    const normalizedRole = (currentUserRole ?? '').toUpperCase();
-    const isAdmin = normalizedRole.includes('ADMIN');
-    console.log('User role check:', { normalizedRole, isAdmin });
-    
-    if (!isAdmin) {
-      console.log('User is not admin, skipping pricing check');
-      setHasCheckedPricing(true);
-      return;
-    }
-
-    const fetchPricing = async () => {
-      try {
-        const today = new Date().toISOString().split('T')[0];
-        console.log('Checking pricing for today:', today);
-        const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=${today}&end=${today}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          console.log('Pricing API response not ok:', response.status, response.statusText);
-          setHasCheckedPricing(true);
-          return;
-        }
-
-        const data: Array<Record<string, unknown>> = await response.json();
-        console.log('Pricing API response data:', data);
-        
-        const hasGermanSteels = data.some(
-          (item) => typeof item.brandName === 'string' && item.brandName.toLowerCase().replace(/\s+/g, '') === 'germansteels'
-        );
-        
-        console.log('Has German Steels pricing:', hasGermanSteels);
-
-        if (!hasGermanSteels) {
-          console.log('No German Steels pricing found, showing modal');
-          setIsPricingModalOpen(true);
-        } else {
-          console.log('German Steels pricing found, not showing modal');
-        }
-
-        setHasCheckedPricing(true);
-      } catch (err) {
-        console.error('Dashboard - Error checking German Steels pricing:', err);
-        setHasCheckedPricing(true);
-      }
-    };
-
-    void fetchPricing();
-  }, [token, currentUserRole, isPricingDismissed, hasCheckedPricing, isRoleDetermined]);
 
   // Persist view chain for back navigation (dashboard -> state -> employeeDetail)
   useEffect(() => {
@@ -428,81 +347,45 @@ export default function DashboardPage() {
     } catch {}
   }, [view, selectedState, selectedEmployee]);
 
-  // Load all scoped team members for managers. Never fall back to all employees for manager access.
-  useEffect(() => {
-    const loadTeamMembers = async () => {
-      if (!isManager) return;
-
-      if (userData?.employeeId) {
-        try {
-          console.log('Loading team members using employeeId:', userData.employeeId);
-          const teamData: TeamDataDto[] = await API.getTeamByEmployee(userData.employeeId);
-          const teamMemberIds = new Set(getUniqueFieldOfficersFromTeams(teamData).map((fo) => fo.id));
-          const filteredEmployees = employees.filter((emp) => teamMemberIds.has(emp.id));
-          setTeamMembers(filteredEmployees);
-          console.log('Team members loaded:', filteredEmployees.length);
-        } catch (err) {
-          console.error('Failed to load team members:', err);
-          setError('Failed to load team members');
-          setTeamMembers([]);
-        }
-      } else if (teamId) {
-        try {
-          console.log('Loading team members using teamId from auth context:', teamId);
-          const teamData: TeamDataDto = await API.getTeamById(teamId);
-          const teamMemberIds = new Set((teamData.fieldOfficers ?? []).map((fo) => fo.id));
-          const filteredEmployees = employees.filter((emp) => teamMemberIds.has(emp.id));
-          setTeamMembers(filteredEmployees);
-          console.log('Team members loaded:', filteredEmployees.length);
-        } catch (err) {
-          console.error('Failed to load team members using teamId:', err);
-          setError('Failed to load team members');
-          setTeamMembers([]);
-        }
-      } else {
-        setTeamMembers([]);
-      }
-    };
-    
-    if (isManager && employees.length > 0) {
-      loadTeamMembers();
-    }
-  }, [isManager, userData?.employeeId, employees, teamId]);
-
-  // Load employees based on user role
+  // Load only the employees visible to the logged-in user's role and scope.
   useEffect(() => {
     const loadEmployees = async () => {
-      if (!isRoleDetermined) return;
+      if (!isRoleDetermined || !token) return;
       
       try {
         setIsLoading(true);
-        const data: EmployeeUserDto[] = await API.getAllEmployees();
-        const mapped: Employee[] = (data || []).filter(e => !isAdminEmployee(e)).map((e) => ({
-          id: e.id,
-          name: [e.firstName, e.lastName].filter(Boolean).join(' ') || String(e.id),
-          position: e.role || 'Employee',
+        const data = await dashboardApi.getEmployees(token, isManager
+          ? userData?.employeeId
+            ? { managerId: userData.employeeId }
+            : { teamId }
+          : {});
+        const visible = data.filter((employee) => !isDashboardAdminEmployee(employee));
+        const mapped: Employee[] = visible.map((employee) => ({
+          id: employee.id,
+          name: [employee.firstName, employee.lastName].filter(Boolean).join(' ') || employee.employeeCode || String(employee.id),
+          position: employee.role || 'Employee',
           avatar: "/placeholder.svg?height=40&width=40",
           lastUpdated: new Date().toISOString(),
-          status: 'active',
-          location: [normalizeCityName(e.city), e.state].filter(Boolean).join(', '),
+          status: employee.active ? 'active' : 'inactive',
+          location: [normalizeCityName(employee.city), employee.state].filter(Boolean).join(', '),
+          houseLatitude: employee.houseLatitude,
+          houseLongitude: employee.houseLongitude,
         }));
+        setEmployeeRecords(visible);
         setEmployees(mapped);
       } catch (err) {
-        setError((err as Error)?.message || 'Failed to load employees');
+        console.error('Failed to load dashboard employees:', err);
+        setEmployeeRecords([]);
+        setEmployees([]);
       } finally {
         setIsLoading(false);
       }
     };
-    loadEmployees();
-  }, [isRoleDetermined]);
+    void loadEmployees();
+  }, [isRoleDetermined, isManager, userData?.employeeId, teamId, token]);
 
-  // Get employees based on user role
-  const displayEmployees = useMemo(() => {
-    if (isManager) {
-      return teamMembers;
-    }
-    return employees; // Admin sees all employees
-  }, [isManager, teamMembers, employees]);
+  // Employee endpoints are already filtered by the logged-in user's scope.
+  const displayEmployees = employees;
 
   const handleDateRangeChange = (value: DateRangeOption) => {
     setSelectedDateRange(value);
@@ -549,45 +432,72 @@ export default function DashboardPage() {
     }
   }, [selectedDateRange, customStartDate, customEndDate, customDateRangeInvalid]);
 
-  // Load pre-aggregated, role-scoped KPIs from the optimized dashboard endpoint.
+  // The summary is scope-aware; visit rows provide the selected-period totals.
   useEffect(() => {
-    if (!hasHydratedDateFilter || !isRoleDetermined) return;
+    if (!hasHydratedDateFilter || !isRoleDetermined || !token) return;
     const run = async () => {
       try {
         setIsDateRangeLoading(true);
         const start = format(dateRange.start, 'yyyy-MM-dd');
         const end = format(dateRange.end, 'yyyy-MM-dd');
-        
-        const summary = await API.getDashboardSummary(start, end);
+
+        const [summaryResult, visitsResult] = await Promise.allSettled([
+          dashboardApi.getSummary(token),
+          dashboardApi.getVisits(token, start, end),
+        ]);
+
+        if (summaryResult.status === 'rejected' && visitsResult.status === 'rejected') {
+          throw visitsResult.reason;
+        }
+
+        const visits = visitsResult.status === 'fulfilled'
+          ? [...new Map(visitsResult.value.map((visit) => [visit.id, visit])).values()]
+          : [];
         const cMap = new Map<number, number>();
-        summary.countsByEmployee.forEach((item) => cMap.set(item.employeeId, item.visitCount ?? 0));
+        visits.forEach((visit) => {
+          if (visit.assignedEmployeeId == null) return;
+          cMap.set(visit.assignedEmployeeId, (cMap.get(visit.assignedEmployeeId) ?? 0) + 1);
+        });
+        const fallbackSummary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
         setCountsByEmployee(cMap);
         setKpis(prev => ({
           ...prev,
-          totalVisits: summary.totalVisits,
-          activeEmployees: summary.activeEmployees,
+          totalVisits: visitsResult.status === 'fulfilled'
+            ? visits.length
+            : fallbackSummary?.totalVisits ?? 0,
+          activeEmployees: visitsResult.status === 'fulfilled'
+            ? cMap.size
+            : fallbackSummary?.activeEmployees ?? 0,
         }));
       } catch (error) {
         console.error('Error fetching KPIs:', error);
-        // leave KPIs as-is if error
       } finally {
         setIsDateRangeLoading(false);
       }
     };
-    run();
-  }, [dateRange.start, dateRange.end, isRoleDetermined, hasHydratedDateFilter]);
+    void run();
+  }, [dateRange.start, dateRange.end, isRoleDetermined, hasHydratedDateFilter, token]);
 
   // Last-known GPS is independent of the date filter, which applies to visits only.
   useEffect(() => {
-    if (!isRoleDetermined) return;
+    if (!isRoleDetermined || !token) return;
     let cancelled = false;
     setLocationsLoading(true);
     const run = async () => {
       try {
-        const rows = await API.getAllEmployeeLocations();
-        const scoped = isManager ? rows.filter(row => teamMembers.some(emp => emp.id === row.empId)) : rows;
+        const locations = employeeRecords.length
+          ? await dashboardApi.getCurrentLocations(token, employeeRecords)
+          : [];
+        const rows = locations.map((location) => ({
+          empId: location.employeeId,
+          empName: location.employeeName,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          updatedAt: location.capturedAt,
+          updatedTime: '',
+        }));
         if (!cancelled) {
-          setMarkers(latestLocationMarkers(scoped));
+          setMarkers(latestLocationMarkers(rows));
           setLocationsError(null);
           setLocationsSyncedAt(Date.now());
         }
@@ -600,7 +510,7 @@ export default function DashboardPage() {
     };
     void run();
     return () => { cancelled = true; };
-  }, [isManager, teamMembers, isRoleDetermined, locationRefresh]);
+  }, [employeeRecords, isRoleDetermined, locationRefresh, token]);
 
   useEffect(() => {
     const refresh = () => {
@@ -668,7 +578,6 @@ export default function DashboardPage() {
         setView("dashboard");
         setHighlightedEmployee(null);
         setSelectedEmployeeMarkers([]);
-        setShowVisitLocations(false);
         setMapCenter(DEFAULT_MAP_CENTER);
         setMapZoom(DEFAULT_MAP_ZOOM);
       }
@@ -680,7 +589,6 @@ export default function DashboardPage() {
       setSelectedState(null);
       setHighlightedEmployee(null);
       setSelectedEmployeeMarkers([]);
-      setShowVisitLocations(false);
       setMapCenter(DEFAULT_MAP_CENTER);
       setMapZoom(DEFAULT_MAP_ZOOM);
       return;
@@ -789,7 +697,6 @@ export default function DashboardPage() {
     setSelectedEmployeeMarkers([]);
     setJourneyError(null);
     setHighlightedEmployee(employee);
-    setShowVisitLocations(true);
   }, [highlightedEmployee?.id]);
 
   const resetLocationView = useCallback(() => {
@@ -798,7 +705,6 @@ export default function DashboardPage() {
     setSelectedEmployeeMarkers([]);
     setJourneyError(null);
     setJourneyLoading(false);
-    setShowVisitLocations(false);
     setMapResetKey(value => value + 1);
   }, []);
 
@@ -812,43 +718,50 @@ export default function DashboardPage() {
     setSelectedEmployeeMarkers([]);
     setJourneySummary({ total: 0, unmapped: 0, hasHome: false });
     setJourneyError(null);
-    if (selectedLocationEmployee == null || !hasHydratedDateFilter || customDateRangeInvalid) {
+    if (selectedLocationEmployee == null || !hasHydratedDateFilter || customDateRangeInvalid || !token) {
       setJourneyLoading(false);
       return;
     }
     setJourneyLoading(true);
     const run = async () => {
-      const [home, journey] = await Promise.allSettled([
-        API.getEmployeeById(selectedLocationEmployee),
-        API.getEmployeeJourney(selectedLocationEmployee, journeyStart, journeyEnd),
-      ]);
-      if (cancelled || request !== journeyRequest.current) return;
       const points: MapMarker[] = [];
-      const problems: string[] = [];
-      let total = 0, unmapped = 0;
-      if (home.status === 'fulfilled') {
-        const employee = home.value;
-        if (employee && validCoordinates(employee.houseLatitude, employee.houseLongitude)) {
-          points.push({ id: `house-${employee.id}`, employeeId: employee.id,
-            name: `${selectedLocationName || 'Employee'} · Home`, type: 'house',
-            lat: Number(employee.houseLatitude), lng: Number(employee.houseLongitude),
-            subtitle: 'Saved home location' });
-        }
-      } else problems.push('Home location could not be loaded.');
-      if (journey.status === 'fulfilled') {
-        const result = journeyLocationMarkers(journey.value, journeyStart, journeyEnd);
+      const employee = highlightedEmployee;
+      if (employee && validCoordinates(employee.houseLatitude, employee.houseLongitude)) {
+        points.push({ id: `house-${employee.id}`, employeeId: employee.id,
+          name: `${selectedLocationName || 'Employee'} · Home`, type: 'house',
+          lat: Number(employee.houseLatitude), lng: Number(employee.houseLongitude),
+          subtitle: 'Saved home location' });
+      }
+      try {
+        const history = await dashboardApi.getLocationHistory(
+          token,
+          selectedLocationEmployee,
+          journeyStart,
+          journeyEnd,
+        );
+        if (cancelled || request !== journeyRequest.current) return;
+        const result = trackingLocationMarkers(history);
         points.push(...result.markers);
-        total = result.total;
-        unmapped = result.unmapped;
-      } else problems.push('Visits could not be loaded.');
-      setSelectedEmployeeMarkers(points);
-      setJourneySummary({ total, unmapped, hasHome: points.some(point => point.type === 'house') });
-      setJourneyError(problems.length ? problems.join(' ') : null);
-      setJourneyLoading(false);
+        setSelectedEmployeeMarkers(points);
+        setJourneySummary({
+          total: result.total,
+          unmapped: result.unmapped,
+          hasHome: points.some(point => point.type === 'house'),
+        });
+        setJourneyError(null);
+      } catch (error) {
+        if (cancelled || request !== journeyRequest.current) return;
+        console.error('Could not load employee movement history:', error);
+        setSelectedEmployeeMarkers(points);
+        setJourneySummary({ total: 0, unmapped: 0, hasHome: points.some(point => point.type === 'house') });
+        setJourneyError('Movement history could not be loaded.');
+      } finally {
+        if (!cancelled && request === journeyRequest.current) setJourneyLoading(false);
+      }
     };
     void run();
     return () => { cancelled = true; };
-  }, [selectedLocationEmployee, selectedLocationName, journeyStart, journeyEnd, hasHydratedDateFilter, customDateRangeInvalid, journeyRetry]);
+  }, [selectedLocationEmployee, selectedLocationName, journeyStart, journeyEnd, hasHydratedDateFilter, customDateRangeInvalid, journeyRetry, highlightedEmployee, token]);
 
   const handleEmployeeDetailSelect = useCallback((employee: Employee) => {
     pushHistoryState({
@@ -1106,17 +1019,6 @@ export default function DashboardPage() {
         </>
       )}
 
-      <DailyPricingModal
-        open={isPricingModalOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            setIsPricingModalOpen(true);
-          } else {
-            handlePricingModalDismiss();
-          }
-        }}
-        onCreateSuccess={handlePricingModalDismiss}
-      />
     </div>
   );
 }

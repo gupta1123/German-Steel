@@ -20,11 +20,21 @@ interface LeafletMapProps {
 const homeSvg = renderToStaticMarkup(<Home size={16} aria-hidden />);
 const employeeSvg = renderToStaticMarkup(<UserRound size={16} aria-hidden />);
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
-const markerLabel = (marker: LocationMarker) => marker.type === 'visit' ? `Visit ${marker.order ?? ''}: ${marker.name || 'Customer'}` : marker.type === 'house' ? marker.name || 'Home location' : `${marker.name || 'Employee'}: last-known location`;
+const markerLabel = (marker: LocationMarker) => marker.type === 'visit'
+  ? `Visit ${marker.order ?? ''}: ${marker.name || 'Customer'}`
+  : marker.type === 'tracking'
+    ? `Tracking point ${marker.order ?? ''}`
+    : marker.type === 'house'
+      ? marker.name || 'Home location'
+      : `${marker.name || 'Employee'}: last-known location`;
 
 function pointIcon(marker: LocationMarker) {
   const type = marker.type || 'live';
-  const content = type === 'house' ? homeSvg : type === 'visit' ? escapeHtml(String(marker.order ?? 'V')) : employeeSvg;
+  const content = type === 'house'
+    ? homeSvg
+    : type === 'visit' || type === 'tracking'
+      ? escapeHtml(String(marker.order ?? ''))
+      : employeeSvg;
   return L.divIcon({ className: 'location-marker',
     html: `<span class="location-marker-face location-marker-${type}" aria-label="${escapeHtml(markerLabel(marker))}">${content}</span>`,
     iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -20] });
@@ -33,8 +43,8 @@ function pointIcon(marker: LocationMarker) {
 function LocationDetails({ marker }: { marker: LocationMarker }) {
   return <div className="location-popup-content">
     <h3>{marker.name || 'Employee location'}</h3>
-    <p className="location-popup-kind">{marker.type === 'house' ? 'Home location' : marker.type === 'visit' ? `Visit ${marker.order ?? ''} · ${marker.subtitle || ''}` : 'Last-known location'}</p>
-    {marker.type !== 'visit' && marker.subtitle && <p>{marker.type === 'live' ? 'Updated: ' : ''}{marker.subtitle}</p>}
+    <p className="location-popup-kind">{marker.type === 'house' ? 'Home location' : marker.type === 'visit' ? `Visit ${marker.order ?? ''} · ${marker.subtitle || ''}` : marker.type === 'tracking' ? `Recorded point ${marker.order ?? ''}` : 'Last-known location'}</p>
+    {marker.type !== 'visit' && marker.type !== 'tracking' && marker.subtitle && <p>{marker.type === 'live' ? 'Updated: ' : ''}{marker.subtitle}</p>}
     {marker.tooltipLines?.map((line, index) => {
       const separator = line.indexOf(': ');
       return <div className="location-popup-row" key={index}><span>{separator < 0 ? '' : line.slice(0, separator)}</span><strong>{separator < 0 ? line : line.slice(separator + 2)}</strong></div>;
@@ -73,10 +83,13 @@ function LocationLayers({ markers, focused, onMarkerClick }: { markers: Location
     moveend: () => setRevision(value => value + 1),
     resize: () => setRevision(value => value + 1),
   });
-  const groups = useMemo(() => groupNearbyPoints(markers.map(marker => {
-    const point = map.latLngToLayerPoint([marker.lat, marker.lng]);
-    return { marker, x: point.x, y: point.y };
-  })), [markers, map, revision]);
+  const groups = useMemo(() => {
+    void revision;
+    return groupNearbyPoints(markers.map(marker => {
+      const point = map.latLngToLayerPoint([marker.lat, marker.lng]);
+      return { marker, x: point.x, y: point.y };
+    }));
+  }, [markers, map, revision]);
 
   return <>{groups.map(group => {
     const groupKey = group.map(point => `${point.marker.type || 'live'}-${point.marker.id}`).sort().join('|');

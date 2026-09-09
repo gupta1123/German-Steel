@@ -10,9 +10,21 @@ const normalizeEmployeeRoleValue = (role: unknown) =>
 export const getEmployeeRoleCategory = (role: unknown): EmployeeRoleCategory => {
   const normalizedRole = normalizeEmployeeRoleValue(role);
 
-  if (normalizedRole === 'admin' || normalizedRole === 'role admin') return 'admin';
-  if (normalizedRole.includes('field officer')) return 'field-officer';
-  if (normalizedRole.includes('manager')) return 'regional-manager';
+  if (
+    normalizedRole === 'admin' ||
+    normalizedRole === 'role admin' ||
+    normalizedRole === 'ho admin'
+  ) return 'admin';
+  if (
+    normalizedRole.includes('field officer') ||
+    normalizedRole === 'retail fe' ||
+    normalizedRole === 'institution project fe' ||
+    normalizedRole === 'dual fe'
+  ) return 'field-officer';
+  if (
+    normalizedRole.includes('manager') ||
+    normalizedRole === 'zonal supervisor'
+  ) return 'regional-manager';
   return 'other';
 };
 

@@ -5,7 +5,7 @@ export interface LocationMarker {
   name?: string;
   lat: number;
   lng: number;
-  type?: 'live' | 'house' | 'visit';
+  type?: 'live' | 'house' | 'visit' | 'tracking';
   subtitle?: string;
   tooltipLines?: string[];
   order?: number;
@@ -102,6 +102,53 @@ export function journeyLocationMarkers(visits: JourneyPoint[], start: string, en
         `Check-out: ${visit.checkoutDate ? formatLocationTime(locationTimestamp(visit.checkoutDate, visit.checkoutTime)) : 'Not recorded'}`,
         ...(place ? [`Customer address: ${place}`] : []),
       ] });
+  });
+  return { markers, total: ordered.length, unmapped: ordered.length - markers.length };
+}
+
+interface TrackingPoint {
+  id: number | string;
+  employeeId: number;
+  latitude: number;
+  longitude: number;
+  capturedAt: string;
+  provider?: string | null;
+  accuracyMeters?: number | null;
+  batteryPercent?: number | null;
+}
+
+/** Convert the new tracking-history response into a chronological map trail. */
+export function trackingLocationMarkers(points: TrackingPoint[]) {
+  const unique = new Map<string, TrackingPoint>();
+  for (const point of points) {
+    unique.set(String(point.id), point);
+  }
+  const ordered = [...unique.values()].sort((left, right) =>
+    (locationTimestamp(left.capturedAt) ?? Infinity) -
+    (locationTimestamp(right.capturedAt) ?? Infinity) ||
+    String(left.id).localeCompare(String(right.id)));
+  const markers: LocationMarker[] = [];
+  ordered.forEach((point, index) => {
+    if (!validCoordinates(point.latitude, point.longitude)) return;
+    const capturedAt = locationTimestamp(point.capturedAt);
+    const details = [
+      `Recorded: ${formatLocationTime(capturedAt)}`,
+      ...(point.accuracyMeters != null ? [`Accuracy: ${point.accuracyMeters} m`] : []),
+      ...(point.batteryPercent != null ? [`Battery: ${point.batteryPercent}%`] : []),
+    ];
+    markers.push({
+      id: `tracking-${point.id}`,
+      employeeId: point.employeeId,
+      name: `Tracking point ${index + 1}`,
+      lat: Number(point.latitude),
+      lng: Number(point.longitude),
+      type: 'tracking',
+      order: index + 1,
+      updatedAt: capturedAt,
+      coordinateSource: point.provider || 'GPS',
+      subtitle: formatLocationTime(capturedAt),
+      tooltipLines: details,
+    });
   });
   return { markers, total: ordered.length, unmapped: ordered.length - markers.length };
 }

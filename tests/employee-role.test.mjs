@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isAdminEmployee, getEmployeeRoleFormValue } from '../lib/employee-role.ts';
+import { getEmployeeRoleCategory, getEmployeeRoleFormValue, isAdminEmployee } from '../lib/employee-role.ts';
 
 test('edit form prefills every supported manager role with the Regional Manager option', () => {
   for (const role of ['Office Manager', 'Regional Manager', 'Manager', ' office manager ', 'REGIONAL_MANAGER', 'ROLE_OFFICE_MANAGER', 'regional-manager']) {
@@ -16,6 +16,15 @@ test('edit form normalizes field officer roles without assigning missing or unsu
   assert.equal(getEmployeeRoleFormValue(undefined), '');
   assert.equal(getEmployeeRoleFormValue('Admin'), 'Admin');
   assert.equal(getEmployeeRoleFormValue('Other'), 'Other');
+});
+
+test('new CRM employee-role enums map to the existing UI categories', () => {
+  assert.equal(getEmployeeRoleCategory('HO_ADMIN'), 'admin');
+  assert.equal(getEmployeeRoleCategory('RETAIL_FE'), 'field-officer');
+  assert.equal(getEmployeeRoleCategory('INSTITUTION_PROJECT_FE'), 'field-officer');
+  assert.equal(getEmployeeRoleCategory('DUAL_FE'), 'field-officer');
+  assert.equal(getEmployeeRoleCategory('ZONAL_SUPERVISOR'), 'regional-manager');
+  assert.equal(getEmployeeRoleCategory('MANAGER'), 'regional-manager');
 });
 
 test('employee lists exclude admins from employee or linked account roles', () => {

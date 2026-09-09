@@ -1,109 +1,139 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
+import { useAuth } from '@/components/auth-provider';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, CalendarDays, Clock3, Pencil } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
+import { AttendanceRule, attendanceRulesApi } from '@/lib/attendance-rules-api';
+import { CheckCircle2, Clock3, Loader2, Pencil, Route } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface WorkingDaysData {
-    fullDayCount: number;
-    halfDayCount: number;
+interface RuleFormData {
+    halfDayVisitCount: number | '';
+    fullDayVisitCount: number | '';
+    active: boolean;
 }
 
-type WorkingDaysFormData = {
-    fullDayCount: number | "";
-    halfDayCount: number | "";
+const roleLabel = (role: string): string => {
+    const labels: Record<string, string> = {
+        RETAIL_FE: 'Retail Field Executive',
+        INSTITUTION_PROJECT_FE: 'Institution & Project Field Executive',
+        DUAL_FE: 'Dual Field Executive',
+        ZONAL_SUPERVISOR: 'Zonal Supervisor',
+        MANAGER: 'Manager',
+        HO_ADMIN: 'Head Office Admin',
+    };
+    return labels[role] ?? role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
 const WorkingDays: React.FC = () => {
-    const [workingDays, setWorkingDays] = useState<WorkingDaysData>({ fullDayCount: 6, halfDayCount: 3 });
-    const [editMode, setEditMode] = useState(false);
-    const [editedData, setEditedData] = useState<WorkingDaysFormData>({ fullDayCount: 6, halfDayCount: 3 });
+    const { token } = useAuth();
+    const [rules, setRules] = useState<AttendanceRule[]>([]);
+    const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+    const [editedData, setEditedData] = useState<RuleFormData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
-    const isValidDayCount = (value: number | "") =>
-        value !== "" && Number.isInteger(value) && value >= 1;
-    const isWorkingDaysFormValid =
-        isValidDayCount(editedData.fullDayCount) && isValidDayCount(editedData.halfDayCount);
-    const workingDaysAreDirty = editMode && (
-        Number(editedData.fullDayCount) !== workingDays.fullDayCount ||
-        Number(editedData.halfDayCount) !== workingDays.halfDayCount
+
+    const editingRule = useMemo(
+        () => rules.find((rule) => rule.id === editingRuleId) ?? null,
+        [editingRuleId, rules],
     );
-    const { requestDiscard } = useUnsavedChanges(workingDaysAreDirty);
+    const isValidVisitCount = (value: number | '') =>
+        value !== '' && Number.isInteger(value) && value >= 1;
+    const isFormValid = Boolean(
+        editedData &&
+        isValidVisitCount(editedData.halfDayVisitCount) &&
+        isValidVisitCount(editedData.fullDayVisitCount) &&
+        Number(editedData.fullDayVisitCount) > Number(editedData.halfDayVisitCount),
+    );
+    const ruleIsDirty = Boolean(
+        editingRule &&
+        editedData &&
+        (
+            Number(editedData.halfDayVisitCount) !== editingRule.halfDayVisitCount ||
+            Number(editedData.fullDayVisitCount) !== editingRule.fullDayVisitCount ||
+            editedData.active !== editingRule.active
+        ),
+    );
+    const { requestDiscard } = useUnsavedChanges(ruleIsDirty);
 
-    // Get auth data from localStorage instead of props
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-
-    const fetchWorkingDays = useCallback(async () => {
+    const fetchRules = useCallback(async () => {
         if (!token) {
             setError('Authentication token not found. Please log in.');
+            setIsLoading(false);
             return;
         }
 
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/getById?id=2`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch working days: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            setWorkingDays(result);
-            setEditedData(result);
+            setRules(await attendanceRulesApi.getRules(token));
         } catch (error) {
-            setError(error instanceof Error ? error.message : 'An unknown error occurred');
+            setError(error instanceof Error ? error.message : 'Could not load attendance rules.');
         } finally {
             setIsLoading(false);
         }
     }, [token]);
 
-    const updateWorkingDays = async () => {
-        if (!isWorkingDaysFormValid) return;
+    useEffect(() => {
+        void fetchRules();
+    }, [fetchRules]);
 
-        if (!token) {
-            setError('Authentication token not found. Please log in.');
+    const openEditor = (rule: AttendanceRule) => {
+        requestDiscard(() => {
+            setEditingRuleId(rule.id);
+            setEditedData({
+                halfDayVisitCount: rule.halfDayVisitCount,
+                fullDayVisitCount: rule.fullDayVisitCount,
+                active: rule.active,
+            });
+        }, ruleIsDirty);
+    };
+
+    const cancelEdit = () => {
+        requestDiscard(() => {
+            setEditingRuleId(null);
+            setEditedData(null);
+        }, ruleIsDirty);
+    };
+
+    const updateCount = (field: 'halfDayVisitCount' | 'fullDayVisitCount', value: string) => {
+        if (!editedData) return;
+        if (value === '') {
+            setEditedData({ ...editedData, [field]: '' });
             return;
         }
+        const numericValue = Number(value);
+        if (Number.isInteger(numericValue)) setEditedData({ ...editedData, [field]: numericValue });
+    };
+
+    const saveRule = async () => {
+        if (!token || !editingRule || !editedData || !isFormValid || !ruleIsDirty) return;
 
         setIsSaving(true);
         setError(null);
         try {
-            const payload = {
-                fullDayCount: Number(editedData.fullDayCount),
-                halfDayCount: Number(editedData.halfDayCount),
-            };
-
-            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-rule/edit?id=2`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
+            const updatedRule = await attendanceRulesApi.updateRule(token, {
+                ...editingRule,
+                halfDayVisitCount: Number(editedData.halfDayVisitCount),
+                fullDayVisitCount: Number(editedData.fullDayVisitCount),
+                active: editedData.active,
             });
-
-            if (!response.ok) {
-                throw new Error(`Failed to update working days: ${response.statusText}`);
-            }
-
-            setWorkingDays(payload);
-            setEditedData(payload);
-            setEditMode(false);
-            toast.success('Working-day settings updated', { duration: 3000 });
+            setRules((currentRules) => currentRules.map((rule) => (
+                rule.id === updatedRule.id ? updatedRule : rule
+            )));
+            setEditingRuleId(null);
+            setEditedData(null);
+            toast.success('Attendance rule updated', { duration: 3000 });
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Error updating working days';
+            const message = error instanceof Error ? error.message : 'Could not update attendance rule.';
             setError(message);
             toast.error(message, { duration: 3000 });
         } finally {
@@ -111,168 +141,140 @@ const WorkingDays: React.FC = () => {
         }
     };
 
-    const handleInputChange = (field: keyof WorkingDaysData, value: string) => {
-        if (value === "") {
-            setEditedData(prev => ({
-                ...prev,
-                [field]: ""
-            }));
-            return;
-        }
-
-        const parsedValue = parseInt(value, 10);
-        if (!Number.isNaN(parsedValue)) {
-            setEditedData(prev => ({
-                ...prev,
-                [field]: parsedValue
-            }));
-        }
-    };
-
-    const startEdit = () => {
-        setEditedData({
-            fullDayCount: workingDays.fullDayCount,
-            halfDayCount: workingDays.halfDayCount
-        });
-        setEditMode(true);
-    };
-
-    const cancelEdit = () => {
-        requestDiscard(() => {
-            setEditedData({
-                fullDayCount: workingDays.fullDayCount,
-                halfDayCount: workingDays.halfDayCount
-            });
-            setEditMode(false);
-        });
-    };
-
-    useEffect(() => {
-        if (token) {
-            fetchWorkingDays();
-        }
-    }, [fetchWorkingDays]);
-
     return (
         <Card className="gap-0 border-border/70 py-0 shadow-sm">
             <CardContent className="space-y-4 p-4">
-                    {isLoading && (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <Skeleton className="h-32 rounded-xl" />
-                            <Skeleton className="h-32 rounded-xl" />
-                            <Skeleton className="h-16 rounded-xl sm:col-span-2" />
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <div className="flex items-start gap-3">
+                        <Route className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                        <div>
+                            <p className="text-sm font-medium text-foreground">Attendance is based on completed visits</p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                No vehicle means absent. With a vehicle, zero completed visits means present; reaching the configured thresholds changes the day to half day or full day.
+                            </p>
                         </div>
-                    )}
+                    </div>
+                </div>
 
-                    {error && (
-                        <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                <p>{error}</p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8"
-                                    onClick={() => {
-                                        setError(null);
-                                        fetchWorkingDays();
-                                    }}
-                                >
-                                    Try Again
-                                </Button>
-                            </div>
+                {isLoading && (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                        {Array.from({ length: 4 }, (_, index) => (
+                            <Skeleton key={index} className="h-52 rounded-xl" />
+                        ))}
+                    </div>
+                )}
+
+                {error && (
+                    <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p>{error}</p>
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => void fetchRules()}>
+                                Try Again
+                            </Button>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {!isLoading && !error && (
-                        <div className="space-y-3">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <section className="rounded-xl border border-border/70 bg-card p-4">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex items-center gap-3">
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
-                                                <CalendarDays className="h-4 w-4" />
-                                            </span>
-                                            <div>
-                                                <Label htmlFor="fullDayCount" className="text-sm font-semibold text-foreground">Full days</Label>
-                                                <p className="mt-0.5 text-xs text-muted-foreground">Complete attendance value</p>
+                {!isLoading && !error && rules.length === 0 && (
+                    <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+                        No attendance rules are configured.
+                    </div>
+                )}
+
+                {!isLoading && rules.length > 0 && (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                        {rules.map((rule) => {
+                            const isEditing = editingRuleId === rule.id && editedData;
+                            return (
+                                <section key={rule.id} className="rounded-xl border border-border/70 bg-card p-4 shadow-sm">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="truncate text-sm font-semibold text-foreground">{rule.ruleName}</h3>
+                                                <Badge variant={rule.active ? 'default' : 'secondary'}>
+                                                    {rule.active ? 'Active' : 'Inactive'}
+                                                </Badge>
                                             </div>
+                                            <p className="mt-1 text-xs text-muted-foreground">{roleLabel(rule.employeeRole)}</p>
                                         </div>
-                                        {editMode ? (
-                                            <Input
-                                                id="fullDayCount"
-                                                type="number"
-                                                value={editedData.fullDayCount}
-                                                onChange={(event) => handleInputChange('fullDayCount', event.target.value)}
-                                                className="h-9 w-24 text-right text-sm font-semibold"
-                                                min="1"
-                                                step="1"
-                                                aria-invalid={!isValidDayCount(editedData.fullDayCount)}
-                                            />
-                                        ) : (
-                                            <span className="text-2xl font-semibold tracking-tight text-foreground">{workingDays.fullDayCount}</span>
+                                        {!isEditing && (
+                                            <Button variant="outline" size="sm" className="h-8" onClick={() => openEditor(rule)}>
+                                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                                Edit
+                                            </Button>
                                         )}
                                     </div>
-                                </section>
 
-                                <section className="rounded-xl border border-border/70 bg-card p-4">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex items-center gap-3">
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                                                <Clock3 className="h-4 w-4" />
-                                            </span>
-                                            <div>
-                                                <Label htmlFor="halfDayCount" className="text-sm font-semibold text-foreground">Half days</Label>
-                                                <p className="mt-0.5 text-xs text-muted-foreground">Partial attendance value</p>
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                                            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                                                <Clock3 className="h-3.5 w-3.5 text-amber-600" />
+                                                Half-day visits
+                                            </div>
+                                            {isEditing ? (
+                                                <Input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    className="mt-2 h-9"
+                                                    value={editedData.halfDayVisitCount}
+                                                    onChange={(event) => updateCount('halfDayVisitCount', event.target.value)}
+                                                />
+                                            ) : (
+                                                <p className="mt-2 text-2xl font-semibold tabular-nums">{rule.halfDayVisitCount}</p>
+                                            )}
+                                        </div>
+                                        <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                                            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                                Full-day visits
+                                            </div>
+                                            {isEditing ? (
+                                                <Input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    className="mt-2 h-9"
+                                                    value={editedData.fullDayVisitCount}
+                                                    onChange={(event) => updateCount('fullDayVisitCount', event.target.value)}
+                                                />
+                                            ) : (
+                                                <p className="mt-2 text-2xl font-semibold tabular-nums">{rule.fullDayVisitCount}</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {isEditing && (
+                                        <div className="mt-3 space-y-3 rounded-lg border border-border/60 p-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <Label htmlFor={`active-rule-${rule.id}`} className="text-sm font-medium">Rule active</Label>
+                                                    <p className="text-xs text-muted-foreground">Use this rule for new attendance calculations.</p>
+                                                </div>
+                                                <Switch
+                                                    id={`active-rule-${rule.id}`}
+                                                    checked={editedData.active}
+                                                    onCheckedChange={(active) => setEditedData({ ...editedData, active })}
+                                                />
+                                            </div>
+                                            {!isFormValid && (
+                                                <p className="text-xs text-destructive">
+                                                    Enter positive whole numbers, with the full-day threshold higher than the half-day threshold.
+                                                </p>
+                                            )}
+                                            <div className="flex justify-end gap-2 border-t pt-3">
+                                                <Button variant="outline" size="sm" onClick={cancelEdit} disabled={isSaving}>Cancel</Button>
+                                                <Button size="sm" onClick={() => void saveRule()} disabled={isSaving || !isFormValid || !ruleIsDirty}>
+                                                    {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : 'Save changes'}
+                                                </Button>
                                             </div>
                                         </div>
-                                        {editMode ? (
-                                            <Input
-                                                id="halfDayCount"
-                                                type="number"
-                                                value={editedData.halfDayCount}
-                                                onChange={(event) => handleInputChange('halfDayCount', event.target.value)}
-                                                className="h-9 w-24 text-right text-sm font-semibold"
-                                                min="1"
-                                                step="1"
-                                                aria-invalid={!isValidDayCount(editedData.halfDayCount)}
-                                            />
-                                        ) : (
-                                            <span className="text-2xl font-semibold tracking-tight text-foreground">{workingDays.halfDayCount}</span>
-                                        )}
-                                    </div>
+                                    )}
                                 </section>
-                            </div>
-
-                            <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="flex min-w-0 items-start gap-3">
-                                    <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                                    <p className="max-w-3xl text-xs leading-5 text-muted-foreground">
-                                        These values determine how attendance is classified for salary calculations. Full days represent complete attendance; half days represent partial attendance.
-                                    </p>
-                                </div>
-                                {editMode ? (
-                                    <div className="flex shrink-0 gap-2">
-                                        <Button onClick={cancelEdit} variant="outline" size="sm" className="h-8">Cancel</Button>
-                                        <Button
-                                            onClick={updateWorkingDays}
-                                            size="sm"
-                                            className="h-8 min-w-24"
-                                            disabled={isSaving || !isWorkingDaysFormValid || !workingDaysAreDirty}
-                                        >
-                                            {isSaving ? (
-                                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
-                                            ) : 'Save changes'}
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <Button onClick={startEdit} variant="outline" size="sm" className="h-8 shrink-0">
-                                        <Pencil className="mr-2 h-3.5 w-3.5" />
-                                        Edit values
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                            );
+                        })}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

@@ -88,7 +88,7 @@ export default function OverviewSection(props: OverviewSectionProps) {
 
     <section className="space-y-3" aria-label="Employee locations">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h2 className="text-sm font-semibold">Employee locations</h2><p className="mt-0.5 text-xs text-muted-foreground">Last-known positions · select an employee to see home and visits.</p></div>
+        <div><h2 className="text-sm font-semibold">Employee locations</h2><p className="mt-0.5 text-xs text-muted-foreground">Last-known positions · select an employee to see home and movement history.</p></div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground" title={locationsSyncedAt ? formatLocationTime(locationsSyncedAt) : undefined}>
             {locationsLoading ? 'Refreshing…' : locationsError ? 'Refresh failed' : locationsSyncedAt ? `Synced ${new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' }).format(locationsSyncedAt)}` : 'Not synced'}
@@ -111,7 +111,7 @@ export default function OverviewSection(props: OverviewSectionProps) {
         <div className={`${mobileView === 'map' ? 'flex' : 'hidden'} min-w-0 flex-col overflow-hidden rounded-lg border bg-card lg:flex`}>
           <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b px-3 py-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><LocateFixed className="h-3.5 w-3.5" />Last known</span>
-            {selectedId != null && <><span className="inline-flex items-center gap-1.5"><Home className="h-3.5 w-3.5" />Home</span><span>1, 2, 3 · visits in order</span></>}
+            {selectedId != null && <><span className="inline-flex items-center gap-1.5"><Home className="h-3.5 w-3.5" />Home</span><span>1, 2, 3 · recorded points in order</span></>}
             <span className="ml-auto">{selectedId != null ? periodLabel : 'Latest available updates'}</span>
           </div>
           <div className="relative isolate h-[55dvh] min-h-[360px] grow lg:h-[calc(100dvh-350px)]">
@@ -121,8 +121,8 @@ export default function OverviewSection(props: OverviewSectionProps) {
             {visibleMarkers.length === 0 && <div className="pointer-events-none absolute inset-0 z-[500] grid place-items-center p-6"><p role="status" className="max-w-sm rounded-lg border bg-card/95 px-4 py-3 text-center text-sm shadow-sm">{locationsLoading || journeyLoading ? 'Loading locations…' : selectedId != null ? 'No mapped locations for this employee in the selected period.' : filtered.length ? 'No last-known positions for these employees.' : 'No employees match your filters.'}</p></div>}
           </div>
           {selectedId != null && <div className="shrink-0 border-t px-3 py-2.5 text-xs" aria-live="polite">
-            <div className="flex flex-wrap items-center justify-between gap-1"><span className="font-medium">{highlightedEmployee?.name}</span><span className="text-muted-foreground">{journeyLoading ? 'Loading home and visits…' : `${journeySummary.total} ${journeySummary.total === 1 ? 'visit' : 'visits'} · ${journeySummary.hasHome ? 'Home available' : 'No saved home location'}`}</span></div>
-            {!journeyLoading && journeySummary.unmapped > 0 && <p className="mt-1 text-muted-foreground">{journeySummary.unmapped} visits have no valid coordinates. Numbering preserves their place in the sequence.</p>}
+            <div className="flex flex-wrap items-center justify-between gap-1"><span className="font-medium">{highlightedEmployee?.name}</span><span className="text-muted-foreground">{journeyLoading ? 'Loading home and movement history…' : `${journeySummary.total} recorded ${journeySummary.total === 1 ? 'point' : 'points'} · ${journeySummary.hasHome ? 'Home available' : 'No saved home location'}`}</span></div>
+            {!journeyLoading && journeySummary.unmapped > 0 && <p className="mt-1 text-muted-foreground">{journeySummary.unmapped} recorded points have no valid coordinates. Numbering preserves their place in the sequence.</p>}
             {journeyError && <div role="alert" className="mt-1 flex items-center gap-2 text-destructive">{journeyError}<button type="button" className="underline" onClick={onRetryJourney}>Retry</button></div>}
             <p className="mt-1 text-muted-foreground">Nearby markers are spread apart for selection; connecting lines point to the recorded coordinates.</p>
           </div>}
@@ -145,4 +145,3 @@ export default function OverviewSection(props: OverviewSectionProps) {
     </section>
   </>;
 }
-

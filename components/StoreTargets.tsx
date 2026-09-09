@@ -15,12 +15,14 @@ import {
 } from "lucide-react";
 
 import {
-  API,
   type EmployeeUserDto,
   type SalesTargetCreatePayload,
   type SalesTargetDto,
   type StoreDto,
-} from "@/lib/api";
+  TargetsApiError,
+  targetsApi,
+} from "@/lib/targets-api";
+import { useAuth } from "@/components/auth-provider";
 import { toast } from "sonner";
 import { groupOfficerTargets, isTargetFieldOfficer, summarizeTargets } from "@/lib/officer-targets";
 import { Badge } from "@/components/ui/badge";
@@ -94,14 +96,6 @@ interface PaceMetrics {
   remainingUnits: number;
   remainingLabel: string;
 }
-
-const getMonthRange = (month: number, year: number) => {
-  const lastDay = new Date(year, month, 0).getDate();
-  return {
-    startDate: `${year}-${String(month).padStart(2, "0")}-01`,
-    endDate: `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
-  };
-};
 
 const numberFormatter = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const formatTons = (value: number | null | undefined) => `${numberFormatter.format(Number(value) || 0)} t`;
@@ -230,6 +224,7 @@ function TargetProgress({ percent }: { percent: number }) {
 }
 
 export default function StoreTargets() {
+  const { token } = useAuth();
   const today = useMemo(() => new Date(), []);
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
@@ -310,50 +305,64 @@ export default function StoreTargets() {
   const loadDirectory = useCallback(async () => {
     setIsLoadingDirectory(true);
     setDirectoryError(null);
+    if (!token) {
+      setEmployees([]);
+      setDirectoryError("Authentication token not found. Please log in.");
+      setIsLoadingDirectory(false);
+      return;
+    }
     try {
-      const result = await API.getEmployees<EmployeeUserDto>();
+      const result = await targetsApi.getEmployees(token);
       setEmployees(Array.isArray(result) ? result : []);
     } catch {
       setDirectoryError("Could not load field officers.");
     } finally { setIsLoadingDirectory(false); }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
-    if (!isFormOpen || selectedOfficerId == null) return;
+    if (!isFormOpen || selectedOfficerId == null || !token) return;
     let cancelled = false;
     setIsLoadingStores(true);
     setStoreError(null);
     setStoreDirectory(null);
-    void API.getStoresByEmployee(selectedOfficerId, { sortBy: "storeName", sortOrder: "asc" })
+    void targetsApi.getStoresByEmployee(token, selectedOfficerId)
       .then((response) => {
         if (cancelled) return;
-        if (!Array.isArray(response.content)) throw new Error("Could not load assigned stores.");
-        const assigned = response.content.filter((store) =>
+        if (!Array.isArray(response)) throw new Error("Could not load assigned stores.");
+        const assigned = response.filter((store) =>
           store.employeeId == null || Number(store.employeeId) === selectedOfficerId);
         setStoreDirectory({ officerId: selectedOfficerId, stores: assigned });
       })
       .catch(() => { if (!cancelled) setStoreError("Could not load this officer’s stores."); })
       .finally(() => { if (!cancelled) setIsLoadingStores(false); });
     return () => { cancelled = true; };
-  }, [isFormOpen, selectedOfficerId, storeRetry]);
+  }, [isFormOpen, selectedOfficerId, storeRetry, token]);
 
   const loadTargets = useCallback(async () => {
     const requestId = ++latestRequest.current;
     setIsLoadingTargets(true);
     setLoadError(null);
+    if (!token) {
+      setTargets([]);
+      setLoadError("Authentication token not found. Please log in.");
+      setIsLoadingTargets(false);
+      return;
+    }
     try {
-      const range = getMonthRange(filters.month, filters.year);
-      const response = await API.searchSalesTargets({
-        ...range,
+      const response = await targetsApi.searchSalesTargets(token, {
         targetType: "MONTHLY",
+        month: filters.month,
+        year: filters.year,
       });
       if (requestId === latestRequest.current) setTargets(Array.isArray(response) ? response.filter((target) => target.targetType === "MONTHLY") : []);
     } catch (error) {
       if (requestId !== latestRequest.current) return;
       setTargets([]);
-      setLoadError(error instanceof Error ? error.message : "Failed to load sales targets.");
+      setLoadError(error instanceof TargetsApiError && error.status === 404
+        ? "The new backend does not expose a Targets endpoint yet."
+        : error instanceof Error ? error.message : "Failed to load sales targets.");
     } finally { if (requestId === latestRequest.current) setIsLoadingTargets(false); }
-  }, [filters.month, filters.year]);
+  }, [filters.month, filters.year, token]);
 
   useEffect(() => { void loadDirectory(); }, [loadDirectory]);
   useEffect(() => { void loadTargets(); return () => { latestRequest.current += 1; }; }, [loadTargets]);
@@ -432,14 +441,14 @@ export default function StoreTargets() {
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault();
-    if (isSaving) return;
+    if (isSaving || !token) return;
     const validationError = validateForm();
     if (validationError) { setFormError(validationError); toast.error(validationError, { duration: 3000 }); return; }
     setIsSaving(true);
     setFormError(null);
     try {
       if (editingTarget) {
-        const updated = await API.editSalesTarget(editingTarget.id, {
+        const updated = await targetsApi.editSalesTarget(token, editingTarget.id, {
           ...(panelMode === "achievement"
             ? { fulfilledTons: Number(form.fulfilledTons) }
             : { targetTons: Number(form.targetTons) }),
@@ -456,7 +465,7 @@ export default function StoreTargets() {
           remarks: form.remarks.trim() || undefined,
           month: form.month, year: form.year,
         };
-        await API.createSalesTarget(payload);
+        await targetsApi.createSalesTarget(token, payload);
         toast.success("Target created", { duration: 3000 });
       }
       markSaved();
