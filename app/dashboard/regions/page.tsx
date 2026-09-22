@@ -298,7 +298,7 @@ export default function RegionsPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>{editingRegion ? `Edit Region #${editingRegion.id}` : 'New Sales Region'}</DialogTitle><DialogDescription>Code is unique. Name is shown in dropdowns across retail, institution, project.</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-1.5"><Label>Code *</Label><Input value={regionForm.code} onChange={(e)=>setRegionForm({...regionForm, code: e.target.value.toUpperCase().slice(0,40)})} placeholder="e.g. PUNE" className="uppercase" /></div>
+            <div className="space-y-1.5"><Label>Code *</Label><Input value={regionForm.code} onChange={(e)=>setRegionForm({...regionForm, code: e.target.value.toUpperCase().slice(0,40)})} placeholder="e.g. PUNE" className="normal-case" data-preserve-case="true" /></div>
             <div className="space-y-1.5"><Label>Name *</Label><Input value={regionForm.name} onChange={(e)=>setRegionForm({...regionForm, name: e.target.value})} placeholder="e.g. Pune" /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={()=>setRegionDialogOpen(false)} disabled={regionSaving}>Cancel</Button><Button onClick={()=>void saveRegion()} disabled={regionSaving}>{regionSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingRegion ? 'Save changes' : 'Create region'}</Button></DialogFooter>

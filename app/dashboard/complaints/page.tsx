@@ -883,7 +883,7 @@ const Complaints = () => {
                     </DialogHeader>
                     <div className="grid gap-6 md:grid-cols-2">
                         <div className="grid content-start gap-4">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</p>
+                            <p className="text-xs font-semibold capitalize tracking-wide text-muted-foreground">Details</p>
                                 <div className="grid gap-2">
                                     <Label htmlFor="taskTitle">Complaint Title</Label>
                                     <Input
@@ -953,7 +953,7 @@ const Complaints = () => {
                                 </div>
                             </div>
                             <div className="grid content-start gap-4">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assignment</p>
+                                <p className="text-xs font-semibold capitalize tracking-wide text-muted-foreground">Assignment</p>
                                 <div className="grid gap-2">
                                     <Label htmlFor="assignedToId">
                                         Assigned To {isManager && <span className="text-xs text-muted-foreground">(Direct Reports)</span>}
@@ -1091,7 +1091,7 @@ const Complaints = () => {
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
                                             <div className="min-w-0 space-y-1">
-                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Priority</p>
+                                                <p className="text-[10px] font-semibold capitalize tracking-wide text-muted-foreground">Priority</p>
                                                 <Select
                                                     value={task.priority?.toLowerCase() || 'low'}
                                                     onValueChange={(value) => updateTaskField(task.id, 'priority', value)}
@@ -1109,7 +1109,7 @@ const Complaints = () => {
                                                 </Select>
                                             </div>
                                             <div className="min-w-0 space-y-1">
-                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
+                                                <p className="text-[10px] font-semibold capitalize tracking-wide text-muted-foreground">Status</p>
                                                 <Select
                                                     value={task.status}
                                                     onValueChange={(value) => updateTaskField(task.id, 'status', value)}
@@ -1199,7 +1199,7 @@ const Complaints = () => {
                         <div className="space-y-6">
                             <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-4">
                                 <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Complaint</p>
+                                    <p className="text-xs font-semibold capitalize tracking-wide text-muted-foreground">Complaint</p>
                                     <p className="text-lg font-semibold text-card-foreground">
                                         {selectedTask.taskTitle || "Untitled Complaint"}
                                     </p>
@@ -1207,18 +1207,18 @@ const Complaints = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                     <div>
-                                        <p className="text-xs uppercase text-muted-foreground">Assigned To</p>
+                                        <p className="text-xs capitalize text-muted-foreground">Assigned To</p>
                                         <p className="font-semibold text-card-foreground">{selectedTask.assignedToName}</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs uppercase text-muted-foreground">Due Date</p>
+                                        <p className="text-xs capitalize text-muted-foreground">Due Date</p>
                                         <p className="font-semibold text-card-foreground">
                                             {selectedTask.dueDate ? format(new Date(selectedTask.dueDate), 'MMM dd, yyyy') : 'Not set'}
                                         </p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <p className="text-xs uppercase text-muted-foreground">Current Status</p>
+                                    <p className="text-xs capitalize text-muted-foreground">Current Status</p>
                                     <Badge variant="secondary" className="text-xs">
                                         {selectedTask.status}
                                     </Badge>

@@ -716,7 +716,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                       <property.icon className="h-3.5 w-3.5" />
                     </div>
                     <div className="min-w-0">
-                      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{property.label}</dt>
+                      <dt className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">{property.label}</dt>
                       <dd className="break-words text-sm text-foreground">{property.value}</dd>
                     </div>
                   </div>

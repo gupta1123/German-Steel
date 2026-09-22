@@ -81,7 +81,7 @@
     padding: 8px 8px;
     background: var(--calendar-header-bg);
     color: var(--calendar-header-text);
-    text-transform: uppercase;
+    text-transform: capitalize;
     font-size: 0.8em;
     letter-spacing: 1px;
     border-top-left-radius: 16px;

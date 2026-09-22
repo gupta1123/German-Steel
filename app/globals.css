@@ -131,6 +131,17 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* Keep app-wide labels and controls in Title Case. Dynamic names are
+     normalized in the API adapters so all-lowercase and all-capital backend
+     values render consistently as well. */
+  body :where(h1, h2, h3, h4, h5, h6, th, label, button, [role="tab"], [role="menuitem"], [data-slot="select-item"]) {
+    text-transform: capitalize;
+  }
+
+  body :where(input, textarea, code, pre, kbd, samp, [data-preserve-case="true"], .normal-case) {
+    text-transform: none;
+  }
   
   /* Mobile viewport fixes */
   html {

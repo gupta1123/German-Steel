@@ -590,14 +590,14 @@ const ReportsPage: React.FC = () => {
                             </div>
                             <div className="grid lg:grid-cols-[.8fr_1.15fr_2.1fr]">
                                 <div className="py-4 pr-5 lg:border-r">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Visits</p>
+                                    <p className="text-[11px] font-semibold capitalize tracking-wide text-muted-foreground">Visits</p>
                                     <div className="mt-2 grid grid-cols-2 gap-2">
                                         <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.totalVisits}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Total</p></div>
                                         <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.completedVisits}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Completed</p></div>
                                     </div>
                                 </div>
                                 <div className="border-t py-4 lg:border-r lg:border-t-0 lg:px-5">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Attendance</p>
+                                    <p className="text-[11px] font-semibold capitalize tracking-wide text-muted-foreground">Attendance</p>
                                     <div className="mt-2 grid grid-cols-3 gap-2">
                                         <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.attendanceStats.fullDays}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Full days</p></div>
                                         <div className="flex min-h-16 flex-col items-center justify-center rounded-md bg-muted/35 px-2 py-2 text-center"><p className="text-xl font-semibold leading-none tabular-nums">{reportSummary.attendanceStats.halfDays}</p><p className="mt-1.5 text-xs leading-none text-muted-foreground">Half days</p></div>
@@ -606,7 +606,7 @@ const ReportsPage: React.FC = () => {
                                 </div>
                                 <div className="border-t py-4 lg:border-t-0 lg:pl-5">
                                     <div className="flex items-center justify-between gap-3">
-                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Customer types</p>
+                                        <p className="text-[11px] font-semibold capitalize tracking-wide text-muted-foreground">Customer types</p>
                                         <p className="text-[11px] text-muted-foreground">Select to view visits</p>
                                     </div>
                                     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">

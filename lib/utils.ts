@@ -6,6 +6,42 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+const DISPLAY_ACRONYMS = new Map(
+  [
+    "aec", "aecom", "api", "crm", "crn", "csv", "da", "dob", "fda", "fe",
+    "gps", "gst", "gstin", "hcc", "ho", "http", "https", "id", "it", "jnpt",
+    "jv", "km", "knr", "mt", "nbcc", "nc", "ncr", "nhai", "orr", "pdf",
+    "pin", "pmc", "pwd", "smec", "stup", "ta", "tmt", "url",
+  ].map((value) => [value, value.toUpperCase()]),
+);
+
+/**
+ * Normalizes human-facing names and labels without touching case-sensitive
+ * values such as email addresses, URLs, file paths, or opaque identifiers.
+ */
+export function toTitleCase(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  if (
+    normalized.includes("@") ||
+    /^(?:https?:\/\/|www\.|[./\\])\S+$/i.test(normalized)
+  ) {
+    return normalized;
+  }
+
+  return normalized
+    .toLocaleLowerCase("en-IN")
+    .replace(/(^|[\s\-–—/('])([\p{L}\p{N}])/gu, (_, boundary: string, letter: string) => (
+      `${boundary}${letter.toLocaleUpperCase("en-IN")}`
+    ))
+    .replace(/\b[\p{L}]+\b/gu, (word) => DISPLAY_ACRONYMS.get(word.toLowerCase()) ?? word)
+    .replace(/\bL&t\b/gi, "L&T");
+}
+
+export function formatPersonName(...parts: Array<string | null | undefined>): string {
+  return toTitleCase(parts.filter(Boolean).join(" "));
+}
+
 /**
  * Formats time string to 12-hour format (e.g., "05:30 PM")
  * Accepts "HH:mm", "HH:mm:ss", or ISO datetime ("2026-09-08T16:55:12.80206").

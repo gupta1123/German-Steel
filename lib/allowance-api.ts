@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from '@/lib/api-error';
+import { toTitleCase } from '@/lib/utils';
 
 const ALLOWANCE_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const PAGE_SIZE = 500;
@@ -170,8 +171,8 @@ const normalizeEmployee = (value: unknown): AllowanceEmployee | null => {
 
   return {
     id,
-    firstName: stringOf(item.firstName, item.givenName),
-    lastName: stringOf(item.lastName, item.surname),
+    firstName: toTitleCase(stringOf(item.firstName, item.givenName)),
+    lastName: toTitleCase(stringOf(item.lastName, item.surname)),
     role,
     travelAllowance: numberOf(item.travelAllowance) ?? 0,
     dearnessAllowance: numberOf(item.dearnessAllowance) ?? 0,

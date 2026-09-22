@@ -807,7 +807,7 @@ const normaliseAttendees = (attendees: MeetingAttendee[]) =>
 function ReadOnlyField({ label, value }: { label: string; value?: ReactNode }) {
   return (
     <div className="rounded-md border p-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-xs font-medium capitalize tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-words text-sm font-medium">{value ?? "-"}</div>
     </div>
   );
@@ -856,7 +856,7 @@ function MeetingDataRow({ label, value }: { label: string; value?: ReactNode }) 
 function MeetingNoteBlock({ label, value }: { label: string; value?: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <dt className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs font-bold capitalize tracking-wide text-muted-foreground">{label}</dt>
       <dd className="whitespace-pre-wrap break-words text-sm font-semibold leading-6 text-foreground">{value ?? "-"}</dd>
     </div>
   );
@@ -949,7 +949,7 @@ function AdminSummaryStrip({ metrics }: { metrics: AdminSummaryMetric[] }) {
           key={metric.label}
           className={`min-w-0 px-4 py-3 ${index < metrics.length - 1 ? "border-b sm:border-b-0 sm:border-r" : ""}`}
         >
-          <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{metric.label}</div>
+          <div className="text-[11px] font-bold capitalize tracking-wide text-muted-foreground">{metric.label}</div>
           <div className={`mt-1 truncate text-lg font-extrabold text-foreground ${metric.valueClassName || ""}`}>
             {metric.value}
           </div>
@@ -1040,7 +1040,7 @@ function KpiSubMetrics({ metrics }: { metrics: MeetingKpiSubMetric[] }) {
     <div className={`grid border-t bg-muted/20 ${metrics.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
       {metrics.map((metric, index) => (
         <div key={metric.label} className={`px-5 py-3 ${index > 0 ? "border-l" : ""}`}>
-          <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{metric.label}</div>
+          <div className="text-[11px] font-bold capitalize tracking-wide text-muted-foreground">{metric.label}</div>
           <div className={`mt-1 text-sm font-bold text-foreground ${metric.valueClassName || ""}`}>{metric.value ?? "-"}</div>
         </div>
       ))}
@@ -1066,7 +1066,7 @@ function MeetingKpiGrid({
       {/* Status Card */}
       <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md p-4 shadow-sm hover:border-border/60 transition-all">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Status</span>
+          <span className="text-[11px] font-bold capitalize tracking-wider text-muted-foreground">Status</span>
           <Badge variant="outline" className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${statusBadgeClass(status)}`}>
             {statusValue}
           </Badge>
@@ -1081,7 +1081,7 @@ function MeetingKpiGrid({
       <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md p-4 shadow-sm hover:border-border/60 transition-all">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{financialLabel}</div>
+            <div className="text-[11px] font-bold capitalize tracking-wider text-muted-foreground">{financialLabel}</div>
             <div className="mt-0.5 text-xl font-extrabold text-foreground tracking-tight whitespace-nowrap">{financialValue}</div>
           </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
@@ -1102,7 +1102,7 @@ function MeetingKpiGrid({
       <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md p-4 shadow-sm hover:border-border/60 transition-all">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{attendanceLabel}</div>
+            <div className="text-[11px] font-bold capitalize tracking-wider text-muted-foreground">{attendanceLabel}</div>
             <div className="mt-0.5 text-xl font-extrabold text-foreground tracking-tight whitespace-nowrap">{attendanceValue}</div>
           </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
@@ -1120,7 +1120,7 @@ function MeetingKpiGrid({
       <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md p-4 shadow-sm hover:border-border/60 transition-all">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{secondaryLabel}</div>
+            <div className="text-[11px] font-bold capitalize tracking-wider text-muted-foreground">{secondaryLabel}</div>
             <div className="mt-0.5 text-xl font-extrabold text-foreground tracking-tight whitespace-nowrap">{secondaryValue}</div>
           </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-600">
@@ -2509,7 +2509,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
               >
                 <div className="grid gap-6 md:grid-cols-2">
                   <section>
-                    <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-bold capitalize tracking-wide text-muted-foreground">
                       <CalendarDays className="h-4 w-4 text-primary" /> Schedule
                     </div>
                     <dl>
@@ -2521,7 +2521,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                     </dl>
                   </section>
                   <section>
-                    <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-bold capitalize tracking-wide text-muted-foreground">
                       <FileText className="h-4 w-4 text-primary" /> Ownership and budget
                     </div>
                     <dl>
@@ -2550,7 +2550,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
               >
                 <div className="grid gap-5 md:grid-cols-2">
                   <section className="overflow-hidden rounded-md border border-border/60">
-                    <div className="border-b bg-muted/20 px-4 py-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Planned Gifts</div>
+                    <div className="border-b bg-muted/20 px-4 py-3 text-xs font-bold capitalize tracking-wide text-muted-foreground">Planned Gifts</div>
                     {plannedGifts.length ? (
                       <Table>
                         <TableHeader>
@@ -2576,7 +2576,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                   </section>
 
                   <section className="overflow-hidden rounded-md border border-border/60">
-                    <div className="border-b bg-muted/20 px-4 py-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Planned Expenses</div>
+                    <div className="border-b bg-muted/20 px-4 py-3 text-xs font-bold capitalize tracking-wide text-muted-foreground">Planned Expenses</div>
                     {plannedExpenses.length ? (
                       <Table>
                         <TableHeader>
@@ -2610,7 +2610,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           {adminTab === "attendees" && (
             <Card id="meeting-admin-panel-attendees" role="tabpanel" className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm overflow-hidden">
               <CardHeader className="border-b border-border/20 px-5 py-4">
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">{showAttendanceResults ? "Attendance Outcomes" : "Named Attendees"}</CardTitle>
+                <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">{showAttendanceResults ? "Attendance Outcomes" : "Named Attendees"}</CardTitle>
               </CardHeader>
               <CardContent className="p-0 space-y-4">
                 {showAttendanceResults && (
@@ -2674,7 +2674,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           {adminTab === "gifts" && (
             <div id="meeting-admin-panel-gifts" role="tabpanel" className="space-y-5">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Planned vs Actual Gifts</h3>
+                <h3 className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Planned vs Actual Gifts</h3>
                 <Badge
                   variant="outline"
                   className={`rounded-full px-3 py-1 text-xs font-bold ${
@@ -2708,7 +2708,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
 
               <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm overflow-hidden">
                 <CardHeader className="border-b border-border/20 px-5 py-3">
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <CardTitle className="text-xs font-bold capitalize tracking-wider text-muted-foreground">
                     {adminPresentation.giftComparisonReady ? "Planned vs Issued Analysis" : "Approved Gift Plan and Progress"}
                   </CardTitle>
                 </CardHeader>
@@ -2781,7 +2781,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           {adminTab === "expenses" && (
             <div id="meeting-admin-panel-expenses" role="tabpanel" className="space-y-5">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Planned vs Actual Expenses</h3>
+                <h3 className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Planned vs Actual Expenses</h3>
                 <Badge
                   variant="outline"
                   className={`rounded-full px-3 py-1 text-xs font-bold ${
@@ -2819,7 +2819,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
 
               <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm overflow-hidden">
                 <CardHeader className="border-b border-border/20 px-5 py-3">
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <CardTitle className="text-xs font-bold capitalize tracking-wider text-muted-foreground">
                     {adminPresentation.expenseComparisonReady ? "Category-Wise Plan vs Actual Comparison" : "Approved Expense Plan and Progress"}
                   </CardTitle>
                 </CardHeader>
@@ -2922,7 +2922,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
             <div id="meeting-admin-panel-finalReport" role="tabpanel" className="space-y-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Final Report Outcomes</h3>
+                  <h3 className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Final Report Outcomes</h3>
                   <div className="mt-1 flex items-center gap-2">
                     <Badge
                       variant="outline"
@@ -2963,7 +2963,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                   >
                     <div className="space-y-5">
                       <section className="space-y-3 border-b border-border/60 pb-5">
-                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-2 text-xs font-bold capitalize tracking-wider text-muted-foreground">
                           <CheckCircle2 className="h-4 w-4 text-primary" />
                           Workflow Verification Readiness
                         </div>
@@ -2980,7 +2980,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                       </section>
 
                       <section className="space-y-3">
-                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-2 text-xs font-bold capitalize tracking-wider text-muted-foreground">
                           <FileText className="h-4 w-4 text-primary" />
                           Planned vs Actual Outcomes Summary
                         </div>
@@ -3055,7 +3055,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                     <div className="space-y-4">
                   <Card className="rounded-lg border-border/60 bg-background/40 shadow-none overflow-hidden">
                     <CardHeader className="flex flex-col gap-3 border-b border-border/20 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Report Export Options</CardTitle>
+                      <CardTitle className="text-xs font-bold capitalize tracking-wider text-muted-foreground">Report Export Options</CardTitle>
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" size="sm" onClick={() => setIsReportFiltersOpen((open) => !open)} className="rounded-lg">
                           <Filter className="h-3.5 w-3.5 mr-1" />
@@ -3162,7 +3162,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                     <CardContent className="p-0">
                       <div className="grid lg:grid-cols-[220px_1fr]">
                         <aside className="border-b lg:border-b-0 lg:border-r border-border/20 p-4 bg-muted/10 shrink-0">
-                          <div className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          <div className="mb-2 px-1 text-[10px] font-bold capitalize tracking-wider text-muted-foreground">
                             Summary Views
                           </div>
                           <div className="flex gap-1.5 overflow-x-auto lg:flex-col lg:overflow-visible scrollbar-none">
@@ -3186,7 +3186,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
 
                         <div className="p-4 space-y-3 min-w-0">
                           <div className="flex items-center justify-between gap-3 border-b border-border/10 pb-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">{activeReportMeta.label}</h4>
+                            <h4 className="text-xs font-bold capitalize tracking-wider text-foreground">{activeReportMeta.label}</h4>
                             <span className="text-[10px] font-bold text-muted-foreground">{activeReportCount} records</span>
                           </div>
 
@@ -3392,7 +3392,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
           {adminTab === "history" && (
             <Card id="meeting-admin-panel-history" role="tabpanel" className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm overflow-hidden">
               <CardHeader className="border-b border-border/20 px-5 py-4">
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground font-semibold">Workflow History Trail</CardTitle>
+                <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground font-semibold">Workflow History Trail</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 {auditHistory.length > 0 ? (
@@ -3569,7 +3569,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "request" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm">
             <CardHeader className="border-b border-border/20 px-5 py-4">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Request Details</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Request Details</CardTitle>
             </CardHeader>
             <CardContent className="p-5">
               {canEditRequest ? (
@@ -3667,7 +3667,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "attendees" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm overflow-hidden">
             <CardHeader className="border-b border-border/20 px-5 py-4 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Named Attendees</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Named Attendees</CardTitle>
               {canEditRequest && (
                 <Button variant="outline" size="sm" onClick={() => setAttendees((prev) => [...prev, attendeeDraft()])} className="rounded-lg font-bold text-xs h-8">
                   <Plus className="h-3.5 w-3.5 mr-1" />
@@ -3682,7 +3682,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                     {attendees.map((attendee, index) => (
                       <div key={index} className="rounded-xl border border-border/20 bg-muted/5 p-4 relative group hover:border-border/40 transition-all">
                         <div className="mb-3.5 flex items-center justify-between">
-                          <span className="text-xs font-extrabold text-primary uppercase tracking-wider">Attendee #{index + 1}</span>
+                          <span className="text-xs font-extrabold text-primary capitalize tracking-wider">Attendee #{index + 1}</span>
                           {attendees.length > 1 && (
                             <Button variant="ghost" size="sm" onClick={() => setAttendees((prev) => prev.filter((_, currentIndex) => currentIndex !== index))} className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50 text-[11px] font-bold rounded-md">
                               Remove
@@ -3758,7 +3758,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "approval" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm">
             <CardHeader className="border-b border-border/20 px-5 py-4">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Admin Approval Summary</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Admin Approval Summary</CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-4">
               <div className="grid gap-3 sm:grid-cols-3">
@@ -3781,7 +3781,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "execution" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm">
             <CardHeader className="border-b border-border/20 px-5 py-4">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Meeting Execution Log</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Meeting Execution Log</CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-5">
               {canExecute || canMarkAttendance ? (
@@ -3812,7 +3812,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                   )}
                   {canMarkAttendance && (
                     <div className="space-y-3.5 border-t border-border/20 pt-4">
-                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Mark Actual Attendance</h3>
+                      <h3 className="text-xs font-extrabold capitalize tracking-wider text-muted-foreground">Mark Actual Attendance</h3>
                       <div className="overflow-x-auto border rounded-xl bg-background/50">
                         <Table>
                           <TableHeader>
@@ -3877,7 +3877,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                   )}
                   {meeting.allowWalkInAttendees !== false && canMarkAttendance && (
                     <div className="space-y-3 rounded-xl border border-border/20 bg-muted/5 p-4 mt-2">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-primary">Record Walk-in Attendee</h3>
+                      <h3 className="text-xs font-bold capitalize tracking-wider text-primary">Record Walk-in Attendee</h3>
                       <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                         <Input placeholder="Name" className="rounded-lg h-9 text-xs" value={walkIn.name} onChange={(event) => setWalkIn((prev) => ({ ...prev, name: event.target.value }))} />
                         <Input placeholder="Mobile Number" className="rounded-lg h-9 text-xs" value={walkIn.mobileNumber} onChange={(event) => setWalkIn((prev) => ({ ...prev, mobileNumber: event.target.value }))} />
@@ -3914,7 +3914,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "gifts" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm">
             <CardHeader className="border-b border-border/20 px-5 py-4 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Distribute Gifts</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Distribute Gifts</CardTitle>
               {canIssueGifts && (
                 <Button variant="outline" size="sm" onClick={() => setGifts((prev) => [...prev, giftDraft(presentAttendees[0]?.id)])} className="rounded-lg font-bold text-xs h-8">
                   <Plus className="h-3.5 w-3.5 mr-1" />
@@ -4003,7 +4003,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "expenses" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm">
             <CardHeader className="border-b border-border/20 px-5 py-4 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Actual Expenses Spends</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Actual Expenses Spends</CardTitle>
               {canSubmitExpenses && (
                 <Button variant="outline" size="sm" onClick={() => setExpenses((prev) => [...prev, expenseDraft(executionForm.actualMeetingDate || meeting.meetingDate)])} className="rounded-lg font-bold text-xs h-8">
                   <Plus className="h-3.5 w-3.5 mr-1" />
@@ -4049,7 +4049,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                     {expenses.map((expense, index) => (
                       <div key={index} className="rounded-xl border border-border/20 p-4 bg-muted/5 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider">Expense Line #{index + 1}</span>
+                          <span className="text-[10px] font-extrabold text-muted-foreground capitalize tracking-wider">Expense Line #{index + 1}</span>
                           {expenses.length > 1 && (
                             <Button variant="ghost" size="sm" className="h-6 text-red-600 hover:bg-red-50 text-[10px] font-bold rounded-md" disabled={isSaving} onClick={() => removeExpense(index)}>
                               Delete Line
@@ -4144,7 +4144,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         {activeTab === "finalReport" && (
           <Card className="rounded-xl border border-border/30 bg-card/40 backdrop-blur-md shadow-sm">
             <CardHeader className="border-b border-border/20 px-5 py-4">
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Compile Final Report</CardTitle>
+              <CardTitle className="text-sm font-bold capitalize tracking-wider text-muted-foreground">Compile Final Report</CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-5">
               {isMeetingTabEnabled(meeting, "finalReport") ? (

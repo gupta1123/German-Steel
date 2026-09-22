@@ -583,7 +583,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   <Input value={draft.accountName} onChange={(event) => updateDraft('accountName', event.target.value)} placeholder="e.g. Shree Steel Dadar Branch" />
                 </Field>
                 <Field label="GST Number" required>
-                  <Input value={draft.gstNumber} onChange={(event) => updateDraft('gstNumber', event.target.value.toUpperCase().slice(0, 15))} placeholder="27ABCDE1234F1Z5" className="uppercase" />
+                  <Input value={draft.gstNumber} onChange={(event) => updateDraft('gstNumber', event.target.value.toUpperCase().slice(0, 15))} placeholder="27ABCDE1234F1Z5" className="normal-case" data-preserve-case="true" />
                 </Field>
                 <Field label="Client Type" required>
                   <Select value={draft.clientType} onValueChange={(value) => updateDraft('clientType', value as RetailAccountDraft['clientType'])}>
@@ -804,7 +804,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                 <div className="space-y-0 rounded-xl border divide-y">
                   {/* Account */}
                   <div className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Account</p>
+                    <p className="text-[11px] font-semibold capitalize tracking-wider text-muted-foreground mb-3">Account</p>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                       <div><span className="text-muted-foreground">Firm</span><p className="font-medium mt-0.5">{draft.accountName || '—'}</p></div>
                       <div><span className="text-muted-foreground">Type</span><p className="font-medium mt-0.5">{draft.clientType === 'DEALER' ? 'Dealer' : 'Distributor'}</p></div>
@@ -817,7 +817,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
                   {/* Address */}
                   <div className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Address</p>
+                    <p className="text-[11px] font-semibold capitalize tracking-wider text-muted-foreground mb-3">Address</p>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                       <div className="col-span-2"><span className="text-muted-foreground">Full address</span><p className="font-medium mt-0.5">{[
                         draft.addressVillageArea, draft.addressTaluka, draft.addressCity, draft.addressDistrict, draft.addressState,
@@ -830,7 +830,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
                   {/* Commercial */}
                   <div className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Commercial</p>
+                    <p className="text-[11px] font-semibold capitalize tracking-wider text-muted-foreground mb-3">Commercial</p>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                       <div><span className="text-muted-foreground">Monthly sales</span><p className="font-medium mt-0.5">{draft.declaredMonthlySalesMt ? `${draft.declaredMonthlySalesMt} MT` : '—'}</p></div>
                       <div><span className="text-muted-foreground">Tier</span><p className="font-medium mt-0.5">{draft.clientTier}</p></div>
@@ -842,7 +842,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
                   {/* Contacts & Brands */}
                   <div className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Contacts & Brands</p>
+                    <p className="text-[11px] font-semibold capitalize tracking-wider text-muted-foreground mb-3">Contacts & Brands</p>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                       <div><span className="text-muted-foreground">Contacts</span><p className="font-medium mt-0.5">{activeContacts.length} added</p></div>
                       <div><span className="text-muted-foreground">Primary</span><p className="font-medium mt-0.5">{activeContacts.find((c) => c.primaryContact)?.firstName || '—'}</p></div>

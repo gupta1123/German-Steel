@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -81,7 +82,7 @@ const normalizeLog = (value: unknown): AttendanceLog | null => {
   return {
     id,
     employeeId,
-    employeeName: stringOf(item.employeeName, item.employee_name, item.name) || `Employee ${employeeId}`,
+    employeeName: toTitleCase(stringOf(item.employeeName, item.employee_name, item.name)) || `Employee ${employeeId}`,
     attendanceDate: rawAttendanceDate,
     date: stringOf(item.date, item.attendanceDate) || rawAttendanceDate,
     attendanceStatus: stringOf(item.attendanceStatus, item.status, item.dayStatus) || 'Absent',

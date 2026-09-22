@@ -301,7 +301,7 @@ export default function DistanceRecalculation() {
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 gap-4 rounded-xl border bg-muted/30 p-3 sm:p-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase text-muted-foreground">Employees</Label>
+              <Label className="text-xs font-semibold capitalize text-muted-foreground">Employees</Label>
               <Popover open={isEmployeePickerOpen} onOpenChange={setIsEmployeePickerOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-between bg-card">
@@ -401,7 +401,7 @@ export default function DistanceRecalculation() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase text-muted-foreground">Start Date</Label>
+              <Label className="text-xs font-semibold capitalize text-muted-foreground">Start Date</Label>
               <Popover open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start bg-card text-left font-normal">
@@ -423,7 +423,7 @@ export default function DistanceRecalculation() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase text-muted-foreground">End Date</Label>
+              <Label className="text-xs font-semibold capitalize text-muted-foreground">End Date</Label>
               <Popover open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start bg-card text-left font-normal">
@@ -517,19 +517,19 @@ export default function DistanceRecalculation() {
                   <>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div className="rounded-xl border bg-muted/20 p-3 sm:p-4">
-                        <div className="text-xs font-medium uppercase text-muted-foreground">Total Amount</div>
+                        <div className="text-xs font-medium capitalize text-muted-foreground">Total Amount</div>
                         <div className="mt-2 text-xl font-semibold sm:text-2xl">{formatCurrency(calculationTotals.totalTravelAllowance)}</div>
                       </div>
                       <div className="rounded-xl border bg-muted/20 p-3 sm:p-4">
-                        <div className="text-xs font-medium uppercase text-muted-foreground">Total Distance</div>
+                        <div className="text-xs font-medium capitalize text-muted-foreground">Total Distance</div>
                         <div className="mt-2 text-xl font-semibold sm:text-2xl">{calculationTotals.totalDistanceKm.toFixed(1)} km</div>
                       </div>
                       <div className="rounded-xl border bg-muted/20 p-3 sm:p-4">
-                        <div className="text-xs font-medium uppercase text-muted-foreground">Employees</div>
+                        <div className="text-xs font-medium capitalize text-muted-foreground">Employees</div>
                         <div className="mt-2 text-xl font-semibold sm:text-2xl">{verificationSummaries.length}</div>
                       </div>
                       <div className="rounded-xl border bg-muted/20 p-3 sm:p-4">
-                        <div className="text-xs font-medium uppercase text-muted-foreground">Days Included</div>
+                        <div className="text-xs font-medium capitalize text-muted-foreground">Days Included</div>
                         <div className="mt-2 text-xl font-semibold sm:text-2xl">{calculationTotals.rowCount}</div>
                       </div>
                     </div>

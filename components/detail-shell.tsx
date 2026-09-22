@@ -125,19 +125,19 @@ export function DetailStatusSummary({
       <CardContent className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Current status</p>
+            <p className="text-xs capitalize tracking-wide text-muted-foreground">Current status</p>
             <p className="mt-1 text-sm font-medium">{humanize(currentStatus)}</p>
             {meaning && <p className="mt-1 text-sm text-muted-foreground">{meaning}</p>}
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Meaning</p>
+            <p className="text-xs capitalize tracking-wide text-muted-foreground">Meaning</p>
             <p className="mt-1 text-sm text-muted-foreground">{meaning || 'No additional meaning documented for this status.'}</p>
           </div>
         </div>
         {details && <div className="rounded-lg border bg-muted/30 p-3 text-sm">{details}</div>}
         {pendingContext.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-amber-900">Pending context</p>
+            <p className="text-xs font-medium capitalize tracking-wide text-amber-900">Pending context</p>
             <ul className="mt-1.5 list-disc pl-5 text-sm text-amber-900">
               {pendingContext.map((item, idx) => (
                 <li key={idx}>{item}</li>

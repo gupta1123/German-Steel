@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
 
 const APPROVALS_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const DEFAULT_PAGE_SIZE = 50;
@@ -102,7 +103,7 @@ const normalizeApproval = (value: unknown): ApprovalRequest | null => {
   return {
     id,
     employeeId,
-    employeeName: stringOf(item.employeeName, item.employee_name) || `Employee ${employeeId}`,
+    employeeName: toTitleCase(stringOf(item.employeeName, item.employee_name)) || `Employee ${employeeId}`,
     requestDate: stringOf(item.requestDate, item.request_date, item.createdAt) || new Date().toISOString(),
     requestedStatus: stringOf(item.requestedStatus, item.requested_status, item.attendance, item.attendanceStatus) || 'NOT_SPECIFIED',
     logDate: stringOf(item.logDate, item.log_date, item.attendanceDate) || stringOf(item.requestDate) || new Date().toISOString(),
@@ -111,7 +112,7 @@ const normalizeApproval = (value: unknown): ApprovalRequest | null => {
     description: stringOf(item.description) || undefined,
     reason: stringOf(item.reason, item.description, item.remarks) || undefined,
     actionByEmployeeId: numberOf(item.actionByEmployeeId, item.action_by_employee_id) ?? null,
-    actionByEmployeeName: stringOf(item.actionByEmployeeName, item.action_by_employee_name) || null,
+    actionByEmployeeName: toTitleCase(stringOf(item.actionByEmployeeName, item.action_by_employee_name)) || null,
   };
 };
 

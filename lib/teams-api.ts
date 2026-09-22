@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
 
 const TEAMS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const PAGE_SIZE = 500;
@@ -210,10 +211,10 @@ const normalizeEmployee = (value: unknown): TeamEmployee | null => {
 
   return {
     id,
-    firstName: stringOf(item.firstName, item.givenName),
-    lastName: stringOf(item.lastName, item.surname),
+    firstName: toTitleCase(stringOf(item.firstName, item.givenName)),
+    lastName: toTitleCase(stringOf(item.lastName, item.surname)),
     employeeCode: stringOf(item.employeeCode, item.code),
-    city: stringOf(item.city, item.addressCity),
+    city: toTitleCase(stringOf(item.city, item.addressCity)),
     role,
     status: stringOf(item.status) || (active ? 'ACTIVE' : 'INACTIVE'),
     active,
@@ -223,9 +224,9 @@ const normalizeEmployee = (value: unknown): TeamEmployee | null => {
     mobile,
     secondaryMobile: stringOf(item.secondaryMobile, item.secondaryContact) || null,
     email: stringOf(item.email),
-    department: stringOf(item.department, item.departmentName),
-    state: stringOf(item.state),
-    country: stringOf(item.country),
+    department: toTitleCase(stringOf(item.department, item.departmentName)),
+    state: toTitleCase(stringOf(item.state)),
+    country: toTitleCase(stringOf(item.country)),
     addressLine1: stringOf(item.addressLine1),
     addressLine2: stringOf(item.addressLine2),
     pincode: stringOf(item.pincode, item.pinCode),
@@ -276,14 +277,14 @@ const normalizeTeam = (value: unknown): CrmTeam | null => {
 
   return {
     id,
-    teamName: stringOf(item.teamName, item.name) || `Team ${id}`,
+    teamName: toTitleCase(stringOf(item.teamName, item.name)) || `Team ${id}`,
     teamCode: stringOf(item.teamCode, item.code),
     officeManagerId,
-    officeManagerName: stringOf(
+    officeManagerName: toTitleCase(stringOf(
       item.officeManagerName,
       item.managerName,
       [stringOf(manager?.firstName), stringOf(manager?.lastName)].filter(Boolean).join(' '),
-    ),
+    )),
     regionIds: numberArrayOf(item.regionIds ?? item.regions),
     active: booleanOf(true, item.active, item.isActive),
     employees: (embeddedEmployees ?? []).flatMap((employee) => {

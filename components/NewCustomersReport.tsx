@@ -425,7 +425,7 @@ const NewCustomersReport = () => {
                 <CardContent>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-muted-foreground uppercase bg-muted/50">
+                            <thead className="text-xs text-muted-foreground capitalize bg-muted/50">
                                 <tr>
                                     <th className="px-4 py-3 rounded-l-md">Rank</th>
                                     <th className="px-4 py-3">Employee Name</th>

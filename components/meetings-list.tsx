@@ -1266,7 +1266,7 @@ export default function MeetingsList() {
 
             <div className="min-h-[260px] overflow-y-auto px-8 py-8 sm:px-10">
               <div key={currentWorkflowStep.stage} className="animate-in fade-in slide-in-from-right-2 space-y-5 duration-300">
-                <div className={`text-xs font-bold uppercase tracking-wider ${workflowTone.label}`}>
+                <div className={`text-xs font-bold capitalize tracking-wider ${workflowTone.label}`}>
                   {currentWorkflowStep.phase}
                 </div>
                 <div className="space-y-3">
@@ -1275,7 +1275,7 @@ export default function MeetingsList() {
                 </div>
 
                 <div className={`rounded-xl border p-5 ${workflowTone.card}`}>
-                  <div className={`mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide ${workflowTone.label}`}>
+                  <div className={`mb-2 flex items-center gap-2 text-xs font-bold capitalize tracking-wide ${workflowTone.label}`}>
                     <Info className="h-4 w-4" />
                     What the admin should do
                   </div>

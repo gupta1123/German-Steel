@@ -1027,7 +1027,7 @@ export default function InstitutionDetailPage() {
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
           {advanceForm.toStatus === 'CREDENTIALS_SUBMITTED' && (
             <div className="space-y-4 rounded-lg border border-[#E7E9F0] bg-[#F8F7FF] p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submit the package here</p>
+              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Submit the package here</p>
               {contacts.length === 0 ? (
                 <div className="grid gap-3">
                   <Field label="Receiving contact first name" required><Input value={advContactName} onChange={(e) => setAdvContactName(e.target.value)} placeholder="e.g. Suresh" /></Field>
@@ -1046,7 +1046,7 @@ export default function InstitutionDetailPage() {
           )}
           {advanceForm.toStatus === 'NC_RAISED' && ncRegisters.length === 0 && (
             <div className="space-y-4 rounded-lg border p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Log the first NC here</p>
+              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Log the first NC here</p>
               <Field label="NC description" required><Textarea value={advNcDesc} onChange={(e) => setAdvNcDesc(e.target.value)} placeholder="As observed during the visit" /></Field>
               <Field label="Raised by (official)" required><Input value={advNcRaisedBy} onChange={(e) => setAdvNcRaisedBy(e.target.value)} placeholder="e.g. Inspecting officer name" /></Field>
               <Field label="Target closure date" required><Input type="date" value={advNcTargetDate} onChange={(e) => setAdvNcTargetDate(e.target.value)} /></Field>
@@ -1054,14 +1054,14 @@ export default function InstitutionDetailPage() {
           )}
           {advanceForm.toStatus === 'TECHNICAL_VISIT_SCHEDULED' && (
             <div className="space-y-3 rounded-lg border p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Technical visit</p>
+              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Technical visit</p>
               <div className={`rounded-md border p-2 text-xs ${visits.some((v)=> v.actualCheckoutAt) ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>{visits.some((v)=> v.actualCheckoutAt) ? 'Visit completed (checked out)' : 'No completed visit yet — plan + check out in Visits tab'}</div>
               <Field label="Visit report (optional)"><Input type="file" onChange={(e)=> (window as any).__advVisitReportFile = e.target.files?.[0] ?? null} /></Field>
             </div>
           )}
           {advanceForm.toStatus === 'APPROVED' && (
             <div className="space-y-4 rounded-lg border p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Approval details</p>
+              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Approval details</p>
               {!hasApprovalDoc && (
                 <>
                   <Field label="Letter type"><Select value={advLetterType} onValueChange={(v) => setAdvLetterType(v as InstitutionDocumentType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EMPANELMENT_APPROVAL_LETTER_SCAN">Approval letter scan</SelectItem><SelectItem value="APPROVED_VENDOR_LISTING_PROOF">Vendor listing proof</SelectItem></SelectContent></Select></Field>
@@ -1084,7 +1084,7 @@ export default function InstitutionDetailPage() {
           </div>
           {checklist.length > 0 && (
             <div className="rounded-lg border p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Required before advance</p>
+              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Required before advance</p>
               <ul className="mt-2 space-y-2">
                 {checklist.map((c) => (
                   <li key={c.key} className="flex items-center justify-between gap-2 text-sm">

@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from '@/lib/api-error';
+import { toTitleCase } from '@/lib/utils';
 
 const DASHBOARD_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 // Dashboard and common paginated endpoints enforce a maximum page size of 100.
@@ -229,8 +230,8 @@ const normalizeEmployee = (value: unknown): DashboardEmployee | null => {
   return {
     id,
     employeeCode: stringOf(item.employeeCode, item.code),
-    firstName: stringOf(item.firstName, item.givenName),
-    lastName: stringOf(item.lastName, item.surname),
+    firstName: toTitleCase(stringOf(item.firstName, item.givenName)),
+    lastName: toTitleCase(stringOf(item.lastName, item.surname)),
     role: stringOf(
       item.role,
       item.employeeRole,
@@ -240,8 +241,8 @@ const normalizeEmployee = (value: unknown): DashboardEmployee | null => {
       user?.roles,
       user?.role,
     ),
-    city: stringOf(item.city, item.addressCity, address?.city),
-    state: stringOf(item.state, item.addressState, address?.state),
+    city: toTitleCase(stringOf(item.city, item.addressCity, address?.city)),
+    state: toTitleCase(stringOf(item.state, item.addressState, address?.state)),
     active: booleanOf(true, item.active, item.isActive),
     houseLatitude: numberOf(
       item.houseLatitude,
@@ -279,7 +280,7 @@ const normalizeVisit = (value: unknown): DashboardVisit | null => {
     scheduledVisitDate: stringOf(item.scheduledVisitDate, item.visitDate, item.date),
     purpose: stringOf(item.purpose, item.visitPurpose),
     status: stringOf(item.status, item.visitStatus).toUpperCase(),
-    customerName: stringOf(
+    customerName: toTitleCase(stringOf(
       item.retailAccountName,
       item.clientAccountName,
       item.accountName,
@@ -292,10 +293,10 @@ const normalizeVisit = (value: unknown): DashboardVisit | null => {
       institution?.name,
       project?.projectName,
       project?.name,
-    ),
+    )),
     actualCheckinAt: stringOf(item.actualCheckinAt, item.checkinAt, item.checkInAt),
     actualCheckoutAt: stringOf(item.actualCheckoutAt, item.checkoutAt, item.checkOutAt),
-    state: stringOf(
+    state: toTitleCase(stringOf(
       item.locationState,
       item.locationRegionName,
       item.addressState,
@@ -306,7 +307,7 @@ const normalizeVisit = (value: unknown): DashboardVisit | null => {
       institution?.state,
       project?.addressState,
       project?.state,
-    ),
+    )),
   };
 };
 
@@ -374,11 +375,11 @@ const normalizeCurrentLocation = (
   const fallbackName = [fallbackEmployee.firstName, fallbackEmployee.lastName].filter(Boolean).join(' ');
   return {
     employeeId: numberOf(source.employeeId, employee?.id) ?? fallbackEmployee.id,
-    employeeName: stringOf(
+    employeeName: toTitleCase(stringOf(
       source.employeeName,
       employee?.fullName,
       [stringOf(employee?.firstName), stringOf(employee?.lastName)].filter(Boolean).join(' '),
-    ) || fallbackName || `Employee #${fallbackEmployee.id}`,
+    ) || fallbackName || `Employee #${fallbackEmployee.id}`),
     latitude,
     longitude,
     capturedAt: stringOf(

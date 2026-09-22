@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -64,7 +65,7 @@ const normalizeExpense = (value: unknown): ExpenseRow | null => {
   return {
     id,
     employeeId,
-    employeeName: stringOf(item.employeeName, item.employee_name) || `Employee ${employeeId}`,
+    employeeName: toTitleCase(stringOf(item.employeeName, item.employee_name)) || `Employee ${employeeId}`,
     expenseTypeId: numberOf(item.expenseTypeId, item.typeId) ?? undefined,
     type: stringOf(item.type, item.expenseType, item.category) || 'Expense',
     subType: stringOf(item.subType, item.sub_type) || undefined,

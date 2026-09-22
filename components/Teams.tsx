@@ -767,13 +767,13 @@ const Teams: React.FC = () => {
                         <ScrollArea className="min-h-0 flex-1">
                             <TabsContent value="overview" className="m-0 space-y-5 p-5">
                                 <div className="grid grid-cols-3 gap-3">
-                                    <div className="rounded-xl border bg-card p-4"><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Supervisor</p><p className="mt-2 text-2xl font-semibold">{managedManager ? 1 : 0}</p></div>
-                                    <div className="rounded-xl border bg-card p-4"><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Regions</p><p className="mt-2 text-2xl font-semibold">{managedRegionIds.length}</p></div>
-                                    <div className="rounded-xl border bg-card p-4"><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Members</p><p className="mt-2 text-2xl font-semibold">{managedTeam?.employees.length ?? 0}</p></div>
+                                    <div className="rounded-xl border bg-card p-4"><p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Supervisor</p><p className="mt-2 text-2xl font-semibold">{managedManager ? 1 : 0}</p></div>
+                                    <div className="rounded-xl border bg-card p-4"><p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Regions</p><p className="mt-2 text-2xl font-semibold">{managedRegionIds.length}</p></div>
+                                    <div className="rounded-xl border bg-card p-4"><p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Members</p><p className="mt-2 text-2xl font-semibold">{managedTeam?.employees.length ?? 0}</p></div>
                                 </div>
 
                                 <section className="space-y-2">
-                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Team operations</p>
+                                    <p className="text-xs font-semibold capitalize tracking-wider text-muted-foreground">Team operations</p>
                                     <button type="button" onClick={() => setManageTab('supervisor')} className="flex w-full items-center justify-between rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/30">
                                         <span><span className="block text-sm font-semibold">Manage supervisor</span><span className="mt-0.5 block text-xs text-muted-foreground">Set the team’s reporting lead</span></span><ShieldCheck className="h-5 w-5 text-primary" />
                                     </button>

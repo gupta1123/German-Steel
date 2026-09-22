@@ -1,4 +1,5 @@
 ﻿import { getApiErrorMessage } from '@/lib/api-error';
+import { toTitleCase } from '@/lib/utils';
 
 export const INSTITUTIONS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -266,16 +267,16 @@ const normalizeInstitution = (value: unknown): Institution | null => {
   const allowedTypes: InstitutionType[] = ['GOVERNMENT_DEPARTMENT', 'PUBLIC_SECTOR_UNDERTAKING', 'CORPORATE_INSTITUTE', 'AUTONOMOUS_BODY'];
   return {
     id,
-    institutionName: stringOf(item.institutionName, item.name) || `Institution #${id}`,
+    institutionName: toTitleCase(stringOf(item.institutionName, item.name)) || `Institution #${id}`,
     institutionType: (allowedTypes.includes(typeRaw as InstitutionType) ? typeRaw : 'GOVERNMENT_DEPARTMENT') as InstitutionType,
     parentInstitutionId: numberOf(item.parentInstitutionId),
-    jurisdiction: stringOf(item.jurisdiction, item.locationText, item.addressTaluka) || '—',
-    state: stringOf(item.state, item.addressState) || '—',
+    jurisdiction: toTitleCase(stringOf(item.jurisdiction, item.locationText, item.addressTaluka)) || '—',
+    state: toTitleCase(stringOf(item.state, item.addressState)) || '—',
     regionId: numberOf(item.regionId, item.salesRegionId, region?.id),
-    regionName: stringOf(item.regionName, item.salesRegionName, region?.name) || '—',
+    regionName: toTitleCase(stringOf(item.regionName, item.salesRegionName, region?.name)) || '—',
     empanelmentStatus: (statusRaw || 'NOT_STARTED') as EmpanelmentStatus | string,
     assignedEmployeeId: numberOf(item.assignedEmployeeId, item.employeeId, owner?.id),
-    assignedEmployeeName: stringOf(item.assignedEmployeeName, item.ownerName, [stringOf(owner?.firstName), stringOf(owner?.lastName)].filter(Boolean).join(' ')) || '—',
+    assignedEmployeeName: toTitleCase(stringOf(item.assignedEmployeeName, item.ownerName, [stringOf(owner?.firstName), stringOf(owner?.lastName)].filter(Boolean).join(' '))) || '—',
     currentStageOwnerContactId: numberOf(item.currentStageOwnerContactId),
     applicationDate: stringOf(item.applicationDate) || null,
     approvalDate: stringOf(item.approvalDate) || null,
@@ -318,7 +319,7 @@ const normalizeContact = (value: unknown): InstitutionContact | null => {
   const master = nested(item, 'contactInfluenceRegister', 'contact', 'contactMaster', 'contact', 'data') ?? item;
   const party = nested(item, 'party') ?? item;
   const person = nested(item, 'person') ?? item;
-  return { id, contactInfluenceRegisterId: numberOf(item.contactInfluenceRegisterId, item.contact_influence_register_id, item.contactId, item.contact_id, master?.id, master?.contactInfluenceRegisterId) ?? 0, firstName: stringOf(item.firstName, item.first_name, master?.firstName, master?.first_name, party?.firstName, party?.first_name, person?.firstName), lastName: stringOf(item.lastName, item.last_name, master?.lastName, master?.last_name, party?.lastName, party?.last_name, person?.lastName), mobile: stringOf(item.mobile, item.phone, item.phoneNumber, item.phone_number, item.mobileNumber, item.mobile_number, master?.mobile, master?.phone, party?.mobile), email: stringOf(item.email, item.emailAddress, item.email_address, master?.email, party?.email), designation: stringOf(item.designation, item.role, item.title, master?.designation, party?.designation), roleDescription: stringOf(item.roleDescription, item.role_description, item.description, master?.roleDescription, party?.roleDescription), primaryContact: booleanOf(false, item.primaryContact, item.primary_contact, item.isPrimary, item.is_primary, master?.primaryContact), active: booleanOf(true, item.active, item.isActive, item.is_active, master?.active) };
+  return { id, contactInfluenceRegisterId: numberOf(item.contactInfluenceRegisterId, item.contact_influence_register_id, item.contactId, item.contact_id, master?.id, master?.contactInfluenceRegisterId) ?? 0, firstName: toTitleCase(stringOf(item.firstName, item.first_name, master?.firstName, master?.first_name, party?.firstName, party?.first_name, person?.firstName)), lastName: toTitleCase(stringOf(item.lastName, item.last_name, master?.lastName, master?.last_name, party?.lastName, party?.last_name, person?.lastName)), mobile: stringOf(item.mobile, item.phone, item.phoneNumber, item.phone_number, item.mobileNumber, item.mobile_number, master?.mobile, master?.phone, party?.mobile), email: stringOf(item.email, item.emailAddress, item.email_address, master?.email, party?.email), designation: toTitleCase(stringOf(item.designation, item.role, item.title, master?.designation, party?.designation)), roleDescription: stringOf(item.roleDescription, item.role_description, item.description, master?.roleDescription, party?.roleDescription), primaryContact: booleanOf(false, item.primaryContact, item.primary_contact, item.isPrimary, item.is_primary, master?.primaryContact), active: booleanOf(true, item.active, item.isActive, item.is_active, master?.active) };
 };
 
 const normalizePipeline = (value: unknown): PipelineEntry | null => {
@@ -356,13 +357,13 @@ const normalizeNc = (value: unknown): NcRegister | null => {
   const employee = nested(item, 'responsibleEmployee', 'employee');
   const statusRaw = stringOf(item.status).toUpperCase();
   const validStatuses: NcStatus[] = ['OPEN', 'SUBMITTED', 'CLOSED'];
-  return { id, institutionId: numberOf(item.institutionId), projectId: numberOf(item.projectId), description: stringOf(item.description), raisedDate: stringOf(item.raisedDate) || new Date().toISOString().slice(0, 10), raisedByOfficialText: stringOf(item.raisedByOfficialText), targetClosureDate: stringOf(item.targetClosureDate) || null, closureMethod: stringOf(item.closureMethod) || null, closureDate: stringOf(item.closureDate) || null, status: (validStatuses.includes(statusRaw as NcStatus) ? statusRaw : 'OPEN') as NcStatus, responsibleEmployeeId: numberOf(item.responsibleEmployeeId, employee?.id), responsibleEmployeeName: stringOf(item.responsibleEmployeeName, [stringOf(employee?.firstName), stringOf(employee?.lastName)].filter(Boolean).join(' ')), createdAt: stringOf(item.createdAt) || new Date().toISOString(), updatedAt: stringOf(item.updatedAt) || new Date().toISOString() };
+  return { id, institutionId: numberOf(item.institutionId), projectId: numberOf(item.projectId), description: stringOf(item.description), raisedDate: stringOf(item.raisedDate) || new Date().toISOString().slice(0, 10), raisedByOfficialText: toTitleCase(stringOf(item.raisedByOfficialText)), targetClosureDate: stringOf(item.targetClosureDate) || null, closureMethod: stringOf(item.closureMethod) || null, closureDate: stringOf(item.closureDate) || null, status: (validStatuses.includes(statusRaw as NcStatus) ? statusRaw : 'OPEN') as NcStatus, responsibleEmployeeId: numberOf(item.responsibleEmployeeId, employee?.id), responsibleEmployeeName: toTitleCase(stringOf(item.responsibleEmployeeName, [stringOf(employee?.firstName), stringOf(employee?.lastName)].filter(Boolean).join(' '))), createdAt: stringOf(item.createdAt) || new Date().toISOString(), updatedAt: stringOf(item.updatedAt) || new Date().toISOString() };
 };
 
 const normalizeNote = (value: unknown): InstitutionNote | null => {
   const item = recordOf(value); if (!item) return null;
   const id = numberOf(item.id); if (id == null) return null;
-  return { id, noteText: stringOf(item.noteText, item.text, item.note), authorName: stringOf(item.authorEmployeeName, item.authorName, item.createdByName, item.createdBy), authorEmployeeId: numberOf(item.authorEmployeeId, item.createdByEmployeeId), createdAt: stringOf(item.createdAt, item.createdDate) || new Date().toISOString(), updatedAt: stringOf(item.updatedAt, item.updatedDate, item.lastCorrectedAt, item.createdAt) || new Date().toISOString() };
+  return { id, noteText: stringOf(item.noteText, item.text, item.note), authorName: toTitleCase(stringOf(item.authorEmployeeName, item.authorName, item.createdByName, item.createdBy)), authorEmployeeId: numberOf(item.authorEmployeeId, item.createdByEmployeeId), createdAt: stringOf(item.createdAt, item.createdDate) || new Date().toISOString(), updatedAt: stringOf(item.updatedAt, item.updatedDate, item.lastCorrectedAt, item.createdAt) || new Date().toISOString() };
 };
 
 const normalizeTask = (value: unknown): InstitutionTask | null => {
@@ -371,7 +372,7 @@ const normalizeTask = (value: unknown): InstitutionTask | null => {
   const employee = nested(item, 'assignedEmployee', 'employee');
   const statusRaw = stringOf(item.status).toUpperCase() || 'OPEN';
   const priorityRaw = stringOf(item.priority).toUpperCase() || 'MEDIUM';
-  return { id, title: stringOf(item.title, item.taskTitle), description: stringOf(item.description, item.taskDescription), taskType: stringOf(item.taskType, item.type), status: (['OPEN','IN_PROGRESS','COMPLETED','CANCELLED'].includes(statusRaw) ? statusRaw : 'OPEN') as InstitutionTask['status'], priority: (['LOW','MEDIUM','HIGH','URGENT'].includes(priorityRaw) ? priorityRaw : 'MEDIUM') as InstitutionTask['priority'], dueDate: stringOf(item.dueDate, item.targetDate), assignedEmployeeId: numberOf(item.assignedToEmployeeId, item.assignedEmployeeId, employee?.id), assignedEmployeeName: stringOf(item.assignedToEmployeeName, item.assignedEmployeeName, [stringOf(employee?.firstName), stringOf(employee?.lastName)].filter(Boolean).join(' ')) };
+  return { id, title: stringOf(item.title, item.taskTitle), description: stringOf(item.description, item.taskDescription), taskType: stringOf(item.taskType, item.type), status: (['OPEN','IN_PROGRESS','COMPLETED','CANCELLED'].includes(statusRaw) ? statusRaw : 'OPEN') as InstitutionTask['status'], priority: (['LOW','MEDIUM','HIGH','URGENT'].includes(priorityRaw) ? priorityRaw : 'MEDIUM') as InstitutionTask['priority'], dueDate: stringOf(item.dueDate, item.targetDate), assignedEmployeeId: numberOf(item.assignedToEmployeeId, item.assignedEmployeeId, employee?.id), assignedEmployeeName: toTitleCase(stringOf(item.assignedToEmployeeName, item.assignedEmployeeName, [stringOf(employee?.firstName), stringOf(employee?.lastName)].filter(Boolean).join(' '))) };
 };
 
 const fixturePage = (options: { page?: number; size?: number; q?: string; status?: string; institutionType?: string; assignedEmployeeId?: number; active?: boolean }): ApiPage<Institution> => {

@@ -362,7 +362,7 @@ export default function EmployeeDetail() {
                     <row.icon className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">
                       {row.label}
                     </p>
                     <p className="truncate text-sm font-medium" title={row.value}>
@@ -377,7 +377,7 @@ export default function EmployeeDetail() {
                     <MapPin className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">
                       Assigned cities
                     </p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
@@ -406,7 +406,7 @@ export default function EmployeeDetail() {
                     <p className="truncate text-sm font-bold tabular-nums" title={s.value}>
                       {s.value}
                     </p>
-                    <p className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="mt-0.5 truncate text-[10px] font-medium capitalize tracking-wide text-muted-foreground">
                       {s.label}
                     </p>
                   </div>
@@ -431,7 +431,7 @@ export default function EmployeeDetail() {
               <div className="flex items-center gap-3 px-4 py-2.5">
                 <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Team</p>
+                  <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Team</p>
                   <p className="truncate text-sm font-medium">
                     {teamName ?? (employee.teamId != null ? `Team #${employee.teamId}` : "—")}
                   </p>
@@ -440,7 +440,7 @@ export default function EmployeeDetail() {
               <div className="flex items-center gap-3 px-4 py-2.5">
                 <User className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Manager</p>
+                  <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Manager</p>
                   {employee.managerId != null ? (
                     <Link
                       href={`/dashboard/employees/${employee.managerId}`}
@@ -454,7 +454,7 @@ export default function EmployeeDetail() {
                 </div>
               </div>
               <div className="px-4 py-2.5">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Regions</p>
+                <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Regions</p>
                 {regionNames.length > 0 ? (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {regionNames.map((region) => (
@@ -478,13 +478,13 @@ export default function EmployeeDetail() {
             </CardHeader>
             <CardContent className="divide-y p-0">
               <div className="px-4 py-2.5">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Username</p>
+                <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Username</p>
                 <p className="truncate text-sm font-medium" title={employee.userName}>
                   {employee.userName || "—"}
                 </p>
               </div>
               <div className="flex items-center justify-between gap-2 px-4 py-2.5">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <p className="text-[11px] font-medium capitalize tracking-wide text-muted-foreground">
                   Office manager
                 </p>
                 <Badge variant={payload.officeManager ? "default" : "outline"}>
@@ -571,7 +571,7 @@ export default function EmployeeDetail() {
                     ].map((s) => (
                       <div key={s.label} className="min-w-0 rounded-lg bg-muted/50 px-2 py-2.5 text-center">
                         <p className={`truncate text-lg font-bold tabular-nums ${s.cls}`}>{s.value}</p>
-                        <p className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        <p className="mt-0.5 truncate text-[10px] font-medium capitalize tracking-wide text-muted-foreground">
                           {s.label}
                         </p>
                       </div>

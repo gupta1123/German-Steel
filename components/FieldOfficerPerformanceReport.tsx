@@ -445,7 +445,7 @@ export default function FieldOfficerPerformanceReport({
                                 style={{ height: `${achievement}%`, minHeight: "4px" }}
                               >
                                 <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 rounded-lg bg-foreground px-3 py-2 text-center text-xs text-background opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus:opacity-100">
-                                  <span className="block whitespace-nowrap text-[10px] uppercase opacity-70">Target achievement</span>
+                                  <span className="block whitespace-nowrap text-[10px] capitalize opacity-70">Target achievement</span>
                                   <strong className="whitespace-nowrap">
                                     {formatMetric(row.achievementPercent)}% ({formatMetric(row.achievedValue)} / {formatMetric(row.targetValue)})
                                   </strong>
@@ -459,7 +459,7 @@ export default function FieldOfficerPerformanceReport({
                                 style={{ height: `${completion}%`, minHeight: "4px" }}
                               >
                                 <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 rounded-lg bg-foreground px-3 py-2 text-center text-xs text-background opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus:opacity-100">
-                                  <span className="block whitespace-nowrap text-[10px] uppercase opacity-70">Visit completion</span>
+                                  <span className="block whitespace-nowrap text-[10px] capitalize opacity-70">Visit completion</span>
                                   <strong className="whitespace-nowrap">
                                     {formatMetric(row.completionRate)}% ({formatMetric(row.completedVisits)} / {formatMetric(row.totalVisits)})
                                   </strong>
@@ -497,12 +497,12 @@ export default function FieldOfficerPerformanceReport({
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableHead className="min-w-60 text-xs font-semibold uppercase tracking-wider">Field officer</TableHead>
-                      <TableHead className="text-xs font-semibold uppercase tracking-wider">Rating</TableHead>
-                      <TableHead className="min-w-64 text-xs font-semibold uppercase tracking-wider">Target achievement</TableHead>
-                      <TableHead className="min-w-64 text-xs font-semibold uppercase tracking-wider">Visit completion</TableHead>
-                      <TableHead className="min-w-32 text-xs font-semibold uppercase tracking-wider">Stores visited</TableHead>
-                      <TableHead className="min-w-64 text-xs font-semibold uppercase tracking-wider">Attendance summary</TableHead>
+                      <TableHead className="min-w-60 text-xs font-semibold capitalize tracking-wider">Field officer</TableHead>
+                      <TableHead className="text-xs font-semibold capitalize tracking-wider">Rating</TableHead>
+                      <TableHead className="min-w-64 text-xs font-semibold capitalize tracking-wider">Target achievement</TableHead>
+                      <TableHead className="min-w-64 text-xs font-semibold capitalize tracking-wider">Visit completion</TableHead>
+                      <TableHead className="min-w-32 text-xs font-semibold capitalize tracking-wider">Stores visited</TableHead>
+                      <TableHead className="min-w-64 text-xs font-semibold capitalize tracking-wider">Attendance summary</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -559,7 +559,7 @@ export default function FieldOfficerPerformanceReport({
                               { label: "AB", title: "Absent days", value: row.absences },
                             ].map((item) => (
                               <div key={item.label} title={item.title} className="min-w-11 rounded-md border bg-background px-2 py-1.5 text-center">
-                                <span className="block text-[10px] font-semibold uppercase text-muted-foreground">{item.label}</span>
+                                <span className="block text-[10px] font-semibold capitalize text-muted-foreground">{item.label}</span>
                                 <strong className={item.label === "AB" ? "text-sm text-destructive" : "text-sm"}>{formatMetric(item.value)}</strong>
                               </div>
                             ))}

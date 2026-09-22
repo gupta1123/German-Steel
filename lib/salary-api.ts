@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from '@/lib/api-error';
+import { toTitleCase } from '@/lib/utils';
 
 const SALARY_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const PAGE_SIZE = 500;
@@ -176,8 +177,8 @@ const normalizeEmployee = (value: unknown): SalaryEmployee | null => {
   return {
     id,
     employeeCode: stringOf(item.employeeCode, item.code),
-    firstName: stringOf(item.firstName, item.givenName),
-    lastName: stringOf(item.lastName, item.surname),
+    firstName: toTitleCase(stringOf(item.firstName, item.givenName)),
+    lastName: toTitleCase(stringOf(item.lastName, item.surname)),
     role: stringOf(item.role, item.employeeRole, item.roleName, designation?.name),
     active: booleanOf(true, item.active, item.isActive),
     fullMonthSalary: numberOf(item.fullMonthSalary, item.monthlySalary, item.baseSalary) ?? 0,
@@ -266,14 +267,14 @@ const normalizeCalculation = (
 
   return {
     employeeId: numberOf(item.employeeId, responseEmployee?.id) ?? employee.id,
-    employeeName: stringOf(
+    employeeName: toTitleCase(stringOf(
       [
         stringOf(employee.firstName, responseEmployee?.firstName),
         stringOf(employee.lastName, responseEmployee?.lastName),
       ].filter(Boolean).join(' '),
       responseEmployee?.employeeName,
       item.employeeName,
-    ),
+    )),
     employeeCode: stringOf(item.employeeCode, responseEmployee?.employeeCode, employee.employeeCode),
     startDate: stringOf(item.startDate, item.periodStart, startDate) || startDate,
     endDate: stringOf(item.endDate, item.periodEnd, endDate) || endDate,

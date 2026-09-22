@@ -163,7 +163,7 @@ export default function ApprovalsPage() {
         };
     }, [token]);
 
-    // --- 2. API Logic — verified contract GET /api/hr/attendance/requests/by-status?status=PENDING|APPROVED|REJECTED&page=0&size=50 (200 uppercase) ---
+    // --- 2. API Logic — verified contract GET /api/hr/attendance/requests/by-status?status=PENDING|APPROVED|REJECTED&page=0&size=50 (200 capitalize) ---
     const fetchRequests = async () => {
         if (!token) {
             setError('Authentication required — please sign in again.');
@@ -489,7 +489,7 @@ function RequestRow({
             {/* 3. Requested attendance type (read-only; action API does not accept type changes) */}
             <div className="col-span-2 flex w-full items-center">
                 <div className="w-full">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground lg:hidden">Requested type</span>
+                    <span className="mb-2 block text-xs font-semibold capitalize tracking-wider text-muted-foreground lg:hidden">Requested type</span>
                     <Badge variant={requestedType === 'LEAVE' ? 'outline' : 'secondary'} className={`max-w-full whitespace-normal px-3 py-1 text-center leading-4 ${requestedType === 'HALF_DAY' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300' : requestedType === 'FULL_DAY' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300' : ''}`}>
                         {requestedTypeLabel}
                     </Badge>

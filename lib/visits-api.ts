@@ -1,4 +1,5 @@
 import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
 
 const VISITS_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -92,15 +93,15 @@ export const resolveVisitClient = (row: Pick<CommonVisitRow, 'visitType' | 'clie
   const parent = textOf(row.parentName);
   const store = textOf(row.storeName);
 
-  if (row.visitType === 'DEALER_VISIT' && retail) return { name: retail, kind: 'RETAIL' };
-  if (row.visitType === 'INSTITUTIONAL_VISIT' && institution) return { name: institution, kind: 'INSTITUTION' };
-  if (row.visitType === 'PROJECT_SITE_VISIT' && project) return { name: project, kind: 'PROJECT' };
+  if (row.visitType === 'DEALER_VISIT' && retail) return { name: toTitleCase(retail), kind: 'RETAIL' };
+  if (row.visitType === 'INSTITUTIONAL_VISIT' && institution) return { name: toTitleCase(institution), kind: 'INSTITUTION' };
+  if (row.visitType === 'PROJECT_SITE_VISIT' && project) return { name: toTitleCase(project), kind: 'PROJECT' };
 
-  if (retail) return { name: retail, kind: 'RETAIL' };
-  if (institution) return { name: institution, kind: 'INSTITUTION' };
-  if (project) return { name: project, kind: 'PROJECT' };
-  if (parent) return { name: parent, kind: 'UNKNOWN' };
-  if (store) return { name: store, kind: 'UNKNOWN' };
+  if (retail) return { name: toTitleCase(retail), kind: 'RETAIL' };
+  if (institution) return { name: toTitleCase(institution), kind: 'INSTITUTION' };
+  if (project) return { name: toTitleCase(project), kind: 'PROJECT' };
+  if (parent) return { name: toTitleCase(parent), kind: 'UNKNOWN' };
+  if (store) return { name: toTitleCase(store), kind: 'UNKNOWN' };
   if (row.clientAccountId != null) return { name: `Account #${row.clientAccountId}`, kind: 'RETAIL' };
   if (row.institutionId != null) return { name: `Institution #${row.institutionId}`, kind: 'INSTITUTION' };
   if (row.projectId != null) return { name: `Project #${row.projectId}`, kind: 'PROJECT' };
@@ -151,6 +152,16 @@ const sourceRecord = (value: unknown): Record<string, unknown> | null => {
   return data ?? outer;
 };
 
+const normalizeVisitDisplay = (row: CommonVisitRow): CommonVisitRow => ({
+  ...row,
+  parentName: toTitleCase(row.parentName),
+  retailAccountName: toTitleCase(row.retailAccountName),
+  institutionName: toTitleCase(row.institutionName),
+  projectName: toTitleCase(row.projectName),
+  assignedEmployeeName: toTitleCase(row.assignedEmployeeName),
+  employeeName: toTitleCase(row.employeeName),
+});
+
 const readBody = async (res: Response): Promise<unknown> => {
   if (res.status === 204) return undefined;
   const text = (await res.text()).trim();
@@ -184,15 +195,15 @@ export const visitsApi = {
     const src = sourceRecord(data) ?? recordOf(data);
     // Backend may return direct object or { data: {...} } or ApiPage with single content
     if (src && typeof src.id === 'number' && typeof src.purpose === 'string') {
-      return src as unknown as CommonVisitRow;
+      return normalizeVisitDisplay(src as unknown as CommonVisitRow);
     }
     if (src && Array.isArray((src as Record<string, unknown>).content) && ((src as Record<string, unknown>).content as unknown[]).length > 0) {
-      return ((src as Record<string, unknown>).content as CommonVisitRow[])[0];
+      return normalizeVisitDisplay(((src as Record<string, unknown>).content as CommonVisitRow[])[0]);
     }
     if (Array.isArray(data) && data.length > 0) {
-      return data[0] as CommonVisitRow;
+      return normalizeVisitDisplay(data[0] as CommonVisitRow);
     }
-    return (src ?? data) as CommonVisitRow;
+    return normalizeVisitDisplay((src ?? data) as CommonVisitRow);
   },
 
   async updateVisit(token: string, visitId: number, payload: Record<string, unknown>): Promise<unknown> {
@@ -246,7 +257,7 @@ export const visitsApi = {
     // Handle Spring Data Page envelope (content, totalElements, etc.) and fallback array
     if (Array.isArray(data)) {
       return {
-        content: data as CommonVisitRow[],
+        content: (data as CommonVisitRow[]).map(normalizeVisitDisplay),
         totalElements: data.length,
         totalPages: 1,
         number: params.page,
@@ -258,11 +269,11 @@ export const visitsApi = {
     }
 
     const src = sourceRecord(data) ?? {};
-    const content = Array.isArray(src.content)
+    const content = (Array.isArray(src.content)
       ? (src.content as CommonVisitRow[])
       : Array.isArray((data as Record<string, unknown>).content)
         ? ((data as Record<string, unknown>).content as CommonVisitRow[])
-        : [];
+        : []).map(normalizeVisitDisplay);
 
     const totalElements = numberOf(src.totalElements, (src as Record<string, unknown>).total) ?? content.length;
     const totalPages = numberOf(src.totalPages) ?? Math.max(1, Math.ceil(totalElements / Math.max(1, params.size)));

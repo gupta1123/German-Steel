@@ -259,7 +259,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
           <table className="w-full min-w-[600px]">
             <thead className="bg-muted/45">
               <tr className="border-b">
-                <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('customer')}>
+                <th className="px-3 py-2 text-left text-[11px] font-medium capitalize tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('customer')}>
                   Store
                   {lastClickedColumn === 'customer' && (
                     sortOrder === 'asc' ? (
@@ -269,7 +269,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                     )
                   )}
                 </th>
-                <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('date')}>
+                <th className="px-3 py-2 text-left text-[11px] font-medium capitalize tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('date')}>
                   Date
                   {lastClickedColumn === 'date' && (
                     sortOrder === 'asc' ? (
@@ -279,7 +279,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                     )
                   )}
                 </th>
-                <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('purpose')}>
+                <th className="px-3 py-2 text-left text-[11px] font-medium capitalize tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('purpose')}>
                   Purpose
                   {lastClickedColumn === 'purpose' && (
                     sortOrder === 'asc' ? (
@@ -289,7 +289,7 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                     )
                   )}
                 </th>
-                <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('employeeState')}>
+                <th className="px-3 py-2 text-left text-[11px] font-medium capitalize tracking-wide text-muted-foreground cursor-pointer" onClick={() => handleSort('employeeState')}>
                   State
                   {lastClickedColumn === 'employeeState' && (
                     sortOrder === 'asc' ? (
@@ -299,8 +299,8 @@ const VisitsTable = ({ visits, onViewDetails, currentPage, onPageChange, totalPa
                     )
                   )}
                 </th>
-                <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</th>
-                <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Action</th>
+                <th className="px-3 py-2 text-left text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Status</th>
+                <th className="px-3 py-2 text-right text-[11px] font-medium capitalize tracking-wide text-muted-foreground">Action</th>
               </tr>
             </thead>
             <tbody>

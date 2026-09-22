@@ -1,4 +1,5 @@
 ﻿import { getApiErrorMessage } from '@/lib/api-error';
+import { toTitleCase } from '@/lib/utils';
 
 export const PROJECTS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -277,11 +278,11 @@ const normalizeProject = (value: unknown): Project | null => {
   const allowedTypes: ProjectType[] = ['ROAD_HIGHWAY', 'BRIDGE', 'BUILDING', 'IRRIGATION', 'PORT_OR_INDUSTRIAL', 'OTHER_INFRASTRUCTURE'];
   return {
     id,
-    projectName: stringOf(item.projectName, item.name) || `Project #${id}`,
+    projectName: toTitleCase(stringOf(item.projectName, item.name)) || `Project #${id}`,
     institutionId: numberOf(item.institutionId, inst?.id),
-    institutionName: stringOf(item.institutionName, inst?.institutionName, inst?.name) || '—',
-    locationText: stringOf(item.locationText, item.location, item.address) || '—',
-    state: stringOf(item.state, item.addressState, inst?.state) || '—',
+    institutionName: toTitleCase(stringOf(item.institutionName, inst?.institutionName, inst?.name)) || '—',
+    locationText: toTitleCase(stringOf(item.locationText, item.location, item.address)) || '—',
+    state: toTitleCase(stringOf(item.state, item.addressState, inst?.state)) || '—',
     regionId: numberOf(item.regionId, item.salesRegionId),
     startDate: stringOf(item.startDate) || null,
     completionDate: stringOf(item.completionDate) || null,
@@ -290,9 +291,9 @@ const normalizeProject = (value: unknown): Project | null => {
     sourceApprovalStatus: (stageRaw || 'NOT_STARTED') as ProjectStage | string,
     approvalLetterReference: stringOf(item.approvalLetterReference, item.approvalLetterRef) || null,
     assignedEmployeeId: numberOf(item.assignedEmployeeId, item.employeeId, owner?.id),
-    assignedEmployeeName: stringOf(item.assignedEmployeeName, item.ownerName, [stringOf(owner?.firstName), stringOf(owner?.lastName)].filter(Boolean).join(' ')) || '—',
-    contractorName: stringOf(item.contractorName, item.contractor, nested(item,'contractor')?.name) || stringOf(item.contractor) || '—',
-    consultantName: stringOf(item.consultantName, item.consultant, nested(item,'consultant')?.name) || '—',
+    assignedEmployeeName: toTitleCase(stringOf(item.assignedEmployeeName, item.ownerName, [stringOf(owner?.firstName), stringOf(owner?.lastName)].filter(Boolean).join(' '))) || '—',
+    contractorName: toTitleCase(stringOf(item.contractorName, item.contractor, nested(item,'contractor')?.name) || stringOf(item.contractor)) || '—',
+    consultantName: toTitleCase(stringOf(item.consultantName, item.consultant, nested(item,'consultant')?.name)) || '—',
     active: booleanOf(true, item.active, item.isActive),
     createdAt: stringOf(item.createdAt, item.createdDate) || null,
     updatedAt: stringOf(item.updatedAt, item.modifiedDate) || null,
@@ -350,11 +351,11 @@ const normalizeProjectParty = (value: unknown): ProjectParty | null => {
   return {
     id,
     projectId: numberOf(item.projectId, item.project_id, party?.projectId, party?.project_id) ?? 0,
-    partyName: stringOf(item.partyNameText, item.party_name_text, item.partyName, item.party_name, item.name, item.title, item.displayName, item.organization, item.organizationName, item.companyName, item.firmName, item.contractorName, party?.partyNameText, party?.partyName, party?.party_name, party?.name, party?.title, party?.organization, org?.organizationName, org?.name) || stringOf(contact?.contactPerson, contact?.contact_person, contact?.personName, contact?.fullName) || 'â€”',
-    partyRole: stringOf(item.partyRole, item.party_role, item.role, item.type, item.partyType, item.party_type, item.designation, party?.partyRole, party?.party_role, party?.role, party?.type, party?.designation) || 'â€”',
-    packageName: stringOf(item.packageName, item.package_name, item.package, party?.packageName, party?.package_name) || null,
+    partyName: toTitleCase(stringOf(item.partyNameText, item.party_name_text, item.partyName, item.party_name, item.name, item.title, item.displayName, item.organization, item.organizationName, item.companyName, item.firmName, item.contractorName, party?.partyNameText, party?.partyName, party?.party_name, party?.name, party?.title, party?.organization, org?.organizationName, org?.name) || stringOf(contact?.contactPerson, contact?.contact_person, contact?.personName, contact?.fullName)) || 'â€”',
+    partyRole: toTitleCase(stringOf(item.partyRole, item.party_role, item.role, item.type, item.partyType, item.party_type, item.designation, party?.partyRole, party?.party_role, party?.role, party?.type, party?.designation)) || 'â€”',
+    packageName: toTitleCase(stringOf(item.packageName, item.package_name, item.package, party?.packageName, party?.package_name)) || null,
     primaryParty: booleanOf(false, item.primaryParty, item.primary_party, item.isPrimary, item.is_primary, party?.primaryParty, party?.primary_party),
-    contactPerson: stringOf(item.contactPerson, item.contact_person, item.personName, item.person_name, item.fullName, item.contactName, item.responsiblePerson, contact?.contactPerson, contact?.contact_person, contact?.personName, contact?.fullName, party?.contactPerson) || 'â€”',
+    contactPerson: toTitleCase(stringOf(item.contactPerson, item.contact_person, item.personName, item.person_name, item.fullName, item.contactName, item.responsiblePerson, contact?.contactPerson, contact?.contact_person, contact?.personName, contact?.fullName, party?.contactPerson)) || 'â€”',
     mobile: stringOf(item.mobile, item.phone, item.contactPhone, item.contact_phone, item.phoneNumber, item.phone_number, item.mobileNumber, item.mobile_number, contact?.mobile, contact?.phone, party?.mobile, party?.phone) || 'â€”',
     email: stringOf(item.email, item.contactEmail, item.contact_email, item.emailAddress, item.email_address, contact?.email, party?.email) || 'â€”',
     active: booleanOf(true, item.active, item.isActive, item.is_active, party?.active),
@@ -392,7 +393,7 @@ const normalizeApprovalHistoryEntry = (value: unknown): ProjectApprovalHistoryEn
     action: stringOf(item.action, item.event, item.type, item.projectStage) || 'Stage update',
     fromStage: stageRaw(item.fromStage) ?? stageRaw(item.previousStage),
     toStage: stageRaw(item.toStage) ?? stageRaw(item.newStage) ?? stageRaw(item.targetStage) ?? stageRaw(item.projectStage),
-    performedBy: stringOf(item.performedBy, item.enteredBy, item.employeeName, item.responsibleEmployeeId) || 'System',
+    performedBy: toTitleCase(stringOf(item.performedBy, item.enteredBy, item.employeeName, item.responsibleEmployeeId)) || 'System',
     performedAt: stringOf(item.performedAt, item.createdAt, item.timestamp) || new Date().toISOString(),
     remarks: stringOf(item.remarks, item.note, item.comment, item.outcomeComment) || '—',
   };
@@ -408,7 +409,7 @@ const normalizeNcEntry = (value: unknown): ProjectNcEntry | null => {
     description: stringOf(item.description, item.title, item.summary) || 'â€”',
     severity: stringOf(item.severity, item.priority, item.level) || 'â€”',
     status: stringOf(item.status, item.ncStatus) || 'â€”',
-    raisedBy: stringOf(item.raisedBy, item.createdBy, item.employeeName) || 'â€”',
+    raisedBy: toTitleCase(stringOf(item.raisedBy, item.createdBy, item.employeeName)) || 'â€”',
     raisedAt: stringOf(item.raisedAt, item.createdAt) || new Date().toISOString(),
     resolvedAt: stringOf(item.resolvedAt, item.completedAt) || null,
   };
@@ -424,13 +425,13 @@ const normalizeNcRegister = (value: unknown): ProjectNcRegister | null => {
     projectId: numberOf(item.projectId) ?? null,
     description: stringOf(item.description, item.title) || 'â€”',
     raisedDate: stringOf(item.raisedDate, item.createdAt) || new Date().toISOString().slice(0, 10),
-    raisedByOfficialText: stringOf(item.raisedByOfficialText, item.raisedBy) || 'â€”',
+    raisedByOfficialText: toTitleCase(stringOf(item.raisedByOfficialText, item.raisedBy)) || 'â€”',
     targetClosureDate: stringOf(item.targetClosureDate) || null,
     closureMethod: stringOf(item.closureMethod) || null,
     closureDate: stringOf(item.closureDate) || null,
     status: (allowedStatuses.includes(statusRaw as NcStatus) ? statusRaw : 'OPEN') as NcStatus,
     responsibleEmployeeId: numberOf(item.responsibleEmployeeId) ?? null,
-    responsibleEmployeeName: stringOf(item.responsibleEmployeeName, item.employeeName) || 'â€”',
+    responsibleEmployeeName: toTitleCase(stringOf(item.responsibleEmployeeName, item.employeeName)) || 'â€”',
   };
 };
 
@@ -442,11 +443,11 @@ const normalizeContact = (value: unknown): ProjectContact | null => {
   return {
     id,
     contactInfluenceRegisterId: numberOf(item.contactInfluenceRegisterId, item.contact_influence_register_id, item.contactInfluenceRegister_id, item.masterContactId, item.master_contact_id, contact?.contactInfluenceRegisterId, contact?.contact_influence_register_id, contact?.id) ?? 0,
-    firstName: stringOf(item.firstName, item.first_name, contact?.firstName, contact?.first_name, party?.firstName, party?.first_name, nested(item, 'person')?.firstName) || 'â€”',
-    lastName: stringOf(item.lastName, item.last_name, contact?.lastName, contact?.last_name, party?.lastName, party?.last_name, nested(item, 'person')?.lastName) || '',
+    firstName: toTitleCase(stringOf(item.firstName, item.first_name, contact?.firstName, contact?.first_name, party?.firstName, party?.first_name, nested(item, 'person')?.firstName)) || 'â€”',
+    lastName: toTitleCase(stringOf(item.lastName, item.last_name, contact?.lastName, contact?.last_name, party?.lastName, party?.last_name, nested(item, 'person')?.lastName)) || '',
     mobile: stringOf(item.mobile, item.phone, item.phoneNumber, item.phone_number, item.mobileNumber, item.mobile_number, contact?.mobile, contact?.phone, contact?.phoneNumber, party?.mobile) || 'â€”',
     email: stringOf(item.email, item.emailAddress, item.email_address, contact?.email, contact?.emailAddress, party?.email) || '',
-    designation: stringOf(item.designation, item.designation_, item.role, item.title, contact?.designation, contact?.role, party?.designation) || stringOf(item.designation, item.departmentFunction) || 'â€”',
+    designation: toTitleCase(stringOf(item.designation, item.designation_, item.role, item.title, contact?.designation, contact?.role, party?.designation) || stringOf(item.designation, item.departmentFunction)) || 'â€”',
     roleDescription: stringOf(item.roleDescription, item.role_description, item.description, item.departmentFunction, item.department_function, contact?.roleDescription, contact?.role_description, party?.roleDescription) || '',
     departmentFunction: stringOf(item.departmentFunction, item.department_function, contact?.departmentFunction, party?.departmentFunction) || null,
     influenceLevel: stringOf(item.influenceLevel, item.influence_level, contact?.influenceLevel, party?.influenceLevel) || null,
@@ -466,7 +467,7 @@ const normalizeNote = (value: unknown): ProjectNote | null => {
   return {
     id,
     noteText: stringOf(item.noteText, item.note_text, item.text, item.content, item.body, note?.noteText, note?.text) || 'â€”',
-    authorName: stringOf(item.authorEmployeeName, item.authorName, item.author_name, item.createdBy, item.createdByName, item.employeeName, item.author, author?.authorName, author?.name, author?.fullName) || '',
+    authorName: toTitleCase(stringOf(item.authorEmployeeName, item.authorName, item.author_name, item.createdBy, item.createdByName, item.employeeName, item.author, author?.authorName, author?.name, author?.fullName)) || '',
     authorEmployeeId: numberOf(item.authorEmployeeId, item.author_employee_id, item.createdById, item.employeeId, author?.authorEmployeeId, author?.id),
     createdAt: stringOf(item.createdAt, item.created_at, item.createdDate, note?.createdAt) || new Date().toISOString(),
     updatedAt: stringOf(item.updatedAt, item.updated_at, item.modifiedDate, note?.updatedAt) || new Date().toISOString(),
@@ -483,7 +484,7 @@ const normalizeTask = (value: unknown): ProjectTask | null => {
     status: stringOf(item.status) || 'OPEN',
     priority: stringOf(item.priority) || 'MEDIUM',
     dueDate: stringOf(item.dueDate) || '',
-    assignedEmployeeName: stringOf(item.assignedToEmployeeName, item.assignedEmployeeName, item.employeeName),
+    assignedEmployeeName: toTitleCase(stringOf(item.assignedToEmployeeName, item.assignedEmployeeName, item.employeeName)),
     assignedEmployeeId: numberOf(item.assignedToEmployeeId, item.assignedEmployeeId, item.employeeId),
   };
 };

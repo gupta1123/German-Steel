@@ -28,6 +28,7 @@ import { getEmployeeRoleCategory, getEmployeeRoleLabel, isAdminEmployee } from "
 import { usePathname, useSearchParams } from "next/navigation";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { toast } from "sonner";
+import { formatPersonName, toTitleCase } from "@/lib/utils";
 
 interface User {
   id: number;
@@ -90,8 +91,7 @@ interface OfficeManager {
 
 // Utility function to convert text to sentence case
 const toSentenceCase = (text: string): string => {
-  if (!text) return text;
-  return text.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+  return toTitleCase(text);
 };
 
 function Ellipsis({ value }: { value: string | number | null | undefined }) {
@@ -863,7 +863,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                         <AvatarFallback className="bg-muted text-xs font-semibold">{getInitials(user.firstName, user.lastName)}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold" title={`${user.firstName} ${user.lastName}`}>{`${user.firstName} ${user.lastName}`}</p>
+                        <p className="truncate text-sm font-semibold" title={formatPersonName(user.firstName, user.lastName)}>{formatPersonName(user.firstName, user.lastName)}</p>
                         <p className="truncate text-xs text-muted-foreground" title={user.email}>{user.email || user.departmentName || ''}</p>
                       </div>
                     </div>
@@ -968,7 +968,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 {currentUsers.map((user) => (
                   <TableRow key={user.id}>
                     {selectedColumns.includes('name') && (
-                      <TableCell className="font-medium"><Ellipsis value={`${user.firstName} ${user.lastName}`} /></TableCell>
+                      <TableCell className="font-medium"><Ellipsis value={formatPersonName(user.firstName, user.lastName)} /></TableCell>
                     )}
                     {selectedColumns.includes('role') && <TableCell className="overflow-hidden">{getRoleTag(user.role)}</TableCell>}
                     {selectedColumns.includes('mobile') && <TableCell><Ellipsis value={user.mobile} /></TableCell>}
@@ -1119,7 +1119,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           <DialogHeader>
             <DialogTitle>Delete Employee</DialogTitle>
             <DialogDescription>
-              {`Are you sure you want to delete ${deleteCandidate ? `${deleteCandidate.firstName} ${deleteCandidate.lastName}`.trim() || 'this employee' : 'this employee'}? This action cannot be undone.`}
+              {`Are you sure you want to delete ${deleteCandidate ? formatPersonName(deleteCandidate.firstName, deleteCandidate.lastName) || 'this employee' : 'this employee'}? This action cannot be undone.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1186,7 +1186,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                   {filteredArchivedEmployees.map((employee) => (
                     <TableRow key={employee.id}>
                       <TableCell className="font-medium">
-                        {`${employee.firstName} ${employee.lastName}`}
+                        {formatPersonName(employee.firstName, employee.lastName)}
                       </TableCell>
                       <TableCell>{employee.role}</TableCell>
                       <TableCell>{employee.departmentName}</TableCell>

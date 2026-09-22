@@ -728,7 +728,7 @@ const EmployeeSummary: React.FC = () => {
 
                                                                 {/* Attendance Section */}
                                                                 <div className="mb-6">
-                                                                    <h5 className="text-xl font-semibold text-foreground mb-4 uppercase tracking-wide">
+                                                                    <h5 className="text-xl font-semibold text-foreground mb-4 capitalize tracking-wide">
                                                                         Attendance
                                                                     </h5>
                                                                     <div className="grid grid-cols-2 gap-4">
@@ -756,7 +756,7 @@ const EmployeeSummary: React.FC = () => {
                                                                 
                                                                 {/* Salary Section */}
                                                                 <div>
-                                                                    <h5 className="text-xl font-semibold text-foreground mb-4 uppercase tracking-wide">
+                                                                    <h5 className="text-xl font-semibold text-foreground mb-4 capitalize tracking-wide">
                                                                         Salary Breakdown
                                                                     </h5>
                                                                     <div className="space-y-3">
