@@ -208,6 +208,7 @@ export interface Project {
   projectType: ProjectType;
   estimatedTmtMt: number | null;
   sourceApprovalStatus: ProjectStage | string;
+  approvalLetterReference?: string | null;
   assignedEmployeeId: number | null;
   assignedEmployeeName: string;
   contractorName: string;
@@ -287,6 +288,7 @@ const normalizeProject = (value: unknown): Project | null => {
     projectType: (allowedTypes.includes(typeRaw as ProjectType) ? typeRaw : 'ROAD_HIGHWAY') as ProjectType,
     estimatedTmtMt: numberOf(item.estimatedTmtMt, item.estimatedTmt, item.tmtMt),
     sourceApprovalStatus: (stageRaw || 'NOT_STARTED') as ProjectStage | string,
+    approvalLetterReference: stringOf(item.approvalLetterReference, item.approvalLetterRef) || null,
     assignedEmployeeId: numberOf(item.assignedEmployeeId, item.employeeId, owner?.id),
     assignedEmployeeName: stringOf(item.assignedEmployeeName, item.ownerName, [stringOf(owner?.firstName), stringOf(owner?.lastName)].filter(Boolean).join(' ')) || '—',
     contractorName: stringOf(item.contractorName, item.contractor, nested(item,'contractor')?.name) || stringOf(item.contractor) || '—',

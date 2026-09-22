@@ -258,19 +258,18 @@ export default function InstitutionDetailPage() {
     }
     if (target === 'NC_RAISED') {
       const quickValid = advNcDesc.trim() !== '' && advNcRaisedBy.trim() !== '' && advNcTargetDate !== '';
-      return [
+      const items = [
         { key: 'rows', label: ncRegisters.length > 0 ? `${ncRegisters.length} NC row(s) logged` : 'At least 1 NC row', done: ncRegisters.length > 0 || quickValid, action: 'Fill below' },
       ];
+      if (institution?.empanelmentStatus === 'TECHNICAL_VISIT_SCHEDULED') {
+        items.unshift({ key: 'visit', label: 'Technical visit completed (checked out)', done: visitDone, action: 'Plan + check out in Visits tab' });
+      }
+      return items;
     }
     if (target === 'NC_CLOSURE_SUBMITTED') {
       const allIn = ncRegisters.length > 0 && ncRegisters.every((n) => n.status !== 'OPEN');
       return [
         { key: 'rows', label: 'Every NC submitted / closed', done: allIn, action: ncRegisters.length === 0 ? 'Raise NCs first' : 'Mark Submitted in NC tab' },
-      ];
-    }
-    if (institution?.empanelmentStatus === 'TECHNICAL_VISIT_SCHEDULED' && target === 'NC_RAISED') {
-      return [
-        { key: 'visit', label: 'Technical visit completed (checked out)', done: visitDone, action: 'Plan + check out in Visits tab' },
       ];
     }
     return [];
@@ -536,7 +535,7 @@ export default function InstitutionDetailPage() {
           jurisdiction: institution.jurisdiction,
           state: institution.state,
           regionId: institution.regionId,
-          empanelmentStatus: institution.empanelmentStatus,
+          empanelmentStatus: institution.empanelmentStatus as EmpanelmentStatus,
           assignedEmployeeId: institution.assignedEmployeeId,
           currentStageOwnerContactId: ownerContactId,
           applicationDate: appDate,
@@ -581,7 +580,7 @@ export default function InstitutionDetailPage() {
           jurisdiction: institution.jurisdiction,
           state: institution.state,
           regionId: institution.regionId,
-          empanelmentStatus: institution.empanelmentStatus,
+          empanelmentStatus: institution.empanelmentStatus as EmpanelmentStatus,
           assignedEmployeeId: institution.assignedEmployeeId,
           currentStageOwnerContactId: institution.currentStageOwnerContactId,
           applicationDate: institution.applicationDate,

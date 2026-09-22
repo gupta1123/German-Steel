@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
@@ -44,7 +44,7 @@ const statusClassName = (status: RetailAccount['accountStatus']) => {
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
-export default function CustomersPage() {
+function CustomersPageContent() {
   const { token, userData, userRole } = useAuth();
   const searchParams = useSearchParams();
   const presetGroupId = searchParams?.get('groupId') ?? '';
@@ -450,5 +450,13 @@ export default function CustomersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function CustomersPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[320px] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+      <CustomersPageContent />
+    </Suspense>
   );
 }

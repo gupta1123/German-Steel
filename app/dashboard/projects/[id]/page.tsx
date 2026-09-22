@@ -178,7 +178,8 @@ export default function ProjectDetailPage() {
 
   const allowedNextStatuses = useMemo<ProjectStage[]>(() => {
     if (!project) return [];
-    const candidates = stageActions.length > 0 ? stageActions : (VALID_STAGE_TRANSITIONS[project.sourceApprovalStatus] || []);
+    const currentStage = project.sourceApprovalStatus as ProjectStage;
+    const candidates: ProjectStage[] = stageActions.length > 0 ? stageActions : (VALID_STAGE_TRANSITIONS[currentStage] || []);
     return hasClosedNc ? candidates.filter((stage) => stage !== 'NC_RAISED') : candidates;
   }, [project, stageActions, hasClosedNc]);
 
@@ -679,80 +680,6 @@ export default function ProjectDetailPage() {
         <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Next milestone</CardDescription><CardTitle className="truncate text-sm" title={allowedNextStatuses[0] ? humanize(allowedNextStatuses[0]) : 'No next stage'}>{allowedNextStatuses[0] ? humanize(allowedNextStatuses[0]) : 'No next stage'}</CardTitle></CardHeader></Card>
         <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Target completion</CardDescription><CardTitle className="text-base">{showDate(project.completionDate)}</CardTitle></CardHeader></Card>
       </div>
-      {false && (() => {
-        const APPROVAL_FLOW: ProjectStage[] = ['NOT_STARTED','CREDENTIALS_SUBMITTED_TO_CONTRACTOR','FORWARDED_TO_CONSULTANT','UNDER_REVIEW','TECHNICAL_VISIT_SCHEDULED','SOURCE_APPROVED','PROJECT_COMPLETED'];
-        const EXCEPTION_STAGES: string[] = ['NC_RAISED','NC_CLOSURE_SUBMITTED','REJECTED'];
-        const current = project.sourceApprovalStatus as string;
-        const isException = EXCEPTION_STAGES.includes(current);
-        const pipelineByStage = new Map(pipeline.map((e) => [String(e.stage), e]));
-        const getEntryDate = (stage: string) => {
-          const e = pipelineByStage.get(stage) as ProjectPipelineEntry | undefined;
-          return e ? e.enteredAt : null;
-        };
-        return (
-          <Card className="border-2">
-            <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">Approval Progress</CardTitle>
-                  <CardDescription>Current stage: <span className="font-medium text-foreground">{humanize(current)}</span>{isException ? ' · Exception branch — normal path paused' : ''}</CardDescription>
-                </div>
-                <Badge variant={STAGE_VARIANT[current] ?? 'outline'} className="shrink-0">{humanize(current)}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {/* Horizontal stepper — scrollable on small screens */}
-              <div className="overflow-x-auto pb-2">
-                <ol className="flex min-w-[720px] items-start gap-0 sm:min-w-0 sm:gap-1">
-                  {APPROVAL_FLOW.map((stage, idx) => {
-                    const isCurrent = stage === current;
-                    const entry = pipelineByStage.get(stage) as ProjectPipelineEntry | undefined;
-                    const isCompleted = !!entry && !isCurrent;
-                    const isUpcoming = !isCurrent && !isCompleted;
-                    const dateLabel = entry ? showDate(entry.enteredAt) : null;
-                    return (
-                      <li key={stage} className="flex flex-1 items-start gap-1">
-                        <div className="flex min-w-0 flex-1 flex-col items-center text-center">
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-semibold ${isCurrent ? 'border-primary bg-primary text-primary-foreground' : isCompleted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/30 bg-muted text-muted-foreground'}`}>
-                            {isCompleted ? '✓' : isCurrent ? '●' : idx + 1}
-                          </div>
-                          <p className={`mt-1.5 max-w-[110px] text-[11px] font-medium leading-tight ${isCurrent ? 'text-foreground' : isCompleted ? 'text-emerald-700' : 'text-muted-foreground'}`}>{humanize(stage)}</p>
-                          {dateLabel && entry ? (
-                            <p className="mt-0.5 text-[10px] text-muted-foreground">{dateLabel}{entry.enteredBy && entry.enteredBy !== '—' ? ` · ${entry.enteredBy}` : ''}</p>
-                          ) : (
-                            <p className="mt-0.5 text-[10px] text-muted-foreground">{isCurrent ? 'Current' : isCompleted ? 'Done' : 'Upcoming'}</p>
-                          )}
-                          {entry?.remarks && entry.remarks !== '—' && <p className="mt-1 max-w-[140px] truncate text-[10px] text-muted-foreground" title={entry.remarks}>{entry.remarks}</p>}
-                        </div>
-                        {idx < APPROVAL_FLOW.length - 1 && (
-                          <div className={`mt-4 h-0.5 flex-1 ${pipelineByStage.has(APPROVAL_FLOW[idx + 1]) || isCompleted ? 'bg-emerald-500' : 'bg-muted-foreground/20'}`} />
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-              </div>
-              {isException && (
-                <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <Badge variant="destructive">{humanize(current)}</Badge>
-                    <span className="text-amber-900">Exception — normal approval is paused until resolved.</span>
-                  </div>
-                  {(() => {
-                    const exEntry = pipelineByStage.get(current) as ProjectPipelineEntry | undefined;
-                    return exEntry ? (
-                      <p className="mt-1.5 text-xs text-amber-800">
-                        Entered {showDate(exEntry.enteredAt)}{exEntry.enteredBy && exEntry.enteredBy !== '—' ? ` · ${exEntry.enteredBy}` : ''}{exEntry.remarks && exEntry.remarks !== '—' ? ` · ${exEntry.remarks}` : ''}
-                      </p>
-                    ) : null;
-                  })()}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        );
-      })()}
-
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
