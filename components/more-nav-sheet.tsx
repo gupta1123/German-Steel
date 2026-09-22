@@ -5,22 +5,10 @@ import Link from "@/components/guarded-link";
 import { usePathname } from "next/navigation";
 import { 
   Home, 
-  Users, 
-  Calendar,
-  ClipboardList,
-  ThumbsUp,
-  Tag,
-  FileText,
-  Phone,
-  User,
-  CheckCircle,
-  DollarSign,
-  BarChart,
   Settings,
   X,
   MoreHorizontal
 } from "lucide-react";
-import { useAuth } from "@/components/auth-provider";
 
 interface MoreNavSheetProps {
   isOpen: boolean;
@@ -32,6 +20,7 @@ interface MoreNavSheetProps {
       name: string;
       href: string;
       icon: React.ComponentType<{className?: string}>;
+      disabled?: boolean;
     }>;
   }>;
   isManager: boolean;
@@ -50,7 +39,6 @@ export default function MoreNavSheet({
   visibleItems 
 }: MoreNavSheetProps) {
   const pathname = usePathname();
-  const { currentUser } = useAuth();
 
   // Prevent body scroll when sheet is open
   useEffect(() => {
@@ -72,7 +60,7 @@ export default function MoreNavSheet({
       href: string;
       icon: React.ComponentType<{className?: string}>;
     }> = [
-      { name: "Dashboard", href: "/dashboard", icon: Home }
+      { name: "Overview", href: "/dashboard", icon: Home }
     ];
 
     // Add Settings for non-managers
@@ -83,7 +71,7 @@ export default function MoreNavSheet({
     // Add items from categories
     sidebarCategories.forEach(category => {
       category.items.forEach(item => {
-        items.push(item);
+        if (!item.disabled) items.push(item);
       });
     });
 

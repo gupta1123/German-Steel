@@ -157,12 +157,7 @@ export default function MonthlyTargetPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4">
-        <h1 className="text-3xl font-bold">Monthly Target Report</h1>
-        <p className="text-muted-foreground">
-          Track city-wise targets, achievements, and team member performance
-        </p>
-      </div>
+
 
       <Card>
         <CardHeader>

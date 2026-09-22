@@ -143,10 +143,7 @@ export function SearchableSelect<T = unknown>({
                 Clear selection
               </Button>
             )}
-            <ScrollArea
-              className="mt-2"
-              style={{ height: optionListHeight }}
-            >
+            <div className="mt-2 max-h-64 overflow-y-auto pr-1" style={{ maxHeight: 256 }}>
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-sm text-muted-foreground">{noResultsMessage}</div>
               ) : (
@@ -173,7 +170,7 @@ export function SearchableSelect<T = unknown>({
                   })}
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </>
         ) : (
           <div className="py-6 text-center text-sm text-muted-foreground">{emptyMessage}</div>

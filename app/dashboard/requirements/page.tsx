@@ -1,30 +1,29 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import ReactSelect, { type SingleValue, type StylesConfig } from 'react-select';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { format, subDays, differenceInDays } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { RetailAPI } from '@/lib/retail-api';
 import { tasksApi, type SharedTask, type SharedTaskPriority, type SharedTaskStatus } from '@/lib/tasks-api';
-import { hasManagerPrivileges } from '@/lib/auth';
+import { getCorrectedRoleFlags } from '@/lib/auth';
 import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import { sortBy } from 'lodash';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import SearchableSelect, { SearchableSelectOption } from '@/components/ui/searchable-select';
+import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
 import { SpacedCalendar } from '@/components/ui/spaced-calendar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pagination, PaginationContent, PaginationLink, PaginationItem, PaginationPrevious, PaginationNext } from '@/components/ui/pagination';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from '@/components/ui/sheet';
-import { CalendarIcon, MoreHorizontal, PlusCircle, Search, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, FileText, Trash2, Calendar as CalendarIcon2, ChevronLeft, ChevronRight, Check, ChevronsUpDown } from 'lucide-react';
+import { CalendarIcon, MoreHorizontal, PlusCircle, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, FileText, Trash2, Calendar as CalendarIcon2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 import { toast } from 'sonner';
@@ -100,12 +99,11 @@ const toRequirementTask = (task: SharedTask): Task => ({
     storeId: task.clientAccountId ?? 0,
     storeName: task.clientAccountName,
     storeCity: task.clientAccountCity,
-    taskType: 'requirement',
+    taskType: task.taskType || 'REQUIREMENT',
 });
 
 const Requirements = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
     const [newTask, setNewTask] = useState<Task>({
         id: 0,
         taskTitle: '',
@@ -125,7 +123,6 @@ const Requirements = () => {
     const router = useGuardedRouter();
     const FILTER_STATE_KEY = 'requirements.filters.v1';
     const [isFiltersHydrated, setIsFiltersHydrated] = useState(false);
-    const [activeTab, setActiveTab] = useState('general');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
     const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false);
@@ -135,11 +132,10 @@ const Requirements = () => {
     const [currentPage, setCurrentPage] = useState(0);
     const [pageSize, setPageSize] = useState(10);
     const [totalPages, setTotalPages] = useState(0);
-    const [totalElements, setTotalElements] = useState(0);
     const [filters, setFilters] = useState({
-        employee: '',
-        priority: '',
-        status: '',
+        employee: 'all',
+        priority: 'all',
+        status: 'all',
         search: '',
         startDate: format(new Date(), 'yyyy-MM-dd'),
         endDate: format(new Date(), 'yyyy-MM-dd')
@@ -155,42 +151,63 @@ const Requirements = () => {
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState<string>('');
     const [taskToUpdate, setTaskToUpdate] = useState<number | null>(null);
-    const [isTabLoading, setIsTabLoading] = useState(false);
     const [isStoresLoading, setIsStoresLoading] = useState(false);
     const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
     const [employeeLoadError, setEmployeeLoadError] = useState<string | null>(null);
     const dateRangeInvalid = isDateRangeInvalid(filters.startDate, filters.endDate);
     const [isCreating, setIsCreating] = useState(false);
     const [updatingTaskFields, setUpdatingTaskFields] = useState<Set<string>>(new Set());
+    const fetchRequestIdRef = useRef(0);
+    const [dueTasks, setDueTasks] = useState<SharedTask[]>([]);
+    const [dueTasksLoading, setDueTasksLoading] = useState(false);
     
     // SearchableSelect state variables
     const [selectedStore, setSelectedStore] = useState<string[]>([]);
-    const [employeeOptions, setEmployeeOptions] = useState<SearchableSelectOption[]>([]);
-    const [storeOptions, setStoreOptions] = useState<SearchableSelectOption[]>([]);
-    const [isAssignPopoverOpen, setIsAssignPopoverOpen] = useState(false);
-    const [assignSearchTerm, setAssignSearchTerm] = useState("");
-    const [filterEmployeeSearch, setFilterEmployeeSearch] = useState("");
-    const [filterEmployeePopoverOpen, setFilterEmployeePopoverOpen] = useState(false);
+    const [employeeOptions, setEmployeeOptions] = useState<SearchableOption[]>([]);
+    const [storeOptions, setStoreOptions] = useState<SearchableOption[]>([]);
 
-    const taskDraftIsDirty = isModalOpen && (
-        Boolean(newTask.taskTitle.trim()) ||
-        Boolean(newTask.taskDesciption.trim()) ||
-        Boolean(newTask.dueDate) ||
+    // Pure form checks (no isModalOpen gate) so the navigation guard stays armed
+    // while the discard confirmation is on screen with the form hidden.
+    const taskDraftIsDirty = Boolean(
+        newTask.taskTitle.trim() ||
+        newTask.taskDesciption.trim() ||
+        newTask.dueDate ||
         newTask.assignedToId !== 0 ||
         newTask.storeId !== 0 ||
-        newTask.priority !== 'low' ||
-        newTask.category !== 'Requirement'
+        newTask.priority !== 'low'
     );
-    const statusDraftIsDirty = isStatusModalOpen && Boolean(selectedTask) && selectedStatus !== selectedTask?.status;
-    const { requestDiscard } = useUnsavedChanges(taskDraftIsDirty || statusDraftIsDirty);
+    // Required before Create is enabled (backend rejects blank title/assignee, and '' dueDate)
+    const canCreateRequirement = newTask.taskTitle.trim() !== '' && newTask.assignedToId !== 0 && newTask.dueDate !== '';
+    const statusDraftIsDirty = Boolean(selectedTask) && selectedStatus !== selectedTask?.status;
+    // Navigation/unload guard only — modal closes use the local confirm below,
+    // so the form dialog and the confirm dialog are never stacked.
+    useUnsavedChanges(taskDraftIsDirty || statusDraftIsDirty);
+    // Which form is awaiting discard confirmation (form is hidden meanwhile, state preserved)
+    const [confirmTarget, setConfirmTarget] = useState<'create' | 'status' | null>(null);
 
     const statusOptions = ['Assigned', 'Work In Progress', 'Complete', 'Cancelled'] as const;
 
-    const { token, userRole, userData, currentUser } = useAuth();
-    const isManager = useMemo(
-        () => hasManagerPrivileges(userRole, currentUser),
-        [userRole, currentUser]
+    const { token, userRole, userData, currentUser, teamId, correctedRoleFlags } = useAuth();
+    const roleFlags = useMemo(
+        () => getCorrectedRoleFlags(userRole, currentUser, correctedRoleFlags, teamId),
+        [userRole, currentUser, correctedRoleFlags, teamId]
     );
+    const isManager = roleFlags.isManager;
+
+    // Due-task loading via documented GET /api/tasks/due — dynamic employeeId/dueDate (after token init to avoid use-before-init)
+    useEffect(() => {
+        if (!token || !newTask.assignedToId || !newTask.dueDate) {
+            setDueTasks([]);
+            return;
+        }
+        let cancelled = false;
+        setDueTasksLoading(true);
+        tasksApi.getDue(token, newTask.assignedToId, newTask.dueDate)
+            .then((page) => { if (!cancelled) setDueTasks(page.content); })
+            .catch(() => { if (!cancelled) setDueTasks([]); })
+            .finally(() => { if (!cancelled) setDueTasksLoading(false); });
+        return () => { cancelled = true; };
+    }, [token, newTask.assignedToId, newTask.dueDate]);
 
     useEffect(() => {
         if (errorMessage) {
@@ -218,19 +235,6 @@ const Requirements = () => {
         setFilters(newFilters);
     };
 
-    const handleNext = () => {
-        setIsTabLoading(true);
-   
-        setTimeout(() => {
-            setActiveTab('details');
-            setIsTabLoading(false);
-        }, 500);
-    };
-
-    const handleBack = () => {
-        setActiveTab('general');
-    };
-
     const handleViewStore = (storeId: number) => {
         try {
             sessionStorage.setItem('nav.return.to', JSON.stringify({ page: 'requirements' }));
@@ -245,24 +249,42 @@ const Requirements = () => {
             return;
         }
 
+        const requestId = ++fetchRequestIdRef.current;
         setIsLoading(true);
         setErrorMessage(null);
         try {
-            // The shared endpoint applies the logged-in user's access scope.
-            const tasksArray = (await tasksApi.getAll(token))
-                .filter((task) => task.taskType === 'REQUIREMENT')
-                .map(toRequirementTask)
-                .sort((a: Task, b: Task) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+            // GET /api/tasks/visible — all params optional. Backend scopes by JWT:
+            // admin sees all, manager sees own + direct-reports rollup, FE sees own.
+            // Priority/search/dates stay client-side (date defaults are today–today).
+            const opts: { assignedToEmployeeId?: number | string; status?: string; q?: string; dueFrom?: string; dueTo?: string; page?: number; size?: number } = {
+                page: currentPage,
+                size: pageSize,
+            };
+            if (filters.employee && filters.employee !== 'all') {
+                opts.assignedToEmployeeId = parseInt(filters.employee, 10);
+            }
+            if (filters.status && filters.status !== 'all') {
+                opts.status = filters.status;
+            }
+            if (filters.search?.trim()) opts.q = filters.search.trim();
+            if (filters.startDate) opts.dueFrom = filters.startDate;
+            if (filters.endDate) opts.dueTo = filters.endDate;
 
-            setTasks(tasksArray);
+            const page = await tasksApi.getRequirementsPage(token, opts);
+
+            if (requestId !== fetchRequestIdRef.current) return;
+
+            setTasks(page.content.map(toRequirementTask));
+            setTotalPages(page.totalPages);
         } catch (error) {
+            if (requestId !== fetchRequestIdRef.current) return;
             console.error('Error fetching tasks:', error);
             setTasks([]);
             setErrorMessage(error instanceof Error ? error.message : 'Failed to load requirements');
         } finally {
-            setIsLoading(false);
+            if (requestId === fetchRequestIdRef.current) setIsLoading(false);
         }
-    }, [token, dateRangeInvalid]);
+    }, [token, dateRangeInvalid, filters.employee, filters.priority, filters.status, filters.search, filters.startDate, filters.endDate, currentPage, pageSize]);
 
     const fetchEmployees = useCallback(async () => {
         if (!token) return;
@@ -339,7 +361,14 @@ const Requirements = () => {
             const raw = sessionStorage.getItem(FILTER_STATE_KEY);
             if (raw) {
                 const saved = JSON.parse(raw);
-                if (saved?.filters) setFilters((prev) => ({ ...prev, ...saved.filters, search: '' }));
+                if (saved?.filters) setFilters((prev) => {
+                    const merged = { ...prev, ...saved.filters, search: '' };
+                    // Normalize legacy '' defaults to 'all' for shadcn Select values
+                    for (const key of ['employee', 'priority', 'status'] as const) {
+                        if (!merged[key] || merged[key] === '') merged[key] = 'all';
+                    }
+                    return merged;
+                });
                 if (typeof saved?.currentPage === 'number') setCurrentPage(saved.currentPage);
                 if (typeof saved?.pageSize === 'number') setPageSize(saved.pageSize);
             }
@@ -413,134 +442,17 @@ const Requirements = () => {
         setStoreOptions(options);
     }, [stores]);
 
-    const selectedStoreOption = useMemo(
-        () => storeOptions.find((option) => option.value === selectedStore[0]) ?? null,
-        [selectedStore, storeOptions]
+    // Employee options for the desktop filter SearchableSelect (All + directory)
+    const employeeFilterOptions = useMemo<SearchableOption[]>(
+        () => [
+            { value: 'all', label: 'All employees' },
+            ...filterEmployees.map((employee) => ({
+                value: employee.id.toString(),
+                label: employee.name,
+            })),
+        ],
+        [filterEmployees]
     );
-
-    const storeSelectStyles: StylesConfig<SearchableSelectOption, false> = {
-        control: (base, state) => ({
-            ...base,
-            minHeight: 40,
-            borderRadius: 6,
-            backgroundColor: 'hsl(var(--background))',
-            borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--input))',
-            boxShadow: state.isFocused ? '0 0 0 1px hsl(var(--ring))' : 'none',
-            '&:hover': {
-                borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--input))',
-            },
-        }),
-        valueContainer: (base) => ({ ...base, paddingLeft: 12, paddingRight: 8 }),
-        singleValue: (base) => ({ ...base, color: 'hsl(var(--foreground))' }),
-        placeholder: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-        input: (base) => ({ ...base, color: 'hsl(var(--foreground))' }),
-        indicatorSeparator: (base) => ({ ...base, backgroundColor: 'hsl(var(--border))' }),
-        dropdownIndicator: (base) => ({
-            ...base,
-            color: 'hsl(var(--muted-foreground))',
-            '&:hover': { color: 'hsl(var(--foreground))' },
-        }),
-        clearIndicator: (base) => ({
-            ...base,
-            color: 'hsl(var(--muted-foreground))',
-            '&:hover': { color: 'hsl(var(--foreground))' },
-        }),
-        menu: (base) => ({
-            ...base,
-            backgroundColor: 'hsl(var(--popover))',
-            border: '1px solid hsl(var(--border))',
-            borderRadius: 6,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            overflow: 'hidden',
-            zIndex: 99999,
-        }),
-        menuList: (base) => ({ ...base, paddingTop: 4, paddingBottom: 4, maxHeight: 220 }),
-        option: (base, state) => ({
-            ...base,
-            backgroundColor: state.isSelected
-                ? 'hsl(var(--accent))'
-                : state.isFocused
-                    ? 'hsl(var(--muted))'
-                    : 'transparent',
-            color: 'hsl(var(--foreground))',
-            cursor: 'pointer',
-            fontSize: 14,
-        }),
-        noOptionsMessage: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-        loadingMessage: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-    };
-
-    const filteredAssignEmployeeOptions = useMemo(() => {
-        const query = assignSearchTerm.trim().toLowerCase();
-        if (!query) return employeeOptions;
-        return employeeOptions.filter((option) => option.label.toLowerCase().includes(query));
-    }, [employeeOptions, assignSearchTerm]);
-
-    const selectedAssignLabel = useMemo(() => {
-        if (!newTask.assignedToId) return '';
-        return employeeOptions.find((opt) => opt.value === newTask.assignedToId.toString())?.label ?? '';
-    }, [employeeOptions, newTask.assignedToId]);
-
-    const filteredTopEmployeeOptions = useMemo(() => {
-        const query = filterEmployeeSearch.trim().toLowerCase();
-        if (!query) return filterEmployees;
-        return filterEmployees.filter((employee) => employee.name.toLowerCase().includes(query));
-    }, [filterEmployees, filterEmployeeSearch]);
-
-    const topEmployeeDisplay = useMemo(() => {
-        if (filters.employee === '' || filters.employee === 'all') return 'All employees';
-        return filterEmployees.find((emp) => emp.id.toString() === filters.employee)?.name || 'All employees';
-    }, [filters.employee, filterEmployees]);
-
-    const applyFilters = useCallback(() => {
-        const searchLower = filters.search.toLowerCase();
-        const filtered = tasks.filter((task) => {
-            const matchesType = task.taskType === 'requirement';
-            if (!matchesType) return false;
-
-            const matchesSearch =
-                (task.taskTitle?.toLowerCase() || '').includes(searchLower) ||
-                (task.taskDesciption?.toLowerCase() || '').includes(searchLower) ||
-                (task.storeName?.toLowerCase() || '').includes(searchLower) ||
-                (task.assignedToName?.toLowerCase() || '').includes(searchLower);
-
-            const matchesEmployee =
-                filters.employee === '' ||
-                filters.employee === 'all' ||
-                task.assignedToId === parseInt(filters.employee, 10);
-
-            const matchesPriority =
-                filters.priority === '' ||
-                filters.priority === 'all' ||
-                task.priority === filters.priority;
-
-            const matchesStatus =
-                filters.status === '' ||
-                filters.status === 'all'
-                    ? task.status !== 'Complete' && task.status !== 'Cancelled'
-                    : task.status === filters.status;
-
-            const matchesDateRange =
-                (filters.startDate === '' || new Date(task.dueDate) >= new Date(filters.startDate)) &&
-                (filters.endDate === '' || new Date(task.dueDate) <= new Date(filters.endDate));
-
-            return matchesSearch && matchesEmployee && matchesPriority && matchesStatus && matchesDateRange;
-        });
-
-        const nextTotalPages = filtered.length === 0 ? 0 : Math.ceil(filtered.length / pageSize);
-        setFilteredTasks(filtered);
-        setTotalElements(filtered.length);
-        setTotalPages(nextTotalPages);
-        if (nextTotalPages === 0) {
-            if (currentPage !== 0) setCurrentPage(0);
-        } else if (currentPage >= nextTotalPages) {
-            setCurrentPage(Math.max(0, nextTotalPages - 1));
-        }
-    }, [tasks, filters, pageSize, currentPage]);
-
-    useEffect(() => {
-        applyFilters();
-    }, [applyFilters]);
 
     const createTask = async () => {
         if (!token) return;
@@ -594,7 +506,39 @@ const Requirements = () => {
     };
 
     const requestCloseStatusModal = () => {
-        requestDiscard(resetStatusModal, statusDraftIsDirty);
+        if (!statusDraftIsDirty) {
+            resetStatusModal();
+            return;
+        }
+        // Hide the form first so only one modal is ever on screen, then confirm.
+        // Selection state is preserved for Keep Editing.
+        setIsStatusModalOpen(false);
+        setConfirmTarget('status');
+    };
+
+    const requestCloseCreateModal = () => {
+        if (!taskDraftIsDirty) {
+            setIsModalOpen(false);
+            resetForm();
+            return;
+        }
+        // Hide the form first so only one modal is ever on screen, then confirm.
+        // Form state is preserved for Keep Editing.
+        setIsModalOpen(false);
+        setConfirmTarget('create');
+    };
+
+    const confirmDiscardChanges = () => {
+        if (confirmTarget === 'create') resetForm();
+        else if (confirmTarget === 'status') resetStatusModal();
+        setConfirmTarget(null);
+    };
+
+    const keepEditing = () => {
+        // Reopen the hidden form with state intact
+        if (confirmTarget === 'create') setIsModalOpen(true);
+        else if (confirmTarget === 'status') setIsStatusModalOpen(true);
+        setConfirmTarget(null);
     };
 
     const confirmStatusUpdate = async () => {
@@ -715,8 +659,6 @@ const Requirements = () => {
         setStores([]);
         setSelectedStore([]);
         fetchStores(parseInt(value, 10));
-        setAssignSearchTerm('');
-        setIsAssignPopoverOpen(false);
     };
 
     const handleStoreSelect = (values: string[]) => {
@@ -735,10 +677,6 @@ const Requirements = () => {
                 storeName: ''
             });
         }
-    };
-
-    const handleStoreOptionSelect = (option: SingleValue<SearchableSelectOption>) => {
-        handleStoreSelect(option ? [option.value] : []);
     };
 
     // Reset form function
@@ -761,21 +699,7 @@ const Requirements = () => {
         });
         setSelectedStore([]);
         setStores([]);
-        setActiveTab('general');
     };
-
-    const requestCloseCreateModal = () => {
-        requestDiscard(() => {
-            setIsModalOpen(false);
-            resetForm();
-        }, taskDraftIsDirty);
-    };
-
-    const paginatedTasks = useMemo(() => {
-        const startIndex = currentPage * pageSize;
-        const endIndex = startIndex + pageSize;
-        return filteredTasks.slice(startIndex, endIndex);
-    }, [filteredTasks, currentPage, pageSize]);
 
     const getStatusInfo = (status: string): { icon: React.ReactNode; color: string } => {
         switch (status.toLowerCase()) {
@@ -796,66 +720,15 @@ const Requirements = () => {
         <div className="mx-auto w-full max-w-none py-4">
             <div className="mb-4 flex items-center justify-between gap-2">
                 <div className="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
-                    <Popover open={filterEmployeePopoverOpen} onOpenChange={setFilterEmployeePopoverOpen}>
-                        <PopoverTrigger asChild>
-                            <Button variant="outline" className="h-9 w-[160px] shrink-0 justify-between px-3 text-sm font-normal shadow-none">
-                                <span className="truncate text-left">{topEmployeeDisplay}</span>
-                                <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[280px] p-0" align="start">
-                            <div className="p-3 border-b">
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        placeholder="Search employees..."
-                                        value={filterEmployeeSearch}
-                                        onChange={(event) => setFilterEmployeeSearch(event.target.value)}
-                                        className="pl-9"
-                                    />
-                                </div>
-                            </div>
-                            <div className="max-h-64 overflow-y-auto">
-                                <button
-                                    type="button"
-                                    className={`flex w-full items-center justify-between px-4 py-2 text-sm ${
-                                        filters.employee === '' || filters.employee === 'all'
-                                            ? 'bg-primary/10 text-primary font-semibold'
-                                            : 'hover:bg-muted/40'
-                                    }`}
-                                    onClick={() => {
-                                        handleFilterChange('employee', 'all');
-                                        setFilterEmployeePopoverOpen(false);
-                                        setFilterEmployeeSearch('');
-                                    }}
-                                >
-                                    <span>All employees</span>
-                                    {(filters.employee === '' || filters.employee === 'all') && <Check className="h-4 w-4 text-primary" />}
-                                </button>
-                                {filteredTopEmployeeOptions.map((employee) => {
-                                    const value = employee.id.toString();
-                                    const isSelected = filters.employee === value;
-                                    return (
-                                        <button
-                                            key={employee.id}
-                                            type="button"
-                                            className={`flex w-full items-center justify-between px-4 py-2 text-sm ${
-                                                isSelected ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-muted/40'
-                                            }`}
-                                            onClick={() => {
-                                                handleFilterChange('employee', value);
-                                                setFilterEmployeePopoverOpen(false);
-                                                setFilterEmployeeSearch('');
-                                            }}
-                                        >
-                                            <span className="truncate text-left">{employee.name}</span>
-                                            {isSelected && <Check className="h-4 w-4 text-primary" />}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </PopoverContent>
-                    </Popover>
+                    <SearchableSelect
+                        options={employeeFilterOptions}
+                        value={filters.employee || 'all'}
+                        onSelect={(option) => handleFilterChange('employee', option?.value ?? 'all')}
+                        placeholder="All employees"
+                        searchPlaceholder="Search employees..."
+                        emptyMessage="No employees found"
+                        triggerClassName="h-9 w-[160px] shrink-0 text-sm font-normal shadow-none"
+                    />
                     <Select value={filters.priority} onValueChange={(value) => handleFilterChange('priority', value)}>
                         <SelectTrigger className="h-9 w-[130px] shrink-0 text-sm shadow-none">
                             <SelectValue placeholder="Filter by priority" />
@@ -955,18 +828,14 @@ const Requirements = () => {
                 if (open) setIsModalOpen(true);
                 else requestCloseCreateModal();
             }}>
-                <DialogContent>
+                <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Create New Requirement</DialogTitle>
                         <DialogDescription>Fill in the details to create a new requirement.</DialogDescription>
                     </DialogHeader>
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="general" disabled={isTabLoading}>General</TabsTrigger>
-                            <TabsTrigger value="details" disabled={isTabLoading}>Details</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="general">
-                            <div className="grid gap-4">
+                    <div className="grid gap-6 md:grid-cols-2">
+                        <div className="grid content-start gap-4">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</p>
                                 <div className="grid gap-2">
                                     <Label htmlFor="taskTitle">Requirement Title</Label>
                                     <Input
@@ -978,48 +847,21 @@ const Requirements = () => {
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="taskDesciption">Requirement Description</Label>
-                                    <Input
+                                    <Textarea
                                         id="taskDesciption"
                                         placeholder="Enter requirement description"
+                                        rows={4}
                                         value={newTask.taskDesciption}
                                         onChange={(e) => setNewTask({ ...newTask, taskDesciption: e.target.value })}
                                     />
-          </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="category">Category</Label>
-                                    <Select value={newTask.category} onValueChange={(value) => setNewTask({ ...newTask, category: value })}>
-                                        <SelectTrigger className="w-[280px]">
-                                            <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent position="popper" sideOffset={4}>
-                                            <SelectItem value="Requirement">Requirement</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-                                <div className="flex justify-between mt-4">
-                                    <Button variant="outline" onClick={requestCloseCreateModal}>Cancel</Button>
-                                    <Button onClick={handleNext} disabled={isTabLoading}>
-                                        {isTabLoading ? (
-                                            <>
-                                                <Loader className="w-4 h-4 mr-2 animate-spin" />
-                                                Loading...
-                                            </>
-                                        ) : (
-                                            'Next'
-                                        )}
-                                    </Button>
                                 </div>
-                            </div>
-                        </TabsContent>
-                        <TabsContent value="details">
-                            <div className="grid gap-4">
                                 <div className="grid gap-2">
                                     <Label htmlFor="dueDate">Due Date</Label>
                                     <Popover modal={false} open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
                                         <PopoverTrigger asChild>
                                             <Button
                                                 variant="outline"
-                                                className={`w-[280px] justify-start text-left font-normal ${!newTask.dueDate && 'text-muted-foreground'}`}
+                                                className={`w-full justify-start text-left font-normal ${!newTask.dueDate && 'text-muted-foreground'}`}
                                             >
                                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                                 {newTask.dueDate ? format(new Date(newTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
@@ -1048,73 +890,45 @@ const Requirements = () => {
                                     </Popover>
                                 </div>
                                 <div className="grid gap-2">
+                                    <Label htmlFor="priority">Priority</Label>
+                                    <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Select a priority" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="low">Low</SelectItem>
+                                            <SelectItem value="medium">Medium</SelectItem>
+                                            <SelectItem value="high">High</SelectItem>
+                                            <SelectItem value="urgent">Urgent</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <div className="grid content-start gap-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assignment</p>
+                                <div className="grid gap-2">
                                     <Label htmlFor="assignedToId">
                                         Assigned To {isManager && <span className="text-xs text-muted-foreground">(Direct Reports)</span>}
                                     </Label>
-                                    <Popover
-                                        open={isAssignPopoverOpen}
-                                        onOpenChange={(open) => {
-                                            if (isEmployeesLoading || employeeOptions.length === 0) return;
-                                            setIsAssignPopoverOpen(open);
-                                        }}
-                                    >
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                className="w-[280px] justify-between text-left font-normal"
-                                                disabled={isEmployeesLoading || employeeOptions.length === 0}
-                                            >
-                                                <span className={`truncate ${selectedAssignLabel ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                                    {selectedAssignLabel ||
-                                                        (isEmployeesLoading
-                                                            ? "Loading employees..."
-                                                            : employeeLoadError
-                                                            ? "Could not load employees"
-                                                            : employeeOptions.length === 0
-                                                            ? "No employees available"
-                                                            : "Select an employee")}
-                                                </span>
-                                                <Search className="h-4 w-4 text-muted-foreground" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-[320px] p-0" align="start">
-                                            <div className="p-3 border-b">
-                                                <div className="relative">
-                                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                                    <Input
-                                                        placeholder="Search employees..."
-                                                        value={assignSearchTerm}
-                                                        onChange={(event) => setAssignSearchTerm(event.target.value)}
-                                                        className="pl-9"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="max-h-64 overflow-y-auto">
-                                                {filteredAssignEmployeeOptions.length === 0 ? (
-                                                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                                                        {employeeOptions.length === 0 ? "No employees available" : "No matches found"}
-                                                    </div>
-                                                ) : (
-                                                    filteredAssignEmployeeOptions.map((option) => {
-                                                        const isSelected = option.value === newTask.assignedToId.toString();
-                                                        return (
-                                                            <button
-                                                                key={option.value}
-                                                                type="button"
-                                                                className={`flex w-full items-center justify-between px-4 py-2 text-sm ${
-                                                                    isSelected ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-muted/40'
-                                                                }`}
-                                                                onClick={() => handleEmployeeSelect(option.value)}
-                                                            >
-                                                                <span className="truncate text-left">{option.label}</span>
-                                                                {isSelected && <Check className="h-4 w-4 text-primary" />}
-                                                            </button>
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
+                                    <SearchableSelect
+                                        options={employeeOptions}
+                                        value={newTask.assignedToId ? String(newTask.assignedToId) : undefined}
+                                        onSelect={(option) => handleEmployeeSelect(option?.value ?? '')}
+                                        placeholder={
+                                            isEmployeesLoading
+                                                ? "Loading employees..."
+                                                : employeeLoadError
+                                                ? "Could not load employees"
+                                                : employeeOptions.length === 0
+                                                ? "No employees available"
+                                                : "Select an employee"
+                                        }
+                                        searchPlaceholder="Search employees..."
+                                        emptyMessage="No employees found"
+                                        disabled={isEmployeesLoading || employeeOptions.length === 0}
+                                        loading={isEmployeesLoading}
+                                        triggerClassName="w-full"
+                                    />
                                     {employeeLoadError && (
                                         <div className="flex items-center gap-2 text-sm text-destructive">
                                             <span>{employeeLoadError}</span>
@@ -1125,57 +939,38 @@ const Requirements = () => {
                                     )}
                                 </div>
                                 <div className="grid gap-2">
-                                    <Label htmlFor="priority">Priority</Label>
-                                    <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
-                                        <SelectTrigger className="w-[280px]">
-                                            <SelectValue placeholder="Select a priority" />
-                                        </SelectTrigger>
-                                        <SelectContent position="popper" sideOffset={4}>
-                                            <SelectItem value="low">Low</SelectItem>
-                                            <SelectItem value="medium">Medium</SelectItem>
-                                            <SelectItem value="high">High</SelectItem>
-                                            <SelectItem value="urgent">Urgent</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid gap-2">
                                     <Label htmlFor="storeId">Store</Label>
-                                    <ReactSelect
+                                    <SearchableSelect
                                         options={storeOptions}
-                                        value={selectedStoreOption}
-                                        onChange={handleStoreOptionSelect}
+                                        value={selectedStore[0]}
+                                        onSelect={(option) => handleStoreSelect(option ? [option.value] : [])}
                                         placeholder={
                                             isStoresLoading ? "Loading stores..." :
                                             !newTask.assignedToId ? "Select employee first" :
                                             "Select a store"
                                         }
-                                        className="w-[280px]"
-                                        classNamePrefix="select"
-                                        styles={storeSelectStyles}
-                                        isSearchable
-                                        isClearable
-                                        isDisabled={!newTask.assignedToId}
-                                        isLoading={isStoresLoading}
-                                        backspaceRemovesValue
-                                        noOptionsMessage={() => "No matching stores found"}
+                                        searchPlaceholder="Search stores..."
+                                        emptyMessage="No matching stores found"
+                                        disabled={!newTask.assignedToId}
+                                        loading={isStoresLoading}
+                                        allowClear
+                                        triggerClassName="w-full"
                                     />
-          </div>
-                                <div className="flex justify-between mt-4">
-                                    <Button variant="outline" onClick={handleBack}>Back</Button>
-                                    <Button onClick={createTask} disabled={isCreating}>
-                                        {isCreating ? (
-                                            <>
-                                                <Loader className="w-4 h-4 mr-2 animate-spin" />
-                                                Creating...
-                                            </>
-                                        ) : (
-                                            'Create Requirement'
-                                        )}
-                                    </Button>
-          </div>
-        </div>
-                        </TabsContent>
-                    </Tabs>
+                                </div>
+                                {newTask.assignedToId && newTask.dueDate && (
+                                    <p className="text-xs text-muted-foreground">
+                                        {dueTasksLoading ? 'Checking due tasks...' : dueTasks.length > 0 ? `${dueTasks.length} task(s) already due for this employee on ${newTask.dueDate}` : 'No tasks due on this date for selected employee'}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                        <DialogFooter className="mt-2 sm:justify-end">
+                            <Button variant="outline" onClick={requestCloseCreateModal}>Cancel</Button>
+                            <Button onClick={createTask} disabled={isCreating || !canCreateRequirement}>
+                                {isCreating && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                                {isCreating ? 'Creating...' : 'Create Requirement'}
+                            </Button>
+                        </DialogFooter>
                 </DialogContent>
             </Dialog>
 
@@ -1183,15 +978,16 @@ const Requirements = () => {
                 <div className="flex justify-center items-center h-64">
                     <Loader className="w-8 h-8 animate-spin text-primary" />
                 </div>
-            ) : totalElements === 0 ? (
+            ) : tasks.length === 0 ? (
                 <div className="text-center py-10">
                     <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
                     <p className="text-xl font-semibold">No requirements found.</p>
                     <p className="text-gray-500 mt-2">Try adjusting your filters or create a new requirement.</p>
           </div>
         ) : (
+                <>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {paginatedTasks.map((task) => (
+                    {tasks.map((task) => (
                             <div key={task.id}>
                                 <Card className="relative h-full gap-0 overflow-visible border-border/70 py-0 shadow-sm transition-shadow hover:shadow-md">
                                     <CardHeader className="px-4 pb-2 pt-4">
@@ -1282,6 +1078,7 @@ const Requirements = () => {
                             </div>
                         ))}
           </div>
+                </>
         )}
 
             {/* Pagination Controls */}
@@ -1405,6 +1202,29 @@ const Requirements = () => {
                             </div>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Discard confirmation — only modal on screen (form is hidden, state preserved) */}
+            <Dialog open={confirmTarget !== null} onOpenChange={(open) => { if (!open) keepEditing(); }}>
+                <DialogContent showCloseButton={false} className="sm:max-w-md">
+                    <DialogHeader className="gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                            <AlertTriangle className="h-5 w-5" />
+                        </div>
+                        <DialogTitle>Unsaved changes</DialogTitle>
+                        <DialogDescription className="leading-relaxed">
+                            You have unsaved changes. If you leave, your changes will be lost. Leave without saving?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-2 sm:justify-end">
+                        <Button variant="outline" onClick={keepEditing}>
+                            Keep Editing
+                        </Button>
+                        <Button onClick={confirmDiscardChanges}>
+                            Discard Changes
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 

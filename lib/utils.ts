@@ -8,18 +8,23 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Formats time string to 12-hour format (e.g., "05:30 PM")
- * @param timeString - Time in HH:mm format (e.g., "17:30")
- * @returns Formatted time string (e.g., "05:30 PM")
+ * Accepts "HH:mm", "HH:mm:ss", or ISO datetime ("2026-09-08T16:55:12.80206").
  */
 export function formatTimeTo12Hour(timeString: string): string {
   if (!timeString) return '';
-  
+
   try {
-    // Parse the time string and format it to 12-hour format
-    const [hours, minutes] = timeString.split(':');
+    const trimmed = timeString.trim();
+    // ISO datetime → parse and format time portion
+    if (trimmed.includes('T')) {
+      const date = parseISO(trimmed);
+      return format(date, 'h:mm a');
+    }
+    // "HH:mm" or "HH:mm:ss" (time-only)
+    const [hours, minutes] = trimmed.split(':');
     const date = new Date();
     date.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-    
+
     return format(date, 'h:mm a');
   } catch (error) {
     console.error('Error formatting time:', error);

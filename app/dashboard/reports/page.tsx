@@ -39,12 +39,11 @@ import NewCustomersReport from "@/components/NewCustomersReport";
 import SalesPerformanceReport from "@/components/SalesPerformanceReport";
 import FieldOfficerPerformanceReport from "@/components/FieldOfficerPerformanceReport";
 import dayjs from 'dayjs';
-import { API } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
-import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 import { SearchableSelect } from '@/components/ui/searchable-select2';
 import { formatCityLabel } from '@/lib/city-options';
+import { reportsApi } from '@/lib/reports-api';
 
 interface AttendanceStats {
     absences: number;
@@ -146,20 +145,6 @@ const formatSalesNumber = (num: number): string => {
     return num.toString();
 };
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 6, delay = 1000): Promise<Response> {
-    for (let i = 0; i < retries; i++) {
-        try {
-            const response = await fetch(url, options);
-            if (!response.ok) throw new Error(await response.text() || response.statusText);
-            return response;
-        } catch (err) {
-            if (i === retries - 1) throw err;
-            await new Promise(res => setTimeout(res, delay));
-        }
-    }
-    throw new Error('Failed after retries');
-}
-
 const ReportsPage: React.FC = () => {
     const { token, userRole, currentUser, userData } = useAuth();
 
@@ -196,30 +181,25 @@ const ReportsPage: React.FC = () => {
             setEmployeesLoading(true);
             setEmployeesError(null);
             try {
-                const [allEmployees, inactiveEmployeesResponse] = await Promise.all([
-                    API.getAllEmployees<Employee>(),
-                    fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getAllInactive', {
-                        headers: { Authorization: `Bearer ${token}` },
-                    }),
-                ]);
-                if (!inactiveEmployeesResponse.ok) throw new Error(`Failed to fetch inactive employees: ${inactiveEmployeesResponse.statusText}`);
-                const inactiveEmployees: Employee[] = await inactiveEmployeesResponse.json();
-                const inactiveEmployeeIds = new Set(inactiveEmployees.map(emp => emp.id));
+                // Documented: GET /api/common/employees?active=true&page=0&size=50 with role/search filters
+                // Use teamsApi helper that wraps the paginated contract; inactive via active=false
+                const { teamsApi } = await import('@/lib/teams-api');
                 const isManager = hasManagerPrivileges(userRole, currentUser);
-                let scopedFieldOfficerIds: Set<number> | null = null;
-
-                if (isManager) {
-                    if (!userData?.employeeId) {
-                        scopedFieldOfficerIds = new Set();
-                    } else {
-                        const teamData = await API.getTeamByEmployee(userData.employeeId);
-                        scopedFieldOfficerIds = new Set(getUniqueFieldOfficersFromTeams(teamData).map((officer) => officer.id));
-                    }
+                const activeParams: Record<string, unknown> = { active: true, page: 0, size: 50, q: undefined };
+                const inactiveParams: Record<string, unknown> = { active: false, page: 0, size: 50 };
+                // Scope to manager's field officers via managerId where applicable
+                if (isManager && userData?.employeeId) {
+                    (activeParams as Record<string, unknown>).managerId = userData.employeeId;
+                    (inactiveParams as Record<string, unknown>).managerId = userData.employeeId;
                 }
+                const [activePage, inactivePage] = await Promise.all([
+                    teamsApi.getEmployeesPage(token, activeParams as never),
+                    teamsApi.getEmployeesPage(token, inactiveParams as never),
+                ]);
+                const inactiveEmployeeIds = new Set((inactivePage.content as unknown as Employee[]).map(emp => emp.id));
 
-                const activeFieldOfficers = allEmployees
+                const activeFieldOfficers = (activePage.content as unknown as Employee[])
                     .filter(emp => emp.role === 'Field Officer' && !inactiveEmployeeIds.has(emp.id))
-                    .filter(emp => scopedFieldOfficerIds === null || scopedFieldOfficerIds.has(emp.id))
                     .sort((a, b) => {
                         const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
                         const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
@@ -261,35 +241,44 @@ const ReportsPage: React.FC = () => {
         setEndDate(dayjs(endDt).format('YYYY-MM-DD'));
     }, [rangeSelect]);
 
-    const displayCategoryToApiTypeMap: { [displayCategory: string]: string } = {
-        "Shop": "shop",
-        "Site Visit": "site visit",
-        "Architect": "architect",
-        "Engineer": "engineer",
-        "Builder": "builder",
-        "Others": "others"
-    };
-
     const fetchCustomerTypeDetails = async (displayCategory: string) => {
-        if (!selectedEmployeeId || !startDate || !endDate || dateRangeInvalid) {
-            setDetailsError("Please generate the main report first.");
-            return;
-        }
+        if (!token || !selectedEmployeeId || !startDate || !endDate) return;
         setDetailsLoading(true);
         setDetailsError(null);
-        setVisitDetails(null); 
+        setVisitDetails(null);
         setSelectedCustomerTypeForDetails(displayCategory);
-
-        const apiCustomerType = displayCategoryToApiTypeMap[displayCategory] || displayCategory.toLowerCase();
-
         try {
-            const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/customer-visit-details?employeeId=${selectedEmployeeId}&startDate=${startDate}&endDate=${endDate}&customerType=${apiCustomerType}`;
-            const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } }, 6, 1000);
-            const data: VisitDetail[] = await response.json();
-            setVisitDetails(data);
-        } catch (err) {
-            setDetailsError((err as Error).message || `Failed to fetch details for ${displayCategory}.`);
-            setVisitDetails(null);
+            const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+            const response = await fetch(`${base}/api/common/visits?assignedEmployeeId=${selectedEmployeeId}&from=${startDate}&to=${endDate}&page=0&size=100`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+            if (!response.ok) throw new Error(`Visit details failed (${response.status})`);
+            const body = await response.json() as Record<string, unknown>;
+            const content = Array.isArray(body) ? body : Array.isArray(body.content) ? body.content : [];
+            const details = content.flatMap((value) => {
+                const row = value as Record<string, unknown>;
+                const rawType = String(row.clientType || row.customerType || row.visitType || row.type || 'Others');
+                const normalized = rawType.toLowerCase();
+                const category = normalized.includes('dealer') || normalized.includes('retail') || normalized.includes('shop') ? 'Shop'
+                    : normalized.includes('project') || normalized.includes('site') ? 'Site Visit'
+                    : normalized.includes('architect') ? 'Architect'
+                    : normalized.includes('engineer') ? 'Engineer'
+                    : normalized.includes('builder') ? 'Builder' : 'Others';
+                if (category !== displayCategory) return [];
+                return [{
+                    avgIntentLevel: 0,
+                    avgMonthlySales: 0,
+                    visitCount: 1,
+                    lastVisited: String(row.actualCheckoutAt || row.actualCheckinAt || row.scheduledVisitDate || ''),
+                    city: String(row.locationCity || row.city || ''),
+                    taluka: String(row.locationTaluka || row.taluka || ''),
+                    state: String(row.locationState || row.state || ''),
+                    customerName: String(row.retailAccountName || row.institutionName || row.projectName || row.customerName || 'Unknown'),
+                    customerType: rawType,
+                    storeId: Number(row.clientAccountId || row.institutionId || row.projectId || row.id || 0),
+                }];
+            });
+            setVisitDetails(details);
+        } catch (detailError) {
+            setDetailsError(detailError instanceof Error ? detailError.message : 'Failed to load visit details.');
         } finally {
             setDetailsLoading(false);
         }
@@ -309,11 +298,48 @@ const ReportsPage: React.FC = () => {
         return;
     }
         setDateRangeError(null);
+        // Prevent duplicate in-flight report generation
+        if (reportLoading) return;
         setReportLoading(true); setReportError(null); setShowReport(false);
+        // Use AbortController to cancel stale report requests when filters change
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
         try {
-            const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/field-officer-stats?employeeId=${selectedEmployeeId}&startDate=${startDate}&endDate=${endDate}`;
-            const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } }, 6, 1000);
-            const data: FieldOfficerStatsResponse = await response.json();
+            if (!token) throw new Error('Your session has expired. Please sign in again.');
+            const visitsUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/visits?assignedEmployeeId=${selectedEmployeeId}&from=${startDate}&to=${endDate}&page=0&size=50`;
+            const [visitsRes, countsPage] = await Promise.all([
+                fetch(visitsUrl, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, signal: controller.signal }),
+                reportsApi.employeeCounts(token, { from: startDate, to: endDate, employeeId: Number(selectedEmployeeId), recordType: 'ALL', page: 0, size: 1 }),
+            ]);
+            if (!visitsRes.ok) throw new Error(`Visits failed (${visitsRes.status})`);
+            const visitsData = await visitsRes.json();
+            const visitsContent: unknown[] = Array.isArray(visitsData) ? visitsData : Array.isArray((visitsData as Record<string, unknown>).content) ? (visitsData as Record<string, unknown>).content as unknown[] : [];
+            const counts = countsPage.content[0];
+            const activity = counts?.activity;
+            const statusCounts = counts?.attendanceCountByStatus || {};
+            const totalVisits = Number(activity?.totalVisitCount) || 0;
+            const completedVisits = Number(activity?.completedVisitCount) || 0;
+            const halfDays = Number(statusCounts.HALF_DAY ?? statusCounts.HALF ?? 0);
+            const absences = Number(statusCounts.ABSENT ?? 0);
+            const fullDays = Math.max(0, Number(counts?.attendanceDays || statusCounts.PRESENT || 0) - halfDays - absences);
+            const visitsByCustomerType: Record<string, number> = {};
+            for (const v of visitsContent) {
+                const r = v as Record<string, unknown>;
+                const t = String(r.clientType || r.customerType || r.type || 'others').toLowerCase();
+                visitsByCustomerType[t] = (visitsByCustomerType[t] || 0) + 1;
+            }
+            if (activity && visitsContent.length === 0) {
+                visitsByCustomerType.shop = Number(activity.retailVisitCount) || 0;
+                visitsByCustomerType['site visit'] = Number(activity.projectVisitCount) || 0;
+                visitsByCustomerType.others = Number(activity.institutionVisitCount) || 0;
+            }
+
+            const data: FieldOfficerStatsResponse = {
+                totalVisits,
+                completedVisits,
+                attendanceStats: { fullDays, halfDays, absences },
+                visitsByCustomerType,
+            };
 
             const apiTypeToDisplayCategoryMap: Record<string, (typeof CUSTOMER_CATEGORIES)[number]> = {
                 "shop": "Shop",
@@ -344,9 +370,14 @@ const ReportsPage: React.FC = () => {
             setDetailsError(null);
             setSelectedCustomerTypeForDetails(null);
         } catch (err) {
-            setReportError((err as Error).message || 'Failed to fetch report data.');
+            if ((err as Error).name === 'AbortError') {
+                setReportError('Report request was cancelled due to filter change.');
+            } else {
+                setReportError((err as Error).message || 'Failed to fetch report data.');
+            }
             setShowReport(false);
         } finally {
+            clearTimeout(timeoutId);
             setReportLoading(false);
         }
     };

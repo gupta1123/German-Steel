@@ -200,20 +200,24 @@ const normalizeTarget = (value: unknown): SalesTargetDto | null => {
   const item = recordOf(value);
   if (!item) return null;
   const id = numberOf(item.id, item.targetId);
+  if (id == null) return null;
+  // New model uses employeeId or clientAccountId, old uses employeeId+storeId. Require at least one scope.
   const employeeId = numberOf(item.employeeId);
-  const storeId = numberOf(item.storeId, item.clientAccountId);
-  if (id == null || employeeId == null || storeId == null) return null;
-  const targetTons = numberOf(item.targetTons) ?? 0;
-  const fulfilledTons = numberOf(item.fulfilledTons);
+  const storeId = numberOf(item.storeId, item.clientAccountId, item.retailAccountId);
+  // For EMPLOYEE targets without store, storeId may be absent; keep 0 as sentinel for UI but allow null.
+  const effectiveStoreId = storeId ?? 0;
+  if (employeeId == null && storeId == null) return null;
+  const targetTons = numberOf(item.targetTons, item.targetValue, item.target_tons) ?? 0;
+  const fulfilledTons = numberOf(item.fulfilledTons, item.achievedValue, item.achieved_value);
   const salesTons = numberOf(item.salesTons);
-  const effectiveFulfilledTons = numberOf(item.effectiveFulfilledTons, fulfilledTons, salesTons) ?? 0;
+  const effectiveFulfilledTons = numberOf(item.effectiveFulfilledTons, item.effectiveFulfilled, fulfilledTons, salesTons, item.achievedValue) ?? 0;
 
   return {
     id,
-    employeeId,
+    employeeId: employeeId ?? 0,
     employeeName: stringOf(item.employeeName),
-    storeId,
-    storeName: stringOf(item.storeName, item.accountName),
+    storeId: effectiveStoreId,
+    storeName: stringOf(item.storeName, item.accountName, item.clientAccountName),
     storeCity: stringOf(item.storeCity, item.addressCity) || null,
     storeState: stringOf(item.storeState, item.addressState) || null,
     targetType: stringOf(item.targetType).toUpperCase() === "DAILY" ? "DAILY" : "MONTHLY",
@@ -225,13 +229,30 @@ const normalizeTarget = (value: unknown): SalesTargetDto | null => {
     salesTons,
     effectiveFulfilledTons,
     pendingTons: numberOf(item.pendingTons) ?? Math.max(0, targetTons - effectiveFulfilledTons),
-    achievementPercent: numberOf(item.achievementPercent) ?? (targetTons > 0 ? effectiveFulfilledTons / targetTons * 100 : 0),
-    status: stringOf(item.status) || "PENDING",
-    remarks: stringOf(item.remarks) || null,
+    achievementPercent: numberOf(item.achievementPercent, item.achievement_percent) ?? (targetTons > 0 ? effectiveFulfilledTons / targetTons * 100 : 0),
+    status: stringOf(item.status) || (item.active === false ? "INACTIVE" : "PENDING"),
+    remarks: stringOf(item.remarks, item.notes) || null,
   };
 };
 
-const targetQuery = (params: SalesTargetSearchParams) => {
+const buildTargetQuery = (params: SalesTargetSearchParams) => {
+  const query = new URLSearchParams();
+  // Guide 5.15: GET /api/hr/targets?targetType=&metric=SALES_MT&year=&month=&employeeId=&clientAccountId=&page=&size=
+  if (params.targetType) query.set("targetType", params.targetType);
+  // Default metric for sales targets
+  query.set("metric", "SALES_MT");
+  if (params.year != null) query.set("year", String(params.year));
+  if (params.month != null) query.set("month", String(params.month));
+  if (params.employeeId != null) query.set("employeeId", String(params.employeeId));
+  if (params.storeId != null) query.set("clientAccountId", String(params.storeId));
+  if (params.startDate) query.set("startDate", params.startDate);
+  if (params.endDate) query.set("endDate", params.endDate);
+  query.set("page", "0");
+  query.set("size", String(PAGE_SIZE));
+  return query.toString();
+};
+
+const legacyTargetQuery = (params: SalesTargetSearchParams) => {
   const query = new URLSearchParams();
   if (params.employeeId != null) query.set("employeeId", String(params.employeeId));
   if (params.storeId != null) query.set("storeId", String(params.storeId));
@@ -241,6 +262,37 @@ const targetQuery = (params: SalesTargetSearchParams) => {
   if (params.startDate) query.set("startDate", params.startDate);
   if (params.endDate) query.set("endDate", params.endDate);
   return query.toString();
+};
+
+const toCreatePayload = (payload: SalesTargetCreatePayload): Record<string, unknown> => {
+  // Map legacy storeId+employeeId + targetTons + remarks to new single-scope model per guide 5.15.
+  // If both employeeId and storeId are present, prefer RETAIL_ACCOUNT with clientAccountId (store).
+  // This keeps StoreTargets UI working while respecting "exactly one scope" rule.
+  const hasStore = payload.storeId != null;
+  const hasEmployee = payload.employeeId != null;
+  const targetType = payload.targetType === "DAILY" ? "DAILY" : "MONTHLY";
+  // New API expects EMPLOYEE / TEAM / REGION / RETAIL_ACCOUNT. Map MONTHLY store targets to RETAIL_ACCOUNT.
+  const newTargetType = hasStore ? "RETAIL_ACCOUNT" : targetType === "DAILY" ? "DAILY" : "EMPLOYEE";
+  return {
+    targetType: newTargetType,
+    metric: "SALES_MT",
+    year: payload.year,
+    month: payload.month,
+    targetValue: payload.targetTons,
+    // Only one scope id
+    ...(hasStore ? { clientAccountId: payload.storeId } : hasEmployee ? { employeeId: payload.employeeId } : {}),
+    // Preserve employee ownership when creating retail account targets via additional field if backend supports it
+    // Do not send both when strict, but keep fallback for old backends.
+    ...(!hasStore && hasEmployee ? {} : {}),
+    active: true,
+    notes: payload.remarks ?? null,
+    // Keep legacy fields for backward compatibility with old backend
+    employeeId: payload.employeeId,
+    storeId: payload.storeId,
+    targetTons: payload.targetTons,
+    remarks: payload.remarks,
+    targetDate: payload.targetDate,
+  };
 };
 
 export const targetsApi = {
@@ -265,27 +317,120 @@ export const targetsApi = {
   },
 
   async searchSalesTargets(token: string, params: SalesTargetSearchParams = {}): Promise<SalesTargetDto[]> {
-    const query = targetQuery(params);
-    return pageItems(await request(`/sales-target/search${query ? `?${query}` : ""}`, token)).flatMap((value) => {
-      const target = normalizeTarget(value);
-      return target ? [target] : [];
-    });
+    // Try new HR targets endpoint first, fallback to legacy for compatibility.
+    try {
+      const items = await fetchAllPages(
+        (page) => `/api/hr/targets?${buildTargetQuery({ ...params }).replace(/page=0&/, `page=${page}&`)}`,
+        token,
+      );
+      const normalized = items.flatMap((value) => {
+        const target = normalizeTarget(value);
+        return target ? [target] : [];
+      });
+      // Filter client-side for exact legacy semantics when both filters present (new API supports both but returns union)
+      if (params.employeeId != null && params.storeId != null) {
+        return normalized.filter((t) => t.employeeId === params.employeeId && t.storeId === params.storeId);
+      }
+      return normalized.filter((t) => {
+        if (params.targetType && t.targetType !== params.targetType) return false;
+        if (params.month != null && t.month !== params.month) return false;
+        if (params.year != null && t.year !== params.year) return false;
+        return true;
+      });
+    } catch (error) {
+      if (error instanceof TargetsApiError && error.status === 404) {
+        // fall through to legacy
+      } else if (error instanceof TargetsApiError && error.status >= 400 && error.status < 500) {
+        // If new endpoint exists but query is invalid, try legacy as well
+      } else {
+        // network errors also try legacy? prefer to surface if both fail
+      }
+      const query = legacyTargetQuery(params);
+      return pageItems(await request(`/sales-target/search${query ? `?${query}` : ""}`, token)).flatMap((value) => {
+        const target = normalizeTarget(value);
+        return target ? [target] : [];
+      });
+    }
   },
 
   async createSalesTarget(token: string, payload: SalesTargetCreatePayload): Promise<number | null> {
-    const response = await request("/sales-target/create", token, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    const source = sourceRecord(response);
-    return numberOf(response, source?.id, source?.targetId, source?.data);
+    const newPayload = toCreatePayload(payload);
+    try {
+      const response = await request("/api/hr/targets", token, {
+        method: "POST",
+        body: JSON.stringify(newPayload),
+      });
+      const source = sourceRecord(response);
+      const id = numberOf(response, source?.id, source?.targetId, source?.data);
+      if (id != null) return id;
+      // Some backends return object under data
+      return numberOf(source) ?? null;
+    } catch (error) {
+      if (error instanceof TargetsApiError && error.status === 404) {
+        const response = await request("/sales-target/create", token, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        const source = sourceRecord(response);
+        return numberOf(response, source?.id, source?.targetId, source?.data);
+      }
+      throw error;
+    }
   },
 
   async editSalesTarget(token: string, id: number, payload: SalesTargetEditPayload): Promise<SalesTargetDto | null> {
-    const response = await request(`/sales-target/edit?id=${id}`, token, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-    return normalizeTarget(sourceRecord(response));
+    const hasAchievement = payload.fulfilledTons != null && payload.targetTons == null;
+    // Achievement update -> PUT /api/hr/targets/{id}/achievement per guide 5.15
+    if (hasAchievement) {
+      try {
+        const response = await request(`/api/hr/targets/${id}/achievement`, token, {
+          method: "PUT",
+          body: JSON.stringify({ achievedValue: payload.fulfilledTons }),
+        });
+        const normalized = normalizeTarget(sourceRecord(response) ?? response);
+        if (normalized) return normalized;
+      } catch (error) {
+        if (!(error instanceof TargetsApiError && error.status === 404)) throw error;
+      }
+    }
+    // Regular target update -> PUT /api/hr/targets/{id}
+    try {
+      const body: Record<string, unknown> = {};
+      if (payload.targetTons != null) {
+        body.targetValue = payload.targetTons;
+        body.targetTons = payload.targetTons; // legacy fallback
+      }
+      if (payload.remarks != null) {
+        body.notes = payload.remarks;
+        body.remarks = payload.remarks;
+      }
+      if (Object.keys(body).length === 0) return null;
+      const response = await request(`/api/hr/targets/${id}`, token, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      return normalizeTarget(sourceRecord(response) ?? response);
+    } catch (error) {
+      if (error instanceof TargetsApiError && error.status === 404) {
+        const response = await request(`/sales-target/edit?id=${id}`, token, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        return normalizeTarget(sourceRecord(response) ?? response);
+      }
+      throw error;
+    }
+  },
+
+  async deleteSalesTarget(token: string, id: number): Promise<void> {
+    try {
+      await request(`/api/hr/targets/${id}`, token, { method: "DELETE" });
+    } catch (error) {
+      if (error instanceof TargetsApiError && error.status === 404) {
+        await request(`/sales-target/delete?id=${id}`, token, { method: "DELETE" });
+        return;
+      }
+      throw error;
+    }
   },
 };

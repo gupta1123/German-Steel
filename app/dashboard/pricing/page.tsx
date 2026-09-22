@@ -1,504 +1,87 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { BarChart3, CalendarIcon, ChevronLeft, ChevronRight, Edit3, Loader2, Plus } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/auth-provider';
-import { isManagerRoleValue, normalizeRoleValue } from '@/lib/auth';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { BarChart3, CalendarIcon, Loader2, MapPin } from "lucide-react";
-import { API, type TeamDataDto } from "@/lib/api";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SpacedCalendar } from "@/components/ui/spaced-calendar";
-import { getTeamIds } from "@/lib/team-access";
-import { formatCityLabel } from "@/lib/city-options";
-import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
+import { getErrorMessage } from '@/lib/api-error';
+import { RetailAPI, type CompetitorBrand, type RetailEmployee, type RetailPricing, type RetailPricingPayload, type RetailPricingSummary } from '@/lib/retail-api';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SpacedCalendar } from '@/components/ui/spaced-calendar';
+import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
 
-interface Brand {
-    id: number;
-    brandName: string;
-    price: number;
-    city: string;
-    state: string;
-    employeeDto: {
-        id: number;
-        firstName: string;
-        lastName: string;
-        city: string;
-    };
-    metric: string;
-    createdAt: string;
-    updatedAt: string;
+const today = () => new Date().toISOString().slice(0, 10);
+const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+const emptyForm = (): RetailPricingPayload => ({ competitorBrandId: 0, pricePerTon: 0, city: '', district: '', state: '', pinCode: '', observationDate: today(), remarks: null });
+
+export default function PricingPage() {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<RetailPricing[]>([]);
+  const [summary, setSummary] = useState<RetailPricingSummary[]>([]);
+  const [brands, setBrands] = useState<CompetitorBrand[]>([]);
+  const [employees, setEmployees] = useState<RetailEmployee[]>([]);
+  const [selectedDate, setSelectedDate] = useState(today()); const [selectedCity, setSelectedCity] = useState('ALL'); const [employeeId, setEmployeeId] = useState('ALL');
+  const [cities, setCities] = useState<string[]>([]);
+  const [page, setPage] = useState(0); const [totalPages, setTotalPages] = useState(1); const [totalElements, setTotalElements] = useState(0);
+  const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false); const [editing, setEditing] = useState<RetailPricing | null>(null); const [form, setForm] = useState<RetailPricingPayload>(emptyForm());
+
+  const load = useCallback(async () => {
+    if (!token) return; setLoading(true);
+    try {
+      const city = selectedCity === 'ALL' ? undefined : selectedCity;
+      const filters = { page, size: 25, from: selectedDate, to: selectedDate, city, assignedEmployeeId: employeeId === 'ALL' ? undefined : Number(employeeId) };
+      const [list, totals] = await Promise.all([RetailAPI.getPricing(token, filters), RetailAPI.getPricingSummary(token, { from: selectedDate, to: selectedDate, city, groupBy: 'brand' })]);
+      setRows(list.content); setTotalElements(list.totalElements); setTotalPages(Math.max(1, list.totalPages)); setSummary(totals);
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to load pricing.')); }
+    finally { setLoading(false); }
+  }, [token, page, selectedDate, selectedCity, employeeId]);
+
+  useEffect(() => { if (!token) return; void Promise.all([RetailAPI.getCompetitorBrands(token).then(setBrands), RetailAPI.getEmployees(token).then(setEmployees), RetailAPI.getPricing(token, { page: 0, size: 200 }).then((result) => setCities(Array.from(new Set(result.content.map((row) => row.city).filter(Boolean))).sort()))]); }, [token]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setPage(0); }, [selectedDate, selectedCity, employeeId]);
+
+  const openCreate = () => { setEditing(null); setForm({ ...emptyForm(), competitorBrandId: brands[0]?.id || 0 }); setSheetOpen(true); };
+  const openEdit = (row: RetailPricing) => { setEditing(row); setForm({ competitorBrandId: row.competitorBrandId, pricePerTon: row.pricePerTon, city: row.city, district: row.district || '', state: row.state, pinCode: row.pinCode, observationDate: row.observationDate, remarks: row.remarks }); setSheetOpen(true); };
+  const save = async () => {
+    if (!token) return;
+    if (!form.competitorBrandId || form.pricePerTon <= 0 || !form.city.trim() || !form.district.trim() || !form.state.trim() || !/^\d{6}$/.test(form.pinCode) || !form.observationDate) { toast.error('Brand, positive price, city, district, state, 6-digit PIN code and date are required.'); return; }
+    if (form.observationDate > today()) { toast.error('Observation date cannot be in the future.'); return; }
+    setSaving(true);
+    try { if (editing) await RetailAPI.updatePricing(editing.id, form, token); else await RetailAPI.createPricing(form, token); toast.success(editing ? 'Pricing updated.' : 'Pricing recorded.'); setSheetOpen(false); await load(); }
+    catch (error) { toast.error(getErrorMessage(error, 'Unable to save pricing.')); }
+    finally { setSaving(false); }
+  };
+
+  return <div className="space-y-4 py-4">
+    <div className="flex flex-col gap-3 border-b border-border/70 pb-4 lg:flex-row lg:items-end">
+      <div className="min-w-0 space-y-1.5 lg:w-[180px]"><Label className="text-xs font-medium">City</Label><Select value={selectedCity} onValueChange={setSelectedCity}><SelectTrigger className="h-9 w-full text-sm shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">All cities</SelectItem>{cities.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
+      <div className="min-w-0 space-y-1.5 lg:w-[190px]"><Label className="text-xs font-medium">Date</Label><Popover><PopoverTrigger asChild><Button variant="outline" className="h-9 w-full justify-start text-left text-sm font-normal shadow-none"><CalendarIcon className="mr-2 h-4 w-4" />{format(new Date(`${selectedDate}T00:00:00`), 'MMM dd, yyyy')}</Button></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><SpacedCalendar mode="single" defaultMonth={new Date(`${selectedDate}T00:00:00`)} selected={new Date(`${selectedDate}T00:00:00`)} disabled={{ after: new Date() }} onSelect={(date) => date && setSelectedDate(format(date, 'yyyy-MM-dd'))} /></PopoverContent></Popover></div>
+      <div className="min-w-0 space-y-1.5 lg:w-[240px]"><Label className="text-xs font-medium">Field officer</Label><SearchableSelect options={employees.map((employee): SearchableOption => ({ value: String(employee.id), label: `${employee.firstName} ${employee.lastName}`.trim() }))} value={employeeId === 'ALL' ? undefined : employeeId} onSelect={(option) => setEmployeeId(option?.value || 'ALL')} placeholder="All field officers" searchPlaceholder="Search field officers..." emptyMessage="No field officers found" allowClear triggerClassName="h-9 w-full text-sm shadow-none" contentClassName="w-[var(--radix-popover-trigger-width)]" /></div>
+      <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Record price</Button>
+    </div>
+
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,36rem),1fr))] items-start gap-4">
+      <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none"><CardHeader className="border-b px-4 py-3"><CardTitle className="text-sm font-semibold">Recorded prices</CardTitle><p className="text-xs text-muted-foreground">{totalElements} prices for the selected day and market.</p></CardHeader><CardContent className="p-0"><div className="max-h-[420px] overflow-auto"><Table className="table-fixed text-xs"><TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur"><TableRow><TableHead className="w-[28%]">Brand</TableHead><TableHead className="w-[22%] text-right">Price/ton</TableHead><TableHead className="w-[20%]">City</TableHead><TableHead className="w-[22%]">Field officer</TableHead><TableHead className="w-[8%]" /></TableRow></TableHeader><TableBody>{loading ? Array.from({ length: 5 }, (_, index) => <TableRow key={index}><TableCell colSpan={5}><Skeleton className="h-4 w-full" /></TableCell></TableRow>) : rows.length === 0 ? <TableRow><TableCell colSpan={5} className="h-48 text-center text-muted-foreground">No pricing observations for this selection.</TableCell></TableRow> : rows.map((row) => <TableRow key={row.id}><TableCell className="font-medium">{row.brandName}</TableCell><TableCell className="text-right font-semibold">{money(row.pricePerTon)}</TableCell><TableCell>{row.city}</TableCell><TableCell className="truncate">{row.createdByEmployeeName || '—'}</TableCell><TableCell><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(row)}><Edit3 className="h-3.5 w-3.5" /></Button></TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card>
+      <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none"><CardHeader className="border-b px-4 py-3"><CardTitle className="text-sm font-semibold">Price comparison by brand</CardTitle><p className="text-xs text-muted-foreground">Average and range per ton.</p></CardHeader><CardContent className="p-4"><div className="space-y-4">{summary.length ? summary.map((item) => { const ceiling = Math.max(...summary.map((entry) => entry.maxPrice), 1); return <div key={`${item.competitorBrandId}-${item.city || ''}`}><div className="mb-1.5 flex items-end justify-between gap-3"><div><p className="text-sm font-medium">{item.brandName}</p><p className="text-xs text-muted-foreground">{item.count} observation{item.count === 1 ? '' : 's'} · {money(item.minPrice)}–{money(item.maxPrice)}</p></div><p className="text-sm font-semibold">{money(item.avgPrice)}</p></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (item.avgPrice / ceiling) * 100)}%` }} /></div></div>; }) : <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground"><BarChart3 className="h-7 w-7 stroke-[1.5]" /><span className="text-sm font-medium text-foreground">Nothing to compare yet</span><span className="text-xs">No summary data for the selected day and market.</span></div>}</div></CardContent></Card>
+    </div>
+    <div className="flex items-center justify-end gap-2"><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" />Previous</Button><span className="text-xs text-muted-foreground">Page {page + 1} of {totalPages}</span><Button variant="outline" size="sm" disabled={page + 1 >= totalPages || loading} onClick={() => setPage((value) => value + 1)}>Next<ChevronRight className="h-4 w-4" /></Button></div>
+
+    <Sheet open={sheetOpen} onOpenChange={(open) => !saving && setSheetOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-xl"><SheetHeader className="border-b pb-4"><SheetTitle>{editing ? 'Edit pricing observation' : 'Record pricing observation'}</SheetTitle></SheetHeader><div className="grid min-h-0 flex-1 gap-4 overflow-y-auto py-4 sm:grid-cols-2">
+      <div className="sm:col-span-2"><Label>Competitor brand *</Label><Select value={form.competitorBrandId ? String(form.competitorBrandId) : ''} onValueChange={(value) => setForm({ ...form, competitorBrandId: Number(value) })}><SelectTrigger className="mt-1"><SelectValue placeholder="Select brand" /></SelectTrigger><SelectContent>{brands.map((brand) => <SelectItem key={brand.id} value={String(brand.id)}>{brand.name}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Price per MT *</Label><Input type="number" min="0.01" step="0.01" value={form.pricePerTon || ''} onChange={(e) => setForm({ ...form, pricePerTon: Number(e.target.value) })} className="mt-1" /></div><div><Label>Observation date *</Label><Input type="date" max={today()} value={form.observationDate} onChange={(e) => setForm({ ...form, observationDate: e.target.value })} className="mt-1" /></div>
+      <div><Label>City *</Label><Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="mt-1" /></div><div><Label>District *</Label><Input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} className="mt-1" /></div><div><Label>State *</Label><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="mt-1" /></div><div><Label>PIN code *</Label><Input inputMode="numeric" maxLength={6} value={form.pinCode} onChange={(e) => setForm({ ...form, pinCode: e.target.value.replace(/\D/g, '').slice(0, 6) })} className="mt-1" /></div>
+      <div className="sm:col-span-2"><Label>Remarks</Label><Textarea value={form.remarks || ''} onChange={(e) => setForm({ ...form, remarks: e.target.value || null })} className="mt-1" /></div>
+    </div><SheetFooter className="border-t pt-4"><Button variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button onClick={() => void save()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Save changes' : 'Record price'}</Button></SheetFooter></SheetContent></Sheet>
+  </div>;
 }
-
-const isGermanSteelsBrand = (brandName: string) =>
-    brandName.toLowerCase().replace(/\s+/g, '') === 'germansteels';
-
-const getBrandCity = (brand: Brand) =>
-    isGermanSteelsBrand(brand.brandName) ? brand.city : brand.employeeDto?.city || brand.city;
-
-const formatPrice = (price: number) =>
-    new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency: 'INR',
-        maximumFractionDigits: 2,
-    }).format(price);
-
-const PricingPage = () => {
-    const [brandData, setBrandData] = useState<Brand[]>([]);
-    const [selectedCity, setSelectedCity] = useState('all');
-    const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-    const [cities, setCities] = useState<string[]>([]);
-    const [germanSteelsRate, setGermanSteelsRate] = useState(0);
-    const [isLoading, setIsLoading] = useState(false);
-    const [pricingError, setPricingError] = useState<string | null>(null);
-    const pricingRequest = useRef(0);
-    const [showGermanSteelsRate, setShowGermanSteelsRate] = useState(false);
-    const [fieldOfficers, setFieldOfficers] = useState<string[]>([]);
-    const [selectedFieldOfficer, setSelectedFieldOfficer] = useState("all");
-    const [teamIds, setTeamIds] = useState<number[]>([]);
-    const [teamLoading, setTeamLoading] = useState(false);
-    const [teamError, setTeamError] = useState<string | null>(null);
-
-    const { token, userData } = useAuth();
-    
-    // State for role checking
-    const [isManager, setIsManager] = useState(false);
-    const [isFieldOfficer, setIsFieldOfficer] = useState(false);
-    const [isRoleDetermined, setIsRoleDetermined] = useState(false);
-
-    // Fetch current user data to determine role
-    useEffect(() => {
-        const fetchCurrentUser = async () => {
-            if (!token) return;
-            setIsRoleDetermined(false);
-            
-            try {
-                const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/current-user', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                });
-                
-                if (response.ok) {
-                    const userData = await response.json();
-                    
-                    // Extract role from authorities
-                    const authorities = userData.authorities || [];
-                    const role = authorities.length > 0 ? authorities[0].authority : null;
-                    const normalizedRole = normalizeRoleValue(role);
-                    const managerFlag = isManagerRoleValue(role);
-                    const adminFlag = normalizedRole === 'ROLE_ADMIN' || normalizedRole === 'ADMIN';
-                    const fieldOfficerFlag = normalizedRole === 'ROLE_FIELD OFFICER' || normalizedRole === 'FIELD OFFICER';
-
-                    // Set role flags
-                    setIsManager(managerFlag);
-                    setIsFieldOfficer(fieldOfficerFlag);
-
-                    if (!adminFlag && !managerFlag && !fieldOfficerFlag) {
-                        throw new Error('Pricing access is not available for this role.');
-                    }
-                    setIsRoleDetermined(true);
-                } else {
-                    throw new Error('Could not verify pricing access. Please sign in again.');
-                }
-            } catch (error) {
-                setPricingError(error instanceof Error ? error.message : 'Could not verify pricing access.');
-            }
-        };
-
-        fetchCurrentUser();
-    }, [token]);
-
-    // Fetch team data for managers and field officers
-    useEffect(() => {
-        const loadTeamData = async () => {
-            if ((!isManager && !isFieldOfficer) || !userData?.employeeId) return;
-            
-            setTeamLoading(true);
-            setTeamError(null);
-            
-            try {
-                const teamData: TeamDataDto[] = await API.getTeamByEmployee(userData.employeeId);
-                
-                if (teamData.length > 0) {
-                    const accessibleTeamIds = getTeamIds(teamData);
-                    setTeamIds(accessibleTeamIds);
-                } else {
-                    setTeamError('No team data found for this user');
-                    setTeamIds([]);
-                }
-            } catch (err) {
-                console.error('Failed to load team data:', err);
-                setTeamError('Failed to load team data');
-                setTeamIds([]);
-            } finally {
-                setTeamLoading(false);
-            }
-        };
-
-        loadTeamData();
-    }, [isManager, isFieldOfficer, userData?.employeeId]);
-
-    const fetchBrandData = useCallback(async () => {
-        const request = ++pricingRequest.current;
-        if (!token || !isRoleDetermined || ((isManager || isFieldOfficer) && teamIds.length === 0)) {
-            setBrandData([]);
-            setCities([]);
-            setFieldOfficers([]);
-            setShowGermanSteelsRate(false);
-            setIsLoading(false);
-            return;
-        }
-        setIsLoading(true);
-        setPricingError(null);
-        
-        try {
-            const formattedStartDate = format(new Date(selectedDate), 'yyyy-MM-dd');
-            const formattedEndDate = format(new Date(selectedDate), 'yyyy-MM-dd');
-
-
-            let data: Brand[];
-
-            if (isManager || isFieldOfficer) {
-                const responses = await Promise.all(teamIds.map(async (id) => {
-                    const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByTeamAndDate?id=${id}&start=${formattedStartDate}&end=${formattedEndDate}`;
-                    const response = await fetch(url, {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    });
-                    if (!response.ok) throw new Error('Could not load pricing. Please try again.');
-                    const records = await response.json();
-                    if (!Array.isArray(records)) throw new Error('Unexpected pricing response. Please try again.');
-                    return records as Brand[];
-                }));
-                data = Array.from(new Map(responses.flat().map((brand) => [brand.id, brand])).values());
-            } else {
-                const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRange?start=${formattedStartDate}&end=${formattedEndDate}`;
-                const response = await fetch(url, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
-                if (!response.ok) throw new Error('Could not load pricing. Please try again.');
-                data = await response.json();
-                if (!Array.isArray(data)) throw new Error('Unexpected pricing response. Please try again.');
-            }
-
-            if (request !== pricingRequest.current) return;
-            setBrandData(data);
-
-            const uniqueCities = Array.from(new Set(data.map(brand =>
-                brand.brandName.toLowerCase().replace(/\s+/g, '') === 'germansteels' ? brand.city : brand.employeeDto?.city
-            ).filter(city => city && city.trim() !== "")));
-            setCities(uniqueCities.sort((left, right) => formatCityLabel(left).localeCompare(formatCityLabel(right))));
-
-            const uniqueFieldOfficers = Array.from(new Set(data.map(brand =>
-                brand.employeeDto ? `${brand.employeeDto.firstName} ${brand.employeeDto.lastName}` : ''
-            ).filter(officer => officer && officer.trim() !== "")));
-            setFieldOfficers(uniqueFieldOfficers.sort((left, right) => left.localeCompare(right)));
-
-            const germanSteelsBrand = data.find(brand => brand.brandName.toLowerCase().replace(/\s+/g, '') === 'germansteels');
-            if (germanSteelsBrand) {
-                setGermanSteelsRate(germanSteelsBrand.price);
-                setShowGermanSteelsRate(germanSteelsBrand.employeeDto?.firstName === 'Test' && germanSteelsBrand.employeeDto?.lastName === '1');
-            } else {
-                setGermanSteelsRate(0);
-                setShowGermanSteelsRate(false);
-            }
-        } catch (error) {
-            if (request !== pricingRequest.current) return;
-            setPricingError(error instanceof Error ? error.message : 'Could not load pricing. Please try again.');
-            setBrandData([]);
-            setGermanSteelsRate(0);
-            setShowGermanSteelsRate(false);
-            setCities([]);
-            setFieldOfficers([]);
-        } finally {
-            if (request === pricingRequest.current) setIsLoading(false);
-        }
-    }, [selectedDate, token, isRoleDetermined, isManager, isFieldOfficer, teamIds]);
-
-    useEffect(() => {
-        void fetchBrandData();
-        return () => { pricingRequest.current += 1; };
-    }, [fetchBrandData]);
-
-    const fieldOfficerOptions = React.useMemo<SearchableOption[]>(() =>
-        fieldOfficers.map((officer) => ({ value: officer, label: officer })),
-    [fieldOfficers]);
-
-    const filteredBrands = brandData.filter(brand => {
-        const cityMatch = selectedCity === "all" || getBrandCity(brand) === selectedCity;
-        const officerMatch = selectedFieldOfficer === "all" || (brand.employeeDto ? `${brand.employeeDto.firstName} ${brand.employeeDto.lastName}` === selectedFieldOfficer : false);
-        return cityMatch && officerMatch;
-    });
-
-    // Group brands and consolidate GermanSteels entries
-    const brandGroups = filteredBrands.reduce((acc, brand) => {
-        const brandName = brand.brandName.toLowerCase();
-        
-        if (isGermanSteelsBrand(brandName)) {
-            // Consolidate all GermanSteels entries
-            if (!acc['German Steels']) {
-                acc['German Steels'] = {
-                    brand: 'German Steels',
-                    ourPrice: germanSteelsRate > 0 ? germanSteelsRate : brand.price,
-                    competitorPrice: 0,
-                    count: 1
-                };
-            } else {
-                acc['German Steels'].count += 1;
-                // Use the latest price if germanSteelsRate is not set
-                if (germanSteelsRate === 0) {
-                    acc['German Steels'].ourPrice = brand.price;
-                }
-            }
-        } else {
-            // Keep other brands separate
-            if (!acc[brand.brandName]) {
-                acc[brand.brandName] = {
-                    brand: brand.brandName,
-                    ourPrice: 0,
-                    competitorPrice: brand.price,
-                    count: 1
-                };
-            } else {
-                acc[brand.brandName].count += 1;
-                // Use average price for multiple entries of same brand
-                acc[brand.brandName].competitorPrice = 
-                    (acc[brand.brandName].competitorPrice * (acc[brand.brandName].count - 1) + brand.price) / acc[brand.brandName].count;
-            }
-        }
-        
-        return acc;
-    }, {} as Record<string, { brand: string; ourPrice: number; competitorPrice: number; count: number }>);
-
-    const chartData = Object.values(brandGroups)
-        .map((item: Record<string, unknown>) => ({
-            brand: item.brand as string,
-            ourPrice: item.ourPrice as number,
-            competitorPrice: item.competitorPrice as number
-        }))
-        .sort((a, b) => {
-            // GermanSteels always comes first
-            if (isGermanSteelsBrand(a.brand)) return -1;
-            if (isGermanSteelsBrand(b.brand)) return 1;
-            
-            // Sort other brands alphabetically
-            return a.brand.localeCompare(b.brand);
-        });
-
-
-    return (
-        <div className="space-y-4 py-4">
-            <div className="flex flex-col gap-3 border-b border-border/70 pb-4 lg:flex-row lg:items-end">
-                        <div className="min-w-0 space-y-1.5 lg:w-[180px]">
-                            <Label className="text-xs font-medium">City</Label>
-                            <Select value={selectedCity} onValueChange={setSelectedCity}>
-                                <SelectTrigger className="h-9 w-full text-sm shadow-none">
-                                    <SelectValue placeholder="All cities" />
-                                </SelectTrigger>
-                                <SelectContent className="max-h-56">
-                                    <SelectItem value="all">All cities</SelectItem>
-                                    {cities.map((city) => (
-                                        <SelectItem key={city} value={city}>
-                                            {formatCityLabel(city)}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        
-                        <div className="min-w-0 space-y-1.5 lg:w-[190px]">
-                            <Label className="text-xs font-medium">Date</Label>
-                            <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-                                <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        className={`h-9 w-full justify-start text-left text-sm font-normal shadow-none ${!selectedDate && 'text-muted-foreground'}`}
-                                    >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {selectedDate ? format(new Date(selectedDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                    <SpacedCalendar
-                                        initialFocus
-                                        mode="single"
-                                        defaultMonth={new Date(selectedDate)}
-                                        selected={new Date(selectedDate)}
-                                        onSelect={(date: Date | undefined) => {
-                                            if (date) {
-                                                setSelectedDate(format(date, 'yyyy-MM-dd'));
-                                                setIsDatePickerOpen(false);
-                                            }
-                                        }}
-                                    />
-                                </PopoverContent>
-                            </Popover>
-                        </div>
-                        
-                        <div className="min-w-0 space-y-1.5 lg:w-[240px]">
-                            <Label className="text-xs font-medium">Field officer</Label>
-                            <SearchableSelect
-                                options={fieldOfficerOptions}
-                                value={selectedFieldOfficer === 'all' ? undefined : selectedFieldOfficer}
-                                onSelect={(option) => setSelectedFieldOfficer(option?.value ?? 'all')}
-                                placeholder="All field officers"
-                                searchPlaceholder="Search field officers..."
-                                emptyMessage="No field officers found"
-                                allowClear
-                                triggerClassName="h-9 w-full text-sm shadow-none"
-                                contentClassName="w-[var(--radix-popover-trigger-width)]"
-                            />
-                        </div>
-
-                        {showGermanSteelsRate && germanSteelsRate > 0 && (
-                            <div className="ml-auto rounded-md border bg-muted/30 px-3 py-2 text-right">
-                                <p className="text-[11px] text-muted-foreground">German Steels rate</p>
-                                <p className="text-sm font-semibold tabular-nums">{formatPrice(germanSteelsRate)}<span className="font-normal text-muted-foreground">/ton</span></p>
-                            </div>
-                        )}
-            </div>
-
-            {pricingError && <p role="alert" className="text-sm text-destructive">{pricingError}</p>}
-
-            {(isManager || isFieldOfficer) && (teamLoading || teamError) && (
-                <p className={`text-xs ${teamError ? 'text-destructive' : 'text-muted-foreground'}`}>
-                    {teamLoading ? 'Loading team pricing access…' : teamError}
-                </p>
-            )}
-
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,36rem),1fr))] items-start gap-4">
-                <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none">
-                    <CardHeader className="border-b px-4 py-3">
-                        <CardTitle className="text-sm font-semibold">Recorded prices</CardTitle>
-                        <p className="text-xs text-muted-foreground">Recorded prices for the selected day and market.</p>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        {isLoading ? (
-                            <div className="flex h-64 items-center justify-center text-muted-foreground">
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                <span className="text-sm">Loading pricing…</span>
-                            </div>
-                        ) : (
-                            <div className="max-h-[420px] overflow-auto">
-                                <Table className="table-fixed text-xs">
-                                    <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
-                                        <TableRow>
-                                            <TableHead className="h-10 w-[30%] whitespace-normal text-xs">Brand</TableHead>
-                                            <TableHead className="h-10 w-[21%] whitespace-normal text-right text-xs">Price/ton</TableHead>
-                                            <TableHead className="h-10 w-[21%] whitespace-normal text-xs">City</TableHead>
-                                            <TableHead className="h-10 w-[28%] whitespace-normal text-xs">Field officer</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {filteredBrands.length > 0 ? (
-                                            filteredBrands.map((brand) => (
-                                                <TableRow key={brand.id}>
-                                                    <TableCell className="whitespace-normal py-3 align-top font-medium leading-5 [overflow-wrap:anywhere]">{brand.brandName}</TableCell>
-                                                    <TableCell className="whitespace-normal py-3 text-right align-top font-medium leading-5 tabular-nums [overflow-wrap:anywhere]">{formatPrice(brand.price)}</TableCell>
-                                                    <TableCell className="whitespace-normal py-3 align-top leading-5 [overflow-wrap:anywhere]"><span className="inline-flex items-start gap-1"><MapPin className="mt-1 hidden h-3 w-3 shrink-0 text-muted-foreground sm:block" />{formatCityLabel(getBrandCity(brand))}</span></TableCell>
-                                                    <TableCell className="whitespace-normal py-3 align-top leading-5 [overflow-wrap:anywhere]">
-                                                        {isGermanSteelsBrand(brand.brandName)
-                                                            ? '—'
-                                                            : brand.employeeDto
-                                                                ? `${brand.employeeDto.firstName} ${brand.employeeDto.lastName}`
-                                                                : '—'}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
-                                        ) : (
-                                            <TableRow>
-                                                <TableCell colSpan={4} className="h-48 text-center">
-                                                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                                                        <BarChart3 className="h-7 w-7 stroke-[1.5]" />
-                                                        <span className="text-sm font-medium text-foreground">No pricing data found</span>
-                                                        <span className="text-xs">Try a different date, city, or field officer.</span>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none">
-                    <CardHeader className="border-b px-4 py-3">
-                        <CardTitle className="text-sm font-semibold">Price comparison by brand</CardTitle>
-                        <p className="text-xs text-muted-foreground">German Steels and competitor rates per ton.</p>
-                    </CardHeader>
-                    <CardContent className="p-4">
-                        {isLoading ? (
-                            <div className="flex h-72 items-center justify-center text-muted-foreground">
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                <span className="text-sm">Building comparison…</span>
-                            </div>
-                        ) : chartData.length === 0 ? (
-                            <div className="flex h-72 flex-col items-center justify-center gap-2 text-muted-foreground">
-                                <BarChart3 className="h-7 w-7 stroke-[1.5]" />
-                                <span className="text-sm font-medium text-foreground">Nothing to compare yet</span>
-                                <span className="text-xs">Pricing entries will appear here.</span>
-                            </div>
-                        ) : (
-                                <div className="max-h-[420px] overflow-y-auto overflow-x-hidden">
-                                  <div style={{ height: Math.max(220, chartData.length * 56 + 64) }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart
-                                            layout="vertical"
-                                            data={chartData}
-                                            margin={{
-                                                top: 8,
-                                                right: 20,
-                                                left: 8,
-                                                bottom: 8,
-                                            }}
-                                        >
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-                                            <XAxis type="number" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} tickFormatter={(value) => `₹${value}`} />
-                                            <YAxis type="category" dataKey="brand" width={105} interval={0} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />
-                                            <Tooltip 
-                                                formatter={(value) => [formatPrice(Number(value)), "Price"]}
-                                                labelFormatter={(value) => `Brand: ${value}`}
-                                                contentStyle={{ borderRadius: 8, borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--card))', color: 'hsl(var(--card-foreground))', fontSize: 12 }}
-                                            />
-                                            <Legend wrapperStyle={{ fontSize: 11 }} />
-                                            <Bar dataKey="ourPrice" name="Our price" stackId="price" maxBarSize={24} fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
-                                            <Bar dataKey="competitorPrice" name="Competitor price" stackId="price" maxBarSize={24} fill="#16a085" radius={[0, 4, 4, 0]} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                  </div>
-                                </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-        </div>
-    );
-};
-
-export default PricingPage;

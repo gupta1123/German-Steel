@@ -64,30 +64,13 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
         }, brandDraftIsDirty);
     };
 
+    // Backend gap: no visit-level brand contract is documented — avoid missing endpoint
     const fetchBrands = useCallback(async () => {
-        try {
-            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getProCons?visitId=${visitId}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-            const data = await response.json();
-            const brandsData: Brand[] = data?.map((brand: Record<string, unknown>) => ({
-                id: brand.id as number,
-                brandName: brand.brandName as string,
-                pros: brand.pros as string[],
-                cons: brand.cons as string[],
-            })) || [];
-            setBrands(brandsData);
-        } catch (error) {
-            console.error("Error fetching brands:", error);
-        }
-    }, [token, visitId, setBrands]);
+        return;
+    }, [visitId]);
 
     useEffect(() => {
-        if (visitId) {
-            fetchBrands();
-        }
+        // No auto-fetch; parent already provides brands via visitDetail.brandProCons
     }, [visitId, fetchBrands]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,30 +103,9 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                 pros: newBrand.pros.filter((pro) => pro.trim() !== ""),
                 cons: newBrand.cons.filter((con) => con.trim() !== ""),
             };
-
-            try {
-                setIsSaving(true);
-                const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/addProCons?visitId=${visitId}`, {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify([...brands, brand]),
-                });
-
-                if (response.ok) {
-                    setBrands([...brands, { ...brand, id: new Date().getTime() }]); // Assign a temporary id
-                    setNewBrand({ brandName: "", pros: [], cons: [] });
-                    setIsAdding(false);
-                } else {
-                    console.error("Error adding brand:", response.statusText);
-                }
-            } catch (error) {
-                console.error("Error adding brand:", error);
-            } finally {
-                setIsSaving(false);
-            }
+            setBrands([...brands, { ...brand, id: new Date().getTime() }]);
+            setNewBrand({ brandName: "", pros: [], cons: [] });
+            setIsAdding(false);
         }
     };
 
@@ -175,35 +137,11 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                 }
                 return brand;
             });
-
-            try {
-                setIsSaving(true);
-                const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/addProCons?visitId=${visitId}`, {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify(updatedBrands.map((brand) => ({
-                        brandName: brand.brandName,
-                        pros: brand.pros,
-                        cons: brand.cons,
-                    }))),
-                });
-
-                if (response.ok) {
-                    setBrands(updatedBrands);
-                    setNewBrand({ brandName: "", pros: [], cons: [] });
-                    setIsEditing(false);
-                    setEditingBrandId(null);
-                } else {
-                    console.error("Error updating brand:", response.statusText);
-                }
-            } catch (error) {
-                console.error("Error updating brand:", error);
-            } finally {
-                setIsSaving(false);
-            }
+            // Backend gap: no update contract — keep local
+            setBrands(updatedBrands);
+            setNewBrand({ brandName: "", pros: [], cons: [] });
+            setIsEditing(false);
+            setEditingBrandId(null);
         }
     };
 
@@ -211,29 +149,10 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
         if (!brandPendingDelete) return;
         const deletedBrand = brandPendingDelete;
         const updatedBrands = brands.filter((brand) => brand.id !== deletedBrand.id);
-        try {
-            setIsDeleting(true);
-            const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/deleteProCons?visitId=${visitId}`, {
-                method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify([{ brandName: deletedBrand.brandName }]),
-            });
-
-            if (response.ok) {
-                setBrands(updatedBrands);
-                setConfirmDeleteOpen(false);
-                setBrandPendingDelete(null);
-            } else {
-                console.error("Error deleting brand:", response.statusText);
-            }
-        } catch (error) {
-            console.error("Error deleting brand:", error);
-        } finally {
-            setIsDeleting(false);
-        }
+        // Backend gap: no delete contract — keep local
+        setBrands(updatedBrands);
+        setConfirmDeleteOpen(false);
+        setBrandPendingDelete(null);
     };
 
     return (

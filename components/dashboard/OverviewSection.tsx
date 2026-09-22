@@ -80,7 +80,7 @@ export default function OverviewSection(props: OverviewSectionProps) {
         </div>)}
     </div>
     {states.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-muted-foreground">Activity by state</span>
+      <span className="text-muted-foreground">Activity by assigned region</span>
       {states.map(state => <button key={state.id} type="button" onClick={() => onStateSelect(state)} className="inline-flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
         {state.name}<span className="font-semibold tabular-nums">{state.employeeCount}</span><ChevronRight className="h-3 w-3" />
       </button>)}

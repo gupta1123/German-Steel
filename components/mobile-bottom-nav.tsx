@@ -11,14 +11,9 @@ import {
   ThumbsUp,
   Tag,
   FileText,
-  User,
-  CheckCircle,
-  DollarSign,
-  BarChart,
   Settings,
   MoreHorizontal
 } from "lucide-react";
-import { useAuth } from "@/components/auth-provider";
 import MoreNavSheet from "@/components/more-nav-sheet";
 
 interface MobileBottomNavProps {
@@ -29,6 +24,7 @@ interface MobileBottomNavProps {
       name: string;
       href: string;
       icon: React.ComponentType<{className?: string}>;
+      disabled?: boolean;
     }>;
   }>;
   isManager: boolean;
@@ -36,19 +32,18 @@ interface MobileBottomNavProps {
 
 export default function MobileBottomNav({ sidebarCategories, isManager }: MobileBottomNavProps) {
   const pathname = usePathname();
-  const { currentUser } = useAuth();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
 
   // Get mobile navigation items - prioritize most important ones
   const getMobileNavItems = () => {
     const items = [
-      { name: "Dashboard", href: "/dashboard", icon: Home }
+      { name: "Overview", href: "/dashboard", icon: Home }
     ];
 
     // Add most important pages first
     const importantPages = [
       { name: "Visits", href: "/dashboard/visits", icon: Calendar },
-      { name: "Customers", href: "/dashboard/customers", icon: Users },
+      { name: "Retail Accounts", href: "/dashboard/customers", icon: Users },
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
       { name: "Pricing", href: "/dashboard/pricing", icon: Tag },

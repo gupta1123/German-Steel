@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2, MapPin, Users } from 'lucide-react';
-import { API, type TeamDataDto } from '@/lib/api';
-import { getEmployeeRoleCategory, isAdminEmployee } from '@/lib/employee-role';
-import { getTeamAssignedCities, getTeamManagers, getUniqueFieldOfficersFromTeams, teamHasManager } from '@/lib/team-access';
-import { formatCityLabel } from '@/lib/city-options';
+import { getEmployeeRoleCategory } from '@/lib/employee-role';
+import { teamsApi, type CrmTeam, type TeamEmployee } from '@/lib/teams-api';
 import { useAuth } from '@/components/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +14,7 @@ const fullName = (employee: { firstName?: string | null; lastName?: string | nul
 
 function ManagedTeams({ employeeId }: { employeeId: number }) {
   const { token } = useAuth();
-  const [teams, setTeams] = useState<TeamDataDto[]>([]);
+  const [teams, setTeams] = useState<Array<CrmTeam & { members: TeamEmployee[] }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -26,13 +24,22 @@ function ManagedTeams({ employeeId }: { employeeId: number }) {
     let cancelled = false;
     setLoading(true);
     setError(false);
-    API.getTeamByEmployee(employeeId)
-      .then((data) => {
-        if (!Array.isArray(data)) throw new Error('Invalid team response');
+    // Documented: GET /api/common/teams?officeManagerId={id} and GET /api/common/teams/{teamId}/employees
+    teamsApi.getTeamsPage(token, { officeManagerId: employeeId, page: 0, size: 50 })
+      .then(async (page) => {
+        if (cancelled) return;
+        const enriched = await Promise.all(
+          page.content.map(async (team) => {
+            try {
+              const membersPage = await teamsApi.getTeamEmployeesPage(token, team.id, { page: 0, size: 50 });
+              return { ...team, members: membersPage.content };
+            } catch {
+              return { ...team, members: [] as TeamEmployee[] };
+            }
+          })
+        );
         if (!cancelled) {
-          const managed = data.filter((team) => teamHasManager(team, employeeId));
-          setTeams(Array.from(new Map(managed.map((team) => [team.id, team])).values())
-            .sort((left, right) => left.id - right.id));
+          setTeams(enriched.sort((a, b) => a.id - b.id));
         }
       })
       .catch(() => { if (!cancelled) setError(true); })
@@ -64,16 +71,23 @@ function ManagedTeams({ employeeId }: { employeeId: number }) {
         ) : (
           <div className="divide-y">
             {teams.map((team) => {
-              const managers = getTeamManagers(team).filter((manager) => !isAdminEmployee(manager));
-              const officers = getUniqueFieldOfficersFromTeams([team])
-                .filter((officer) => !isAdminEmployee(officer))
-                .sort((left, right) => fullName(left).localeCompare(fullName(right)));
-              const cities = getTeamAssignedCities(team).map(formatCityLabel)
-                .sort((left, right) => left.localeCompare(right));
+              const officers = [...team.members].sort((a, b) => fullName(a).localeCompare(fullName(b)));
+              const citySet = new Map<string, string>();
+              officers.forEach((m) => {
+                const raw = (m.city || '').trim();
+                if (!raw) return;
+                const key = raw.toLowerCase();
+                if (!citySet.has(key)) citySet.set(key, raw);
+              });
+              if (team.officeManagerName) {
+                // officeManagerName is not a city, skip
+              }
+              const cities = Array.from(citySet.values()).sort((a, b) => a.localeCompare(b));
+              const displayName = team.teamName && team.teamName !== `Team ${team.id}` ? team.teamName : `Team #${team.id}`;
               return (
-                <section key={team.id} aria-label={`Team #${team.id}`} className="space-y-4 p-4">
+                <section key={team.id} aria-label={displayName} className="space-y-4 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold">Team #{team.id}</h3>
+                    <h3 className="text-sm font-semibold">{displayName} {team.teamCode ? <span className="font-normal text-muted-foreground">({team.teamCode})</span> : null}</h3>
                     <span className="text-xs text-muted-foreground">
                       {officers.length} field {officers.length === 1 ? 'officer' : 'officers'} · {cities.length} {cities.length === 1 ? 'city' : 'cities'}
                     </span>
@@ -81,10 +95,8 @@ function ManagedTeams({ employeeId }: { employeeId: number }) {
                   <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                     <div className="min-w-0 space-y-3">
                       <div>
-                        <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Regional managers</h4>
-                        <ul className="m-0 grid list-none gap-1 p-0 text-sm [&>li]:mt-0">
-                          {managers.map((manager) => <li key={manager.id} className="break-words">{fullName(manager)}</li>)}
-                        </ul>
+                        <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Regional manager</h4>
+                        <p className="break-words text-sm">{team.officeManagerName || '—'}</p>
                       </div>
                       <div>
                         <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Field officers</h4>

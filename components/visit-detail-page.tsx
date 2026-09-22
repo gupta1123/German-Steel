@@ -82,6 +82,7 @@ import Image from 'next/image';
 import BrandTab from './BrandTab';
 import VisitTasksTab from './visit-tasks-tab';
 import { normalizeVisitTask } from '@/lib/visit-task';
+import { teamsApi } from '@/lib/teams-api';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
 type Priority = 'low' | 'medium' | 'high';
@@ -94,6 +95,8 @@ type Metric = {
 type VisitDetail = {
   id: number;
   storeName: string;
+  visitType?: string;
+  clientKind?: 'RETAIL' | 'INSTITUTION' | 'PROJECT' | 'UNKNOWN';
   employeeName: string;
   visit_date: string;
   purpose: string;
@@ -373,17 +376,42 @@ const VISIT_CHECKOUT_ROLES = new Set([
   "MANAGER",
 ]);
 
-const VISIT_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+const VISIT_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
-const fetchAuthenticatedVisitImage = async (
-  visitId: number,
-  tag: string,
-  fileName: string,
+interface VisitFileAsset {
+  id: number;
+  originalFileName: string;
+  storedMimeType: string;
+}
+
+// Documented: GET /api/hr/files?parentType=VISIT_ACTIVITY&parentId={visitId} (HrController.files),
+// download via GET /api/hr/files/{fileAssetId}/download. Replaces legacy /visit/downloadFile/{id}/{tag}/{file}.
+const listVisitFiles = async (visitId: number, authToken: string | null): Promise<VisitFileAsset[]> => {
+  const url = `${VISIT_API_BASE_URL}/api/hr/files?parentType=VISIT_ACTIVITY&parentId=${visitId}&page=0&size=50`;
+  const response = await fetch(url, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}`, Accept: 'application/json' } : { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Failed to list visit files (${response.status})`);
+  const data = await response.json();
+  const items = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>).content) ? (data as Record<string, unknown>).content as Record<string, unknown>[] : [];
+  return items.flatMap((item) => {
+    const id = typeof item.id === 'number' ? item.id : Number(item.id);
+    if (!Number.isFinite(id)) return [];
+    return [{
+      id,
+      originalFileName: typeof item.originalFileName === 'string' ? item.originalFileName : '',
+      storedMimeType: typeof item.storedMimeType === 'string' ? item.storedMimeType : '',
+    }];
+  });
+};
+
+const downloadFileAsset = async (
+  fileAssetId: number,
   signal?: AbortSignal
 ) => {
   const authToken = localStorage.getItem('authToken');
   const response = await fetch(
-    `${VISIT_API_BASE_URL}/visit/downloadFile/${visitId}/${encodeURIComponent(tag)}/${encodeURIComponent(fileName)}`,
+    `${VISIT_API_BASE_URL}/api/hr/files/${fileAssetId}/download`,
     {
       headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
       signal,
@@ -391,10 +419,15 @@ const fetchAuthenticatedVisitImage = async (
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch ${tag} image`);
+    throw new Error(`Failed to fetch file ${fileAssetId}`);
   }
 
   return URL.createObjectURL(await response.blob());
+};
+
+const isImageAsset = (asset: VisitFileAsset): boolean => {
+  if (asset.storedMimeType.toLowerCase().startsWith('image/')) return true;
+  return /\.(jpe?g|png|gif|webp|bmp)$/i.test(asset.originalFileName);
 };
 
 const normalizeVisitRole = (value?: string | null) =>
@@ -404,6 +437,11 @@ const normalizeVisitRole = (value?: string | null) =>
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();
+
+const formatActivityValue = (value?: string | null) => String(value || '')
+  .replace(/_/g, ' ')
+  .toLowerCase()
+  .replace(/^\w/, (character) => character.toUpperCase());
 
 const canRoleCheckoutVisit = (
   userRole?: string | null,
@@ -438,6 +476,82 @@ export default function VisitDetailPage() {
   const { token, userRole, userData, currentUser } = useAuth();
   
   const [visitDetail, setVisitDetail] = useState<VisitDetail | null>(null);
+  // Employee directory for resolving IDs to names — the visit API returns only
+  // assignedEmployeeId (no name), so map via GET /api/common/employees.
+  const [employeeDirectory, setEmployeeDirectory] = useState<Map<number, string>>(new Map());
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    teamsApi.getEmployeesPage(token, { active: true, page: 0, size: 500 })
+      .then((page) => {
+        if (cancelled) return;
+        const map = new Map<number, string>();
+        for (const e of page.content) {
+          const name = `${e.firstName ?? ''} ${e.lastName ?? ''}`.trim();
+          if (!map.has(e.id)) map.set(e.id, name || `Employee ${e.id}`);
+        }
+        setEmployeeDirectory(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const resolveEmployeeName = (name?: string | null, employeeId?: number | null): string => {
+    if (name && name !== '—') return name;
+    if (employeeId != null && employeeDirectory.has(employeeId)) {
+      return employeeDirectory.get(employeeId) as string;
+    }
+    return '';
+  };
+
+  // Backend RecordNoteDto uses noteText/createdAt/authorEmployeeId; the timeline below
+  // renders legacy content/createdDate/employeeName — normalize once at fetch time.
+  const toApiNote = (item: unknown): ApiNote => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    const authorId = typeof row.authorEmployeeId === 'number' ? row.authorEmployeeId : null;
+    const createdAt = typeof row.createdAt === 'string' && row.createdAt.trim()
+      ? row.createdAt
+      : typeof row.createdDate === 'string'
+        ? (row.createdDate as string)
+        : '';
+    return {
+      ...(item as object),
+      content: typeof row.noteText === 'string' && row.noteText.trim()
+        ? (row.noteText as string)
+        : typeof row.content === 'string'
+          ? (row.content as string)
+          : '',
+      createdDate: createdAt,
+      employeeName: resolveEmployeeName(
+        typeof row.employeeName === 'string' ? (row.employeeName as string) : null,
+        authorId ?? (typeof row.employeeId === 'number' ? (row.employeeId as number) : null),
+      ),
+    } as unknown as ApiNote;
+  };
+
+  const notesLinkedToCurrentVisit = (items: unknown[]): unknown[] => items.filter((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    const nestedVisit = row.visitActivity && typeof row.visitActivity === 'object'
+      ? row.visitActivity as Record<string, unknown>
+      : null;
+    const linkedId = row.visitActivityId ?? nestedVisit?.id;
+    // The backend filter is authoritative. When a link id is included in the DTO,
+    // additionally reject mismatched rows so a backend/query regression cannot leak notes.
+    return linkedId == null || Number(linkedId) === Number(visitId);
+  });
+
+  // date-fns format throws RangeError on invalid dates — never crash the timeline.
+  const formatNoteDate = (value: unknown): string => {
+    if (typeof value !== 'string' || !value.trim()) return '';
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return format(date, "MMM dd, yyyy");
+    } catch {
+      return '';
+    }
+  };
   const [activeTab, setActiveTab] = useState("metrics");
   const [activeInfoTab, setActiveInfoTab] = useState("visit-info");
   const [metrics, setMetrics] = useState<Metric[]>([]);
@@ -465,6 +579,8 @@ export default function VisitDetailPage() {
   const [taskErrors, setTaskErrors] = useState<{ requirement: string | null; complaint: string | null }>({ requirement: null, complaint: null });
   const [isRequirementModalOpen, setIsRequirementModalOpen] = useState(false);
   const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
+  // Single right-side panel replaces the two centered two-step modals (one-page flow)
+  const [taskPanel, setTaskPanel] = useState<'requirement' | 'complaint' | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
   const [activeRequirementTab, setActiveRequirementTab] = useState('general');
@@ -551,6 +667,8 @@ export default function VisitDetailPage() {
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [checkoutOutcome, setCheckoutOutcome] = useState("");
   const [checkoutFeedback, setCheckoutFeedback] = useState("");
+  const [checkoutNextAction, setCheckoutNextAction] = useState("");
+  const [checkoutNextActionDate, setCheckoutNextActionDate] = useState("");
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
@@ -578,13 +696,13 @@ export default function VisitDetailPage() {
     Boolean(currentPro.trim()) ||
     Boolean(currentCon.trim())
   );
-  const requirementDraftIsDirty = isRequirementModalOpen && (
+  const requirementDraftIsDirty = taskPanel === 'requirement' && (
     Boolean(newTask.taskTitle.trim()) ||
     Boolean(newTask.taskDesciption.trim()) ||
     Boolean(newTask.dueDate) ||
     newTask.priority !== 'low'
   );
-  const complaintDraftIsDirty = isComplaintModalOpen && (
+  const complaintDraftIsDirty = taskPanel === 'complaint' && (
     Boolean(complaintTask.taskTitle.trim()) ||
     Boolean(complaintTask.taskDesciption.trim()) ||
     Boolean(complaintTask.dueDate) ||
@@ -613,12 +731,15 @@ export default function VisitDetailPage() {
     setCheckoutError(null);
     setCheckoutOutcome(visitDetail?.outcome || 'Interested');
     setCheckoutFeedback(visitDetail?.feedback || '');
+    setCheckoutNextAction((visitDetail as unknown as { nextActionText?: string })?.nextActionText || '');
+    setCheckoutNextActionDate((visitDetail as unknown as { nextActionDate?: string })?.nextActionDate || '');
   };
   const requestCloseCheckoutModal = () => {
     requestDiscard(closeCheckoutModal, checkoutDraftIsDirty);
   };
   const closeRequirementModal = () => {
     setIsRequirementModalOpen(false);
+    setTaskPanel(null);
     setTaskCreateError(null);
     setActiveRequirementTab('general');
     setNewTask((current) => ({
@@ -634,6 +755,7 @@ export default function VisitDetailPage() {
   };
   const closeComplaintModal = () => {
     setIsComplaintModalOpen(false);
+    setTaskPanel(null);
     setTaskCreateError(null);
     setActiveComplaintTab('general');
     setComplaintTask((current) => ({
@@ -741,93 +863,286 @@ export default function VisitDetailPage() {
     );
   };
 
-  const fetchCheckinImages = async (visitId: number, attachments: VisitAttachmentResponse[]) => {
+  // Documented: list VISIT_ACTIVITY files, download image assets. FileAssetDto has no
+  // tag field, so gift vs check-in is partitioned by filename (/gift/i); rest are check-in.
+  const fetchVisitImages = async (visitId: number) => {
+    const authToken = localStorage.getItem('authToken');
     try {
-      const checkinImageUrls = await Promise.all(
-        attachments
-          .filter((attachment) => String(attachment.tag || '').trim().toLowerCase() === 'check-in')
-          .map(async (attachment) => {
-            try{
-              return await fetchAuthenticatedVisitImage(visitId, 'check-in', attachment.fileName);
-            } catch (error) {
-              console.error('Error fetching individual image:', error);
-              return null;
-            }
-          })
-      );
-      
+      const assets = await listVisitFiles(visitId, authToken);
+      const images = assets.filter(isImageAsset);
+      const giftAssets = images.filter((a) => /gift/i.test(a.originalFileName));
+      const checkinAssets = images.filter((a) => !/gift/i.test(a.originalFileName));
 
-      setCheckinImages(checkinImageUrls.filter(url => url !== null) as string[]);
+      const downloaded = await Promise.all(
+        checkinAssets.map(async (asset) => {
+          try {
+            return await downloadFileAsset(asset.id);
+          } catch (error) {
+            console.error('Error fetching individual image:', error);
+            return null;
+          }
+        })
+      );
+      setCheckinImages(downloaded.filter((url): url is string => url !== null));
+
+      if (giftAssets.length > 0) {
+        try {
+          const url = await downloadFileAsset(giftAssets[0].id);
+          setGiftImage(url);
+          setGiftImageError(false);
+        } catch (error) {
+          console.error('Error fetching gift image:', error);
+          setGiftImage(null);
+          setGiftImageError(true);
+        } finally {
+          setIsGiftImageLoading(false);
+        }
+      } else {
+        setGiftImage(null);
+        setGiftImageError(false);
+        setIsGiftImageLoading(false);
+      }
     } catch (error) {
-      console.error('Error fetching check-in images:', error);
+      console.error('Error fetching visit images:', error);
       setCheckinImages([]);
+      setGiftImage(null);
+      setGiftImageError(false);
+      setIsGiftImageLoading(false);
     }
   };
 
   const fetchVisitDetail = useCallback(async (visitId: string) => {
+    if (!token) {
+      setError('Your session is unavailable. Please sign in again.');
+      setIsLoading(false);
+      return;
+    }
+    const cancelled = false;
     try {
       setIsLoading(true);
       setError(null);
+      const { visitsApi, resolveVisitClient } = await import('@/lib/visits-api');
+      const visitData = await visitsApi.getVisitById(token, Number(visitId));
+      if (cancelled) return;
       const api = new API();
-
-      // Fetch minimal data first for fast initial render
-      const visitData = await api.getVisitById(Number(visitId));
+      const legacy = visitData as unknown as VisitDto & Record<string, unknown>;
+      const client = resolveVisitClient(visitData);
       setVisitDetail({
-        ...visitData,
+        id: visitData.id,
+        storeName: client.name,
+        visitType: visitData.visitType,
+        clientKind: client.kind,
+        employeeName: visitData.assignedEmployeeName || (legacy.employeeName as string) || '',
+        visit_date: visitData.scheduledVisitDate || (legacy.visit_date as string) || '',
         purpose: visitData.purpose || '',
-        priority: visitData.priority || 'low',
-        outcome: visitData.outcome || null,
-        feedback: visitData.feedback || '',
-        brandsInUse: (visitData.brandsInUse as unknown as string[]) || [],
-        brandProCons: (visitData.brandProCons as unknown as BrandProCon[]) || [],
-        createdAt: visitData.createdAt || '',
-        updatedAt: visitData.updatedAt || '',
-        storeId: visitData.storeId || 0,
-        employeeId: visitData.employeeId || 0,
-      });
+        priority: (legacy.priority as string) || 'low',
+        outcome: visitData.outcome ?? null,
+        feedback: (legacy.feedback as string) || visitData.discussionSummary || '',
+        brandsInUse: [],
+        brandProCons: [],
+        createdAt: (legacy.createdAt as string) || '',
+        updatedAt: (legacy.updatedAt as string) || visitData.actualCheckinAt || '',
+        storeId: visitData.clientAccountId || (legacy.storeId as number) || 0,
+        employeeId: visitData.assignedEmployeeId || (legacy.employeeId as number) || 0,
+        checkinLatitude: (legacy.checkinLatitude as number) || undefined,
+        checkinLongitude: (legacy.checkinLongitude as number) || undefined,
+        checkinTime: visitData.actualCheckinAt ? new Date(visitData.actualCheckinAt).toISOString().split('T')[1]?.slice(0, 5) : (legacy.checkinTime as string) || undefined,
+        checkinDate: visitData.actualCheckinAt ? visitData.actualCheckinAt.split('T')[0] : (legacy.checkinDate as string) || undefined,
+        checkoutTime: visitData.actualCheckoutAt ? new Date(visitData.actualCheckoutAt).toISOString().split('T')[1]?.slice(0, 5) : (legacy.checkoutTime as string) || undefined,
+        checkoutDate: visitData.actualCheckoutAt ? visitData.actualCheckoutAt.split('T')[0] : (legacy.checkoutDate as string) || undefined,
+        hasGift: (legacy.hasGift as boolean) || false,
+        giftName: (legacy.giftName as string) || null,
+        giftQuantity: (legacy.giftQuantity as number) || null,
+        giftRemarks: (legacy.giftRemarks as string) || null,
+        attachmentResponse: (legacy.attachmentResponse as VisitAttachmentResponse[]) || [],
+        // keep raw for downstream mapping
+        ...(visitData as unknown as object),
+      } as VisitDetail);
 
-      // Basic metric available from visit data
-      calculateVisitDuration(
-        visitData.checkinDate || '', 
-        visitData.checkinTime || '', 
-        visitData.checkoutDate || '', 
-        visitData.checkoutTime || ''
-      );
+      const actualCheckinAt = (visitData as unknown as Record<string, unknown>).actualCheckinAt as string | undefined || (visitData as unknown as Record<string, unknown>).checkinDate as string | undefined;
+      const actualCheckoutAt = (visitData as unknown as Record<string, unknown>).actualCheckoutAt as string | undefined || (visitData as unknown as Record<string, unknown>).checkoutDate as string | undefined;
+      if (actualCheckinAt) {
+        const cDate = actualCheckinAt.split('T')[0] || '';
+        const cTime = actualCheckinAt.includes('T') ? actualCheckinAt.split('T')[1]?.slice(0, 5) || '' : '';
+        const oDate = actualCheckoutAt ? actualCheckoutAt.split('T')[0] || '' : '';
+        const oTime = actualCheckoutAt && actualCheckoutAt.includes('T') ? actualCheckoutAt.split('T')[1]?.slice(0, 5) || '' : '';
+        calculateVisitDuration(cDate, cTime, oDate, oTime);
+      }
 
-      // Allow page to render while loading the rest
       setIsLoading(false);
 
-      // Load remaining data in parallel without blocking UI
-      // Keep tasks independent: a failed notes/brand request must not hide them.
+      // Tasks — GET /api/tasks?employeeId=&status=OPEN (TaskController.tasksForEmployee),
+      // filtered client-side by visitActivityId + taskType (TaskDto has no visitId field)
       for (const type of ['requirement', 'complaint'] as const) {
         setTaskLoading(current => ({ ...current, [type]: true }));
         setTaskErrors(current => ({ ...current, [type]: null }));
-        void api.getTasksByVisit(type, Number(visitId))
-          .then(tasks => type === 'requirement' ? setRequirements(tasks) : setComplaints(tasks))
-          .catch(() => setTaskErrors(current => ({ ...current, [type]: `Unable to load ${type}s. Please reload and try again.` })))
-          .finally(() => setTaskLoading(current => ({ ...current, [type]: false })));
+        const taskTypeUpper = type === 'requirement' ? 'REQUIREMENT' : 'COMPLAINT';
+        const fetchTasks = async () => {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/tasks?employeeId=${visitData.assignedEmployeeId || 0}&status=OPEN&page=0&size=50`, {
+            headers: token ? { Authorization: `Bearer ${token}`, Accept: 'application/json' } : { Accept: 'application/json' },
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || `Tasks failed (${res.status})`);
+          }
+          const data = await res.json();
+          const content = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>).content) ? (data as Record<string, unknown>).content as Task[] : [];
+          const filtered = content.filter((t: Task) => {
+            const matchesVisit = (t as unknown as { visitId?: number }).visitId === Number(visitId) || (t as unknown as { visitActivityId?: number }).visitActivityId === Number(visitId);
+            const typeVal = String((t as unknown as { taskType?: string; type?: string }).taskType || (t as unknown as { type?: string }).type || '');
+            const matchesType = typeVal.toUpperCase() === taskTypeUpper;
+            return matchesVisit && matchesType;
+          });
+          return filtered as Task[];
+        };
+        void fetchTasks()
+          .then(tasks => { if (!cancelled) (type === 'requirement' ? setRequirements(tasks) : setComplaints(tasks)); })
+          .catch((err) => {
+            if (cancelled) return;
+            const msg = err instanceof Error ? err.message : `Unable to load ${type}s.`;
+            setTaskErrors(current => ({ ...current, [type]: msg }));
+          })
+          .finally(() => { if (!cancelled) setTaskLoading(current => ({ ...current, [type]: false })); });
       }
       (async () => {
         try {
+          const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+          const authHeaders: Record<string, string> = token
+            ? { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+            : { Accept: 'application/json' };
+          const notesPromise = (async () => {
+            const tok2 = token;
+            // visitActivityId is the documented relationship filter. parentId is not
+            // a supported notes query parameter and can return unrelated notes.
+            const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/notes?parentType=VISIT_ACTIVITY&visitActivityId=${visitId}&page=0&size=50`;
+            try {
+              const r = await fetch(url, { headers: tok2 ? { Authorization: `Bearer ${tok2}`, Accept: 'application/json' } : { Accept: 'application/json' } });
+              if (r.ok) {
+                const d = await r.json();
+                const raw: unknown[] = Array.isArray(d) ? d : Array.isArray((d as Record<string, unknown>).content) ? (d as Record<string, unknown>).content as unknown[] : [];
+                return notesLinkedToCurrentVisit(raw).map(toApiNote);
+              }
+            } catch {}
+            return [] as ApiNote[];
+          })();
+          // Documented per-parent visit history — replaces legacy /visit/getByStore.
+          // Endpoint is chosen by visitType (CommonDataController retail/institution/project visits).
+          const parentVisitsPromise = (async (): Promise<VisitDto[]> => {
+            try {
+              const detail = visitData as unknown as Record<string, unknown>;
+              let path: string | null = null;
+              if (visitData.visitType === 'DEALER_VISIT' && visitData.clientAccountId) {
+                path = `/api/common/retail-clients/${visitData.clientAccountId}/visits`;
+              } else if (visitData.visitType === 'INSTITUTIONAL_VISIT' && visitData.institutionId) {
+                path = `/api/common/institutions/${visitData.institutionId}/visits`;
+              } else if (visitData.visitType === 'PROJECT_SITE_VISIT' && visitData.projectId) {
+                path = `/api/common/projects/${visitData.projectId}/visits`;
+              }
+              if (!path) return [];
+              const res = await fetch(`${baseUrl}${path}?page=0&size=50`, { headers: authHeaders });
+              if (!res.ok) return [];
+              const body = await res.json();
+              const items: unknown[] = Array.isArray(body)
+                ? body
+                : Array.isArray((body as Record<string, unknown>).content)
+                  ? (body as Record<string, unknown>).content as unknown[]
+                  : [];
+              const textOf = (v: unknown): string => (typeof v === 'string' ? v : '');
+              const splitDate = (iso: string): string => (iso.includes('T') ? iso.split('T')[0] : iso);
+              const splitTime = (iso: string): string => (iso.includes('T') ? iso.split('T')[1]?.slice(0, 5) ?? '' : iso);
+              return items.flatMap((entry) => {
+                const row = (entry ?? {}) as Record<string, unknown>;
+                if (typeof row.id !== 'number' && typeof row.id !== 'string') return [];
+                const checkin = textOf(row.actualCheckinAt);
+                const checkout = textOf(row.actualCheckoutAt);
+                const clientName = textOf(row.retailAccountName) || textOf(row.institutionName)
+                  || textOf(row.projectName) || textOf(row.parentName) || textOf(row.storeName);
+                return [{
+                  ...(entry as object),
+                  id: Number(row.id),
+                  storeId: Number(row.clientAccountId ?? detail.clientAccountId ?? 0),
+                  storeName: clientName,
+                  employeeId: Number(row.assignedEmployeeId ?? 0),
+                  employeeName: textOf(row.assignedEmployeeName),
+                  visit_date: textOf(row.scheduledVisitDate),
+                  purpose: textOf(row.purpose),
+                  outcome: (row.outcome as string) ?? null,
+                  checkinDate: checkin ? splitDate(checkin) : '',
+                  checkinTime: checkin ? splitTime(checkin) : '',
+                  checkoutDate: checkout ? splitDate(checkout) : '',
+                  checkoutTime: checkout ? splitTime(checkout) : '',
+                } as unknown as VisitDto];
+              });
+            } catch {
+              return [];
+            }
+          })();
+          // Store facts — documented GET /api/retail/accounts/{id} (+ contacts for phone).
+          // Replaces inferring contact/city/address from a legacy visit row.
+          const storeFactsPromise = (async (): Promise<{ contactNumber: string; city: string; address: string } | null> => {
+            try {
+              if (visitData.visitType === 'DEALER_VISIT' && visitData.clientAccountId) {
+                const accountId = visitData.clientAccountId;
+                const accountRes = await fetch(`${baseUrl}/api/retail/accounts/${accountId}`, { headers: authHeaders });
+                if (!accountRes.ok) return null;
+                const account = await accountRes.json() as Record<string, unknown>;
+                const textOf = (v: unknown): string => (typeof v === 'string' && v.trim() ? v : '');
+                const city = textOf(account.addressCity) || 'Not available';
+                const address = [account.addressVillageArea, account.addressTaluka, account.addressDistrict, account.addressState]
+                  .map((part) => textOf(part)).filter(Boolean).join(', ') || 'Not available';
+                let contactNumber = 'Not available';
+                try {
+                  const contactsRes = await fetch(`${baseUrl}/api/retail/accounts/${accountId}/contacts?page=0&size=50`, { headers: authHeaders });
+                  if (contactsRes.ok) {
+                    const contactsBody = await contactsRes.json();
+                    const contacts: Record<string, unknown>[] = Array.isArray(contactsBody)
+                      ? contactsBody
+                      : Array.isArray((contactsBody as Record<string, unknown>).content)
+                        ? (contactsBody as Record<string, unknown>).content as Record<string, unknown>[]
+                        : [];
+                    const primary = contacts.find((c) => c.primaryContact === true) ?? contacts[0];
+                    const masterId = primary != null ? Number(primary.contactInfluenceRegisterId) : NaN;
+                    if (Number.isFinite(masterId)) {
+                      const mastersRes = await fetch(`${baseUrl}/api/common/contacts?page=0&size=200`, { headers: authHeaders });
+                      if (mastersRes.ok) {
+                        const mastersBody = await mastersRes.json();
+                        const masters: Record<string, unknown>[] = Array.isArray(mastersBody)
+                          ? mastersBody
+                          : Array.isArray((mastersBody as Record<string, unknown>).content)
+                            ? (mastersBody as Record<string, unknown>).content as Record<string, unknown>[]
+                            : [];
+                        const master = masters.find((m) => Number(m.id) === masterId);
+                        const mobile = master != null ? String(master.mobile ?? '').trim() : '';
+                        if (mobile) contactNumber = mobile;
+                      }
+                    }
+                  }
+                } catch {}
+                return { contactNumber, city, address };
+              }
+              const detail = visitData as unknown as Record<string, unknown>;
+              const textOf = (v: unknown): string => (typeof v === 'string' && v.trim() ? v : '');
+              return {
+                contactNumber: 'Not available',
+                city: textOf(detail.locationCity) || 'Not available',
+                address: textOf(detail.locationText) || 'Not available',
+              };
+            } catch {
+              return null;
+            }
+          })();
           const [
-            proConsData,
-            intentAuditData,
-            monthlySaleData,
             notesData,
             storeVisitsData,
+            storeFacts,
           ] = await Promise.all([
-            api.getVisitProCons(Number(visitId)),
-            api.getIntentAuditByVisit(Number(visitId)),
-            api.getMonthlySaleByVisit(Number(visitId)),
-            api.getNotesByVisit(Number(visitId)),
-            api.getVisitsByStore(visitData.storeId || 0),
+            notesPromise,
+            parentVisitsPromise,
+            storeFactsPromise,
           ]);
 
-          setBrandProCons(proConsData || []);
-          setIntentAuditLogs(intentAuditData || []);
-          setMonthlySaleChanges(monthlySaleData || []);
+          setBrandProCons([]);
           setNotes(notesData || []);
-          // Sort latest to oldest by visit_date
           const sortedStoreVisits = (storeVisitsData || []).slice().sort((a: VisitDto, b: VisitDto) => {
             const da = new Date(a.visit_date as string).getTime();
             const db = new Date(b.visit_date as string).getTime();
@@ -835,49 +1150,19 @@ export default function VisitDetailPage() {
           });
           setStoreVisits(sortedStoreVisits);
 
-          // Derive metrics from fetched data
-          if (intentAuditData && intentAuditData.length > 0) {
-            const recentIntent = intentAuditData[intentAuditData.length - 1]?.newIntentLevel ?? 'N/A';
-            setMetrics((prev) => {
-              const filtered = prev.filter((m) => m.title !== 'Intent Level');
-              return [...filtered, { title: 'Intent Level', value: String(recentIntent) }];
-            });
-          }
+          setIsGiftImageLoading(true);
+          void fetchVisitImages(Number(visitId));
 
-          if (monthlySaleData && monthlySaleData.length > 0) {
-            const recentSales = `${monthlySaleData[0].newMonthlySale.toLocaleString()} tons`;
-            setMetrics((prev) => {
-              const filtered = prev.filter((m) => m.title !== 'Monthly Sales');
-              return [...filtered, { title: 'Monthly Sales', value: recentSales }];
-            });
+          if (storeFacts) {
+            setStoreDetails(storeFacts);
           }
-
-          // Fetch check-in images in background
-          if (visitData.attachmentResponse && visitData.attachmentResponse.length > 0) {
-            fetchCheckinImages(Number(visitId), visitData.attachmentResponse);
-          }
-
-          // Store details
-          if (storeVisitsData && storeVisitsData.length > 0) {
-            const firstVisit = storeVisitsData[0];
-            setStoreDetails({
-              contactNumber: firstVisit.storePrimaryContact?.toString() || 'Not available',
-              city: firstVisit.city || 'Not available',
-              address:
-                `${firstVisit.subDistrict || ''}, ${firstVisit.district || ''}, ${firstVisit.state || ''}`
-                  .replace(/^[, ]+|[, ]+$/g, '') || 'Not available',
-            });
-          }
-        } catch (innerErr) {
-          console.error('Error loading visit auxiliary data:', innerErr);
-        }
+        } catch {}
       })();
     } catch (err) {
       setError((err as Error)?.message || 'Failed to load visit details');
-      console.error('Error fetching visit details:', err);
       setIsLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const calculateVisitDuration = (checkinDate: string, checkinTime: string, checkoutDate: string, checkoutTime: string) => {
     if (!checkinDate || !checkinTime || !checkoutDate || !checkoutTime) {
@@ -980,43 +1265,20 @@ export default function VisitDetailPage() {
     }
   }, [visitId, fetchVisitDetail]);
 
+  // Photos are loaded via fetchVisitImages (GET /api/hr/files) inside fetchVisitDetail.
+  // This effect only revokes blob URLs when the visit changes or the page unmounts.
   useEffect(() => {
-    const currentVisitId = visitDetail?.id;
-    const giftFileName = giftAttachment?.fileName;
-
-    if (!currentVisitId || !giftFileName) {
-      setGiftImage(null);
-      setIsGiftImageLoading(false);
-      setGiftImageError(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    let objectUrl: string | null = null;
-
-    setGiftImage(null);
-    setGiftImageError(false);
-    setIsGiftImageLoading(true);
-
-    void fetchAuthenticatedVisitImage(currentVisitId, 'gift', giftFileName, controller.signal)
-      .then((url) => {
-        objectUrl = url;
-        setGiftImage(url);
-      })
-      .catch((imageError: unknown) => {
-        if (imageError instanceof DOMException && imageError.name === 'AbortError') return;
-        console.error('Error fetching gift image:', imageError);
-        setGiftImageError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsGiftImageLoading(false);
-      });
-
     return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setCheckinImages((urls) => {
+        urls.forEach((url) => URL.revokeObjectURL(url));
+        return [];
+      });
+      setGiftImage((url) => {
+        if (url) URL.revokeObjectURL(url);
+        return null;
+      });
     };
-  }, [giftAttachment?.fileName, visitDetail?.id]);
+  }, [visitId]);
 
   // Handler functions
   const handleBack = () => {
@@ -1041,6 +1303,8 @@ export default function VisitDetailPage() {
 
     setCheckoutOutcome(visitDetail.outcome || "Interested");
     setCheckoutFeedback(visitDetail.feedback || "");
+    setCheckoutNextAction((visitDetail as unknown as { nextActionText?: string })?.nextActionText || '');
+    setCheckoutNextActionDate((visitDetail as unknown as { nextActionDate?: string })?.nextActionDate || '');
     setCheckoutError(null);
     setCheckoutMessage(null);
     setIsCheckoutModalOpen(true);
@@ -1069,25 +1333,29 @@ export default function VisitDetailPage() {
       return;
     }
 
+    if (!token) {
+      setCheckoutError("Your session is unavailable. Please sign in again.");
+      return;
+    }
+
     try {
       setIsCheckingOut(true);
       setCheckoutError(null);
       setCheckoutMessage(null);
 
       const position = await getBrowserLocation();
-      const api = new API();
-      const response = await api.checkoutVisit(visitDetail.id, {
-        checkoutLatitude: position.coords.latitude,
-        checkoutLongitude: position.coords.longitude,
-        feedback: checkoutFeedback.trim(),
-        outcome: checkoutOutcome.trim(),
+      const { visitsApi } = await import('@/lib/visits-api');
+      await visitsApi.checkOut(token, visitDetail.id, {
+        checkOutLatitude: position.coords.latitude,
+        checkOutLongitude: position.coords.longitude,
+        outcome: checkoutOutcome.trim() as import('@/lib/visits-api').VisitOutcome,
+        discussionSummary: checkoutFeedback.trim() || null,
+        nextActionText: checkoutNextAction.trim() || null,
+        nextActionDate: checkoutNextActionDate || null,
+        expenseAmount: null,
       });
 
-      if (response.toLowerCase().includes("error checking out")) {
-        throw new Error(response);
-      }
-
-      setCheckoutMessage(response || "Checked out successfully.");
+      setCheckoutMessage("Checked out successfully.");
       setIsCheckoutModalOpen(false);
       await fetchVisitDetail(String(visitDetail.id));
     } catch (error) {
@@ -1138,7 +1406,7 @@ export default function VisitDetailPage() {
       value: visitDetail ? `${format(new Date(visitDetail.visit_date), "MMM dd, yyyy")} at ${visitDetail.checkinTime || "N/A"}` : "N/A",
     },
     { icon: Clock, label: "Duration", value: metrics.find(m => m.title === 'Visit Duration')?.value || "N/A" },
-    { icon: User, label: "Visited by", value: visitDetail?.employeeName || "N/A" },
+    { icon: User, label: "Visited by", value: (visitDetail ? resolveEmployeeName(visitDetail.employeeName, visitDetail.employeeId) : '') || "N/A" },
     { icon: Phone, label: "Phone", value: storeDetails?.contactNumber || "N/A" },
     { icon: Mail, label: "Email", value: "N/A" },
     { icon: MapPin, label: "Address", value: storeDetails?.address || "N/A" },
@@ -1193,17 +1461,25 @@ export default function VisitDetailPage() {
     setPreviewVisible(true);
   };
 
-  // Notes API functions
+  // Notes — documented: GET /api/common/notes + parent list endpoints (guide 5.4)
+  // For visit detail, use generic notes with parentType VISIT_ACTIVITY where applicable; avoid legacy /notes/getByVisit
   const refreshNotes = useCallback(async () => {
     if (!visitId) return;
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
+    // The notes API filters this relationship by visitActivityId (not parentId).
+    const url = `${baseUrl}/api/common/notes?parentType=VISIT_ACTIVITY&visitActivityId=${visitId}&page=0&size=50`;
     try {
-      const api = new API();
-      const updatedNotes = await api.getNotesByVisit(Number(visitId));
-      setNotes(updatedNotes);
+      const res = await fetch(url, { headers: authToken ? { Authorization: `Bearer ${authToken}`, Accept: 'application/json' } : { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`Notes fetch failed (${res.status})`);
+      const data = await res.json();
+      const raw = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>).content) ? (data as Record<string, unknown>).content as unknown[] : [];
+      setNotes(notesLinkedToCurrentVisit(raw).map(toApiNote));
     } catch (error) {
       console.error('Error refreshing notes:', error);
+      setNotes([]);
     }
-  }, [visitId]);
+  }, [visitId, token]);
 
   const addNote = () => {
     setIsNoteEditMode(false);
@@ -1224,50 +1500,39 @@ export default function VisitDetailPage() {
 
     try {
       setIsNoteSaving(true);
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+      const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
       if (isNoteEditMode && editingNoteId !== null) {
-        const response = await fetch(
-          `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/edit?id=${editingNoteId}`,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-            },
-            body: JSON.stringify({
-              content: noteContent,
-              employeeId: loggedInEmployeeId || visitDetail.employeeId || 0,
-              storeId: visitDetail.storeId || 0,
-            }),
-          }
-        );
-        
-        if (!response.ok) {
-          throw new Error('Failed to update note');
-        }
-
+        // Documented: PUT /api/common/notes/{noteId}
+        const res = await fetch(`${baseUrl}/api/common/notes/${editingNoteId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify({
+            noteText: noteContent.trim(),
+            parentType: 'VISIT_ACTIVITY',
+            visitActivityId: Number(visitId),
+          }),
+        });
+        if (!res.ok) throw new Error(`Failed to update note (${res.status})`);
         await refreshNotes();
       } else {
-        const response = await fetch(
-          'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/create',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-            },
-            body: JSON.stringify({
-              content: noteContent,
-              employeeId: loggedInEmployeeId || visitDetail.employeeId || 0,
-              storeId: visitDetail.storeId || 0,
-              visitId: Number(visitId),
-            }),
-          }
-        );
-        
-        if (!response.ok) {
-          throw new Error('Failed to create note');
-        }
-
+        // Documented: POST /api/common/notes
+        const res = await fetch(`${baseUrl}/api/common/notes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify({
+            noteText: noteContent.trim(),
+            parentType: 'VISIT_ACTIVITY',
+            visitActivityId: Number(visitId),
+          }),
+        });
+        if (!res.ok) throw new Error(`Failed to create note (${res.status})`);
         await refreshNotes();
       }
       
@@ -1284,20 +1549,13 @@ export default function VisitDetailPage() {
 
   const deleteNote = async (id: number) => {
     try {
-      const response = await fetch(
-        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/notes/delete?id=${id}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete note');
-      }
-
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+      const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
+      const res = await fetch(`${baseUrl}/api/common/notes/${id}`, {
+        method: 'DELETE',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      });
+      if (!res.ok) throw new Error(`Failed to delete note (${res.status})`);
       await refreshNotes();
     } catch (error) {
       console.error('Error deleting note:', error);
@@ -1393,6 +1651,26 @@ export default function VisitDetailPage() {
       }
 
       const currentTask = taskType === 'requirement' ? newTask : complaintTask;
+      // Backend contract: POST /api/tasks with TaskRequest (TaskController.saveTask).
+      // assignedBy is derived server-side from the logged-in user; visit link via visitActivityId.
+      const detail = (visitDetail ?? {}) as unknown as Record<string, unknown>;
+      const numberOrNull = (value: unknown): number | null =>
+        typeof value === 'number' && Number.isFinite(value) ? value : null;
+      const priorityUpper = String(currentTask.priority || 'low').toUpperCase();
+      const payload = {
+        taskTitle: currentTask.taskTitle.trim(),
+        taskDescription: currentTask.taskDesciption.trim() || null,
+        taskType: taskType === 'requirement' ? 'REQUIREMENT' : 'COMPLAINT',
+        status: 'OPEN',
+        priority: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(priorityUpper) ? priorityUpper : 'LOW',
+        dueDate: currentTask.dueDate || null,
+        assignedToEmployeeId: visitDetail?.employeeId || loggedInEmployeeId,
+        clientAccountId: numberOrNull(detail.clientAccountId),
+        institutionId: numberOrNull(detail.institutionId),
+        projectId: numberOrNull(detail.projectId),
+        ncRegisterId: null,
+        visitActivityId: Number(visitId),
+      };
       const taskToCreate = {
         ...currentTask,
         assignedById: loggedInEmployeeId,
@@ -1404,13 +1682,13 @@ export default function VisitDetailPage() {
         visitId: Number(visitId),
       };
 
-      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/task/create', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(taskToCreate),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -1450,6 +1728,7 @@ export default function VisitDetailPage() {
           updatedTime: '',
         });
         setIsRequirementModalOpen(false);
+        setTaskPanel(null);
         setActiveRequirementTab('general');
       } else {
         setComplaints(prevTasks => [createdTask, ...prevTasks]);
@@ -1479,6 +1758,7 @@ export default function VisitDetailPage() {
           updatedTime: '',
         });
         setIsComplaintModalOpen(false);
+        setTaskPanel(null);
         setActiveComplaintTab('general');
       }
     } catch (error) {
@@ -1605,11 +1885,6 @@ export default function VisitDetailPage() {
                 {getStatusIcon(visitStatus.status as 'Assigned' | 'On Going' | 'Checked Out' | 'Completed')}
                 <span>{visitStatus.status}</span>
               </Badge>
-              {userRole && (
-                <Badge variant={isManager ? "secondary" : "default"} className="px-2 py-0.5 text-[11px]">
-                  {isManager ? "Manager View" : "Admin View"}
-                </Badge>
-              )}
             </div>
           </div>
 
@@ -1622,12 +1897,20 @@ export default function VisitDetailPage() {
                   </span>
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-muted-foreground">Store</p>
-                  <h2 className="break-words text-sm font-semibold leading-5 text-foreground">
+                  {visitDetail?.clientKind === 'RETAIL' ? (
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/15">Retail</span>
+                  ) : visitDetail?.clientKind === 'INSTITUTION' ? (
+                    <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-inset ring-violet-600/15">Institution</span>
+                  ) : visitDetail?.clientKind === 'PROJECT' ? (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/15">Project</span>
+                  ) : (
+                    <p className="text-[11px] font-medium text-muted-foreground">Visit</p>
+                  )}
+                  <h2 className="mt-1 break-words text-sm font-semibold leading-5 text-foreground">
                     {visitDetail?.storeName || 'Unknown store'}
                   </h2>
                   <p className="mt-0.5 break-words text-xs leading-4 text-muted-foreground">
-                    {visitDetail?.employeeName || 'Unknown employee'}
+                    {resolveEmployeeName(visitDetail?.employeeName, visitDetail?.employeeId) || 'Unknown employee'}
                   </p>
                 </div>
               </div>
@@ -1651,7 +1934,7 @@ export default function VisitDetailPage() {
                     className="h-8 w-full justify-start px-2.5 text-xs"
                     onClick={() => {
                       setTaskCreateError(null);
-                      setIsRequirementModalOpen(true);
+                      setTaskPanel('requirement');
                     }}
                   >
                     <FileText className="mr-1.5 h-3.5 w-3.5" />
@@ -1665,7 +1948,7 @@ export default function VisitDetailPage() {
                     className="h-8 w-full justify-start px-2.5 text-xs"
                     onClick={() => {
                       setTaskCreateError(null);
-                      setIsComplaintModalOpen(true);
+                      setTaskPanel('complaint');
                     }}
                   >
                     <AlertCircle className="mr-1.5 h-3.5 w-3.5" />
@@ -1891,7 +2174,7 @@ export default function VisitDetailPage() {
             {activeTab === 'metrics' && (
               <div className="space-y-4">
                 <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-                  <header className="border-b px-3 py-2.5">
+                  <header className="border-b px-4 py-3">
                     <div>
                       <CardTitle className="text-sm font-semibold">Visit overview</CardTitle>
                     </div>
@@ -1918,96 +2201,150 @@ export default function VisitDetailPage() {
                       <div>
                         <CardTitle className="text-sm font-semibold">Visit activity</CardTitle>
                       </div>
-                      <Button onClick={addNote} size="sm" className="h-8 shrink-0 text-xs">
+                      <Button onClick={addNote} size="sm" className="h-7 shrink-0 px-2.5 text-xs">
                         <Plus className="mr-1.5 h-3.5 w-3.5" />
                         Add note
                       </Button>
                     </div>
                   </header>
-                  <CardContent className="p-3">
-                    <div className="relative space-y-0 before:absolute before:bottom-4 before:left-[15px] before:top-4 before:w-px before:bg-border">
-                      <div className="relative flex gap-3 pb-5">
-                        <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background">
-                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                  <CardContent className="px-4 py-3">
+                    <div className="relative space-y-0 before:absolute before:bottom-3 before:left-[13px] before:top-3 before:w-px before:bg-border">
+                      <div className="relative flex gap-2.5 pb-4">
+                        <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background">
+                          <Calendar className="h-3 w-3 text-muted-foreground" />
                         </div>
                         <div className="min-w-0 pt-0.5">
-                          <p className="text-sm font-medium text-foreground">Visit scheduled</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs font-semibold text-foreground">Visit scheduled</p>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
                             {visitDetail?.visit_date ? format(new Date(visitDetail.visit_date), "MMM dd, yyyy") : 'Date unavailable'}
                             {visitDetail?.purpose ? ` · ${visitDetail.purpose}` : ''}
                           </p>
                         </div>
                       </div>
 
-                      {visitDetail?.checkinDate && visitDetail?.checkinTime && (
-                        <div className="relative flex gap-3 pb-5">
-                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950">
-                            <LogIn className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                          </div>
-                          <div className="min-w-0 pt-0.5">
-                            <p className="text-sm font-medium text-foreground">Checked in</p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(visitDetail.checkinDate), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail.checkinTime}`), 'h:mm a')}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {notes.map((note) => (
-                        <div key={`activity-note-${note.id}`} className="relative flex gap-3 pb-5">
-                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
-                            <MessageSquare className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                          </div>
-                          <div className="min-w-0 flex-1 pt-0.5">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-foreground">Note added</p>
-                                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{note.content}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {format(new Date(note.createdDate), "MMM dd, yyyy")}{note.employeeName ? ` · ${note.employeeName}` : ''}
-                                </p>
+                      {(() => {
+                        // Chronological timeline: scheduled → check-in → notes (by createdAt) → check-out.
+                        // Notes were previously pinned above "Visit completed" regardless of time.
+                        const timeOf = (date?: string, time?: string): number | null => {
+                          if (!date || !time) return null;
+                          const parsed = new Date(`${date}T${time}`);
+                          const ms = parsed.getTime();
+                          return Number.isNaN(ms) ? null : ms;
+                        };
+                        const dayStartOf = (date?: string): number | null => {
+                          if (!date) return null;
+                          const parsed = new Date(`${date}T00:00:00`);
+                          const ms = parsed.getTime();
+                          return Number.isNaN(ms) ? null : ms;
+                        };
+                        type TimelineItem =
+                          | { key: string; at: number; kind: 'checkin' }
+                          | { key: string; at: number; kind: 'note'; note: ApiNote }
+                          | { key: string; at: number; kind: 'checkout' }
+                          | { key: string; at: number; kind: 'inprogress' };
+                        const items: TimelineItem[] = [];
+                        const checkinAt = timeOf(visitDetail?.checkinDate, visitDetail?.checkinTime);
+                        if (checkinAt != null) items.push({ key: 'checkin', at: checkinAt, kind: 'checkin' });
+                        const checkoutAt = timeOf(visitDetail?.checkoutDate, visitDetail?.checkoutTime);
+                        const scheduledAt = dayStartOf(visitDetail?.visit_date);
+                        for (const note of notes) {
+                          const created = typeof note.createdDate === 'string' && note.createdDate.trim()
+                            ? new Date(note.createdDate).getTime()
+                            : NaN;
+                          // Undated notes sort with the scheduled day, never above a completed visit.
+                          const at = Number.isNaN(created)
+                            ? (checkoutAt ?? scheduledAt ?? Number.MAX_SAFE_INTEGER)
+                            : created;
+                          items.push({ key: `activity-note-${note.id}`, at, kind: 'note', note });
+                        }
+                        if (checkoutAt != null) items.push({ key: 'checkout', at: checkoutAt, kind: 'checkout' });
+                        else items.push({ key: 'inprogress', at: Number.MAX_SAFE_INTEGER, kind: 'inprogress' });
+                        items.sort((a, b) => a.at - b.at);
+                        return items.map((item, index) => {
+                          const isLast = index === items.length - 1;
+                          if (item.kind === 'checkin') {
+                            return (
+                              <div key={item.key} className={`relative flex gap-2.5 ${isLast ? '' : 'pb-4'}`}>
+                                <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950">
+                                  <LogIn className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                                <div className="min-w-0 pt-0.5">
+                                  <p className="text-xs font-semibold text-foreground">Checked in</p>
+                                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                    {format(new Date(visitDetail!.checkinDate!), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail!.checkinTime}`), 'h:mm a')}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="flex shrink-0 items-center gap-0.5">
-                                <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-7 w-7 text-muted-foreground hover:text-foreground" aria-label="Edit note">
-                                  <Edit className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label="Delete note">
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                            );
+                          }
+                          if (item.kind === 'note') {
+                            const note = item.note;
+                            return (
+                              <div key={item.key} className={`group relative flex gap-2.5 ${isLast ? '' : 'pb-4'}`}>
+                                <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
+                                  <MessageSquare className="h-3 w-3 text-primary" />
+                                </div>
+                                <div className="min-w-0 flex-1 pt-0.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="whitespace-pre-wrap break-words text-xs font-medium leading-5 text-foreground">{note.content}</p>
+                                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                        {(() => {
+                                          const date = formatNoteDate(note.createdDate);
+                                          const author = note.employeeName || resolveEmployeeName(
+                                            null,
+                                            (note as unknown as Record<string, unknown>).authorEmployeeId as number,
+                                          );
+                                          return ['Note', date, author].filter(Boolean).join(' · ');
+                                        })()}
+                                      </p>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                      <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-7 w-7 text-muted-foreground hover:text-foreground" aria-label="Edit note">
+                                        <Edit className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label="Delete note">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          if (item.kind === 'checkout') {
+                            return (
+                              <div key={item.key} className="relative flex gap-2.5">
+                                <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10">
+                                  <CheckCircle className="h-3 w-3 text-primary" />
+                                </div>
+                                <div className="min-w-0 pt-0.5">
+                                  <p className="text-xs font-semibold text-foreground">Visit completed</p>
+                                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                    {format(new Date(visitDetail!.checkoutDate!), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail!.checkoutTime}`), 'h:mm a')}
+                                  </p>
+                                  {(visitDetail!.outcome || visitDetail!.feedback) && (
+                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                      <span className="font-medium text-foreground">Outcome:</span> {formatActivityValue(visitDetail!.outcome || visitDetail!.feedback)}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={item.key} className="relative flex gap-2.5">
+                              <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background">
+                                <Clock className="h-3 w-3 text-muted-foreground" />
+                              </div>
+                              <div className="min-w-0 pt-0.5">
+                                <p className="text-xs font-semibold text-foreground">Visit in progress</p>
+                                <p className="mt-0.5 text-[11px] text-muted-foreground">Waiting for check-out</p>
                               </div>
                             </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {visitDetail?.checkoutDate && visitDetail?.checkoutTime ? (
-                        <div className="relative flex gap-3">
-                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10">
-                            <CheckCircle className="h-3.5 w-3.5 text-primary" />
-                          </div>
-                          <div className="min-w-0 pt-0.5">
-                            <p className="text-sm font-medium text-foreground">Visit completed</p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(visitDetail.checkoutDate), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail.checkoutTime}`), 'h:mm a')}
-                            </p>
-                            {(visitDetail.outcome || visitDetail.feedback) && (
-                              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                                <span className="font-medium text-foreground">Outcome:</span> {visitDetail.outcome || visitDetail.feedback}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="relative flex gap-3">
-                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background">
-                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                          </div>
-                          <div className="min-w-0 pt-0.5">
-                            <p className="text-sm font-medium text-foreground">Visit in progress</p>
-                            <p className="text-xs text-muted-foreground">Waiting for check-out</p>
-                          </div>
-                        </div>
-                      )}
+                          );
+                        });
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
@@ -2377,31 +2714,52 @@ export default function VisitDetailPage() {
       </div>
 
       {/* Modals */}
-      {/* Notes Modal */}
-      <Dialog open={isNoteModalVisible} onOpenChange={(open) => {
-        if (open) setIsNoteModalVisible(true);
-        else requestCloseNoteModal();
-      }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{isNoteEditMode ? 'Edit Note' : 'Add Note'}</DialogTitle>
-            <DialogDescription>
-              {isNoteEditMode ? 'Update the existing note.' : 'Add a quick note for this visit.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <textarea
-              placeholder="Enter note content"
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-            />
-            <div className="flex flex-col sm:flex-row justify-end gap-2">
-              <Button variant="outline" onClick={requestCloseNoteModal} className="w-full sm:w-auto">
+      {/* Notes panel — right slide-over, same pattern as the task panel */}
+      {isNoteModalVisible && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/50" onClick={requestCloseNoteModal} />
+          <aside
+            className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-background shadow-xl"
+            aria-label={isNoteEditMode ? 'Edit note' : 'Add note'}
+          >
+            <div className="flex items-start justify-between gap-3 border-b px-4 py-3.5">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold">
+                  {isNoteEditMode ? 'Edit Note' : 'Add Note'}
+                </h2>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {visitDetail?.storeName || 'Visit'}
+                  {visitDetail?.visit_date ? ` · ${visitDetail.visit_date}` : ''}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Close panel" onClick={requestCloseNoteModal}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              <Label htmlFor="visitNoteContent">Note</Label>
+              <textarea
+                id="visitNoteContent"
+                placeholder="Enter note content"
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                rows={8}
+                autoFocus
+                className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                {isNoteEditMode
+                  ? 'Updating keeps the original author and saves the previous text as a revision.'
+                  : 'Saved to this visit (VISIT_ACTIVITY) under your account.'}
+              </p>
+            </div>
+
+            <div className="flex gap-2 border-t px-4 py-3">
+              <Button variant="outline" onClick={requestCloseNoteModal} className="flex-1">
                 Cancel
               </Button>
-              <Button onClick={saveNote} className="w-full sm:w-auto" disabled={isNoteSaving || !noteContent.trim()}>
+              <Button onClick={saveNote} className="flex-1" disabled={isNoteSaving || !noteContent.trim()}>
                 {isNoteSaving ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2412,9 +2770,9 @@ export default function VisitDetailPage() {
                 )}
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </aside>
+        </div>
+      )}
 
       <Dialog open={notePendingDelete != null} onOpenChange={(open) => {
         if (!open) {
@@ -2458,14 +2816,39 @@ export default function VisitDetailPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="checkoutOutcome">Outcome</Label>
-              <Input
-                id="checkoutOutcome"
-                placeholder="Interested"
-                value={checkoutOutcome}
-                onChange={(event) => setCheckoutOutcome(event.target.value)}
-                disabled={isCheckingOut}
-              />
+              <Label htmlFor="checkoutOutcome">Outcome — independent, does not mutate business status</Label>
+              <Select value={checkoutOutcome} onValueChange={setCheckoutOutcome} disabled={isCheckingOut}>
+                <SelectTrigger id="checkoutOutcome"><SelectValue placeholder="Select outcome" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SUCCESS">Success</SelectItem>
+                  <SelectItem value="INTERESTED">Interested</SelectItem>
+                  <SelectItem value="NO_PROGRESS">No Progress</SelectItem>
+                  <SelectItem value="FOLLOW_UP_REQUIRED">Follow Up Required</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Visit outcome is parallel activity; selecting it does not advance institution/project/retail status or pipeline.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="checkoutNextAction">Next action (independent)</Label>
+                <Input
+                  id="checkoutNextAction"
+                  placeholder="e.g. Schedule follow-up"
+                  value={checkoutNextAction}
+                  onChange={(event) => setCheckoutNextAction(event.target.value)}
+                  disabled={isCheckingOut}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="checkoutNextActionDate">Next action date</Label>
+                <Input
+                  id="checkoutNextActionDate"
+                  type="date"
+                  value={checkoutNextActionDate}
+                  onChange={(event) => setCheckoutNextActionDate(event.target.value)}
+                  disabled={isCheckingOut}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="checkoutFeedback">Feedback</Label>
@@ -2518,269 +2901,151 @@ export default function VisitDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Requirement Modal */}
-      {isRequirementModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-full max-w-2xl border-0 shadow-lg max-h-[90vh] overflow-y-auto">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg md:text-xl font-semibold text-foreground">Create Requirement</CardTitle>
-              <p className="text-xs md:text-sm text-muted-foreground">Fill in the requirement details</p>
-            </CardHeader>
-            <CardContent>
-              <Tabs value={activeRequirementTab} onValueChange={setActiveRequirementTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-4">
-                  <TabsTrigger value="general">General</TabsTrigger>
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="general">
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementTitle">Requirement Title</Label>
-                      <Input
-                        id="requirementTitle"
-                        placeholder="Enter requirement title"
-                        value={newTask.taskTitle}
-                        onChange={(e) => setNewTask({ ...newTask, taskTitle: e.target.value })}
-                        className="w-full"
+      {/* Create task panel — one-page right slide-over for requirements & complaints */}
+      {taskPanel && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => (taskPanel === 'requirement' ? requestCloseRequirementModal() : requestCloseComplaintModal())}
+          />
+          <aside className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-background shadow-xl" aria-label={taskPanel === 'requirement' ? 'Create requirement' : 'Create complaint'}>
+            <div className="flex items-start justify-between gap-3 border-b px-4 py-3.5">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold">
+                  {taskPanel === 'requirement' ? 'Create Requirement' : 'Create Complaint'}
+                </h2>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {visitDetail?.storeName || 'Visit'}
+                  {visitDetail ? ` · ${resolveEmployeeName(visitDetail.employeeName, visitDetail.employeeId)}` : ''}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                aria-label="Close panel"
+                onClick={() => (taskPanel === 'requirement' ? requestCloseRequirementModal() : requestCloseComplaintModal())}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Store</span>
+                  <span className="min-w-0 truncate font-medium">{visitDetail?.storeName || '—'}</span>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Assigned to</span>
+                  <span className="min-w-0 truncate font-medium">
+                    {visitDetail ? resolveEmployeeName(visitDetail.employeeName, visitDetail.employeeId) : '—'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="taskPanelTitle">
+                  {taskPanel === 'requirement' ? 'Requirement Title' : 'Complaint Title'}
+                </Label>
+                <Input
+                  id="taskPanelTitle"
+                  placeholder={taskPanel === 'requirement' ? 'Enter requirement title' : 'Enter complaint title'}
+                  value={taskPanel === 'requirement' ? newTask.taskTitle : complaintTask.taskTitle}
+                  onChange={(e) => (taskPanel === 'requirement'
+                    ? setNewTask({ ...newTask, taskTitle: e.target.value })
+                    : setComplaintTask({ ...complaintTask, taskTitle: e.target.value }))}
+                  className="w-full"
                 />
               </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementDescription">Requirement Description</Label>
-                      <Input
-                        id="requirementDescription"
-                        placeholder="Enter requirement description"
-                        value={newTask.taskDesciption}
-                        onChange={(e) => setNewTask({ ...newTask, taskDesciption: e.target.value })}
-                        className="w-full"
-                      />
-                </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementCategory">Category</Label>
-                      <Select value="requirement" disabled>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Requirement" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="requirement">Requirement</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementStoreName">Store</Label>
-                      <Input
-                        id="requirementStoreName"
-                        value={visitDetail ? `${visitDetail.storeName}` : 'Loading...'}
-                        disabled
-                        className="w-full bg-gray-100 text-foreground font-medium cursor-not-allowed"
-                      />
-                    </div>
-                    <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={requestCloseRequirementModal} className="w-full sm:w-auto">Cancel</Button>
-                      <Button onClick={() => setActiveRequirementTab('details')} className="w-full sm:w-auto">Next</Button>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="details">
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementDueDate">Due Date</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={`w-full justify-start text-left font-normal ${!newTask.dueDate && 'text-muted-foreground'}`}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {newTask.dueDate ? format(new Date(newTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
-                      </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <CalendarComponent
-                            mode="single"
-                            selected={newTask.dueDate ? new Date(newTask.dueDate) : undefined}
-                            onSelect={(date) => setNewTask({ ...newTask, dueDate: date ? date.toISOString().split('T')[0] : '' })}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementAssignedTo">Assigned To</Label>
-                      <Input
-                        id="requirementAssignedTo"
-                        value={visitDetail ? `${visitDetail.employeeName}` : ''}
-                        disabled
-                        className="w-full bg-gray-100 text-foreground font-medium cursor-not-allowed"
-                      />
-                </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="requirementPriority">Priority</Label>
-                      <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value as Priority })}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                        </SelectContent>
-                      </Select>
-              </div>
-                    {taskCreateError && (
-                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                        {taskCreateError}
-                      </div>
-                    )}
-                    <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => setActiveRequirementTab('general')} className="w-full sm:w-auto">Back</Button>
-                        <Button variant="ghost" onClick={requestCloseRequirementModal} className="w-full sm:w-auto">Cancel</Button>
-                      </div>
-                      <Button onClick={() => createTask('requirement')} disabled={isCreatingTask} className="w-full sm:w-auto">
-                        {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Create Requirement
-                      </Button>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
-      {/* Complaint Modal */}
-      {isComplaintModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-full max-w-2xl border-0 shadow-lg max-h-[90vh] overflow-y-auto">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg md:text-xl font-semibold text-foreground">Create Complaint</CardTitle>
-              <p className="text-xs md:text-sm text-muted-foreground">Fill in the complaint details</p>
-            </CardHeader>
-            <CardContent>
-              <Tabs value={activeComplaintTab} onValueChange={setActiveComplaintTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-4">
-                  <TabsTrigger value="general">General</TabsTrigger>
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="general">
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintTitle">Complaint Title</Label>
-                      <Input
-                        id="complaintTitle"
-                        placeholder="Enter complaint title"
-                        value={complaintTask.taskTitle}
-                        onChange={(e) => setComplaintTask({ ...complaintTask, taskTitle: e.target.value })}
-                        className="w-full"
-                      />
-                </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintDescription">Complaint Description</Label>
-                      <Input
-                        id="complaintDescription"
-                        placeholder="Enter complaint description"
-                        value={complaintTask.taskDesciption}
-                        onChange={(e) => setComplaintTask({ ...complaintTask, taskDesciption: e.target.value })}
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintCategory">Category</Label>
-                      <Select value="complaint" disabled>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Complaint" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="complaint">Complaint</SelectItem>
-                        </SelectContent>
-                      </Select>
-                </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintStoreName">Store</Label>
-                      <Input
-                        id="complaintStoreName"
-                        value={visitDetail ? `${visitDetail.storeName}` : 'Loading...'}
-                        disabled
-                        className="w-full bg-gray-100 text-foreground font-medium cursor-not-allowed"
-                      />
+              <div className="space-y-2">
+                <Label htmlFor="taskPanelDescription">Description</Label>
+                <Input
+                  id="taskPanelDescription"
+                  placeholder="Enter description"
+                  value={taskPanel === 'requirement' ? newTask.taskDesciption : complaintTask.taskDesciption}
+                  onChange={(e) => (taskPanel === 'requirement'
+                    ? setNewTask({ ...newTask, taskDesciption: e.target.value })
+                    : setComplaintTask({ ...complaintTask, taskDesciption: e.target.value }))}
+                  className="w-full"
+                />
               </div>
-                    <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <Button variant="outline" onClick={requestCloseComplaintModal} className="w-full sm:w-auto">Cancel</Button>
-                      <Button onClick={() => setActiveComplaintTab('details')} className="w-full sm:w-auto">Next</Button>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="details">
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintDueDate">Due Date</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-              <Button 
-                variant="outline"
-                            className={`w-full justify-start text-left font-normal ${!complaintTask.dueDate && 'text-muted-foreground'}`}
-              >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {complaintTask.dueDate ? format(new Date(complaintTask.dueDate), 'MMM dd, yyyy') : <span>Pick a date</span>}
-              </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <CalendarComponent
-                            mode="single"
-                            selected={complaintTask.dueDate ? new Date(complaintTask.dueDate) : undefined}
-                            onSelect={(date) => setComplaintTask({ ...complaintTask, dueDate: date ? date.toISOString().split('T')[0] : '' })}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-            </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintAssignedTo">Assigned To</Label>
-                      <Input
-                        id="complaintAssignedTo"
-                        value={visitDetail ? `${visitDetail.employeeName}` : ''}
-                        disabled
-                        className="w-full bg-gray-100 text-foreground font-medium cursor-not-allowed"
-                      />
-          </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="complaintPriority">Priority</Label>
-                      <Select value={complaintTask.priority} onValueChange={(value) => setComplaintTask({ ...complaintTask, priority: value as Priority })}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {taskCreateError && (
-                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                        {taskCreateError}
-                      </div>
-                    )}
-                    <div className="flex flex-col sm:flex-row justify-between gap-2 mt-4">
-                      <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => setActiveComplaintTab('general')} className="w-full sm:w-auto">Back</Button>
-                        <Button variant="ghost" onClick={requestCloseComplaintModal} className="w-full sm:w-auto">Cancel</Button>
-                      </div>
-                      <Button onClick={() => createTask('complaint')} disabled={isCreatingTask} className="w-full sm:w-auto">
-                        {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Create Complaint
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="taskPanelDueDate">Due Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={`w-full justify-start px-2.5 text-left text-xs font-normal ${(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate) ? '' : 'text-muted-foreground'}`}
+                      >
+                        <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate)
+                            ? format(new Date(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate), 'MMM dd, yyyy')
+                            : 'Pick a date'}
+                        </span>
                       </Button>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate)
+                          ? new Date(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate)
+                          : undefined}
+                        onSelect={(date) => {
+                          const value = date ? date.toISOString().split('T')[0] : '';
+                          if (taskPanel === 'requirement') setNewTask({ ...newTask, dueDate: value });
+                          else setComplaintTask({ ...complaintTask, dueDate: value });
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="taskPanelPriority">Priority</Label>
+                  <Select
+                    value={taskPanel === 'requirement' ? newTask.priority : complaintTask.priority}
+                    onValueChange={(value) => (taskPanel === 'requirement'
+                      ? setNewTask({ ...newTask, priority: value as Priority })
+                      : setComplaintTask({ ...complaintTask, priority: value as Priority }))}
+                  >
+                    <SelectTrigger id="taskPanelPriority" className="w-full text-xs">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {taskCreateError && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  {taskCreateError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 border-t px-4 py-3">
+              <Button
+                variant="outline"
+                onClick={() => (taskPanel === 'requirement' ? requestCloseRequirementModal() : requestCloseComplaintModal())}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button onClick={() => taskPanel && createTask(taskPanel)} disabled={isCreatingTask} className="flex-1">
+                {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create {taskPanel === 'requirement' ? 'Requirement' : 'Complaint'}
+              </Button>
+            </div>
+          </aside>
         </div>
       )}
 

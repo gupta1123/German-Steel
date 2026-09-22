@@ -61,8 +61,11 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 
     const daysArray = [];
 
-    // normalize helper
-    const normalizeDate = (dateStr: string) => dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    // normalize helper — safely handles undefined/null/empty from backend
+    const normalizeDate = (dateStr: string | null | undefined): string => {
+      if (!dateStr || typeof dateStr !== 'string') return '';
+      return dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    };
 
     // 1. Add empty slots for days before the 1st
     for (let i = 0; i < firstDay; i++) {

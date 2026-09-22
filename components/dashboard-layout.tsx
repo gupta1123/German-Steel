@@ -7,25 +7,21 @@ import {
   Settings,
   LogOut,
   FileText,
-  DollarSign,
-  Calendar,
   CheckCircle,
   Tag,
   ThumbsUp,
   ClipboardList,
-  BarChart,
   User,
-  ChevronDown,
-  ChevronRight,
   Building,
-  ShoppingCart,
   UserCheck,
-  FileSearch,
   TrendingUp,
-  Target,
-  MapPin,
-  PanelLeftClose,
-  PanelLeftOpen
+  Landmark,
+  HardHat,
+  AlertTriangle,
+  FolderOpen,
+  CalendarCheck,
+  Receipt,
+  ChartNoAxesCombined
 } from "lucide-react";
 import Link from "@/components/guarded-link";
 import { usePathname } from "next/navigation";
@@ -51,37 +47,56 @@ interface DashboardLayoutProps {
 // Define sidebar categories and items
 const allSidebarCategories = [
   {
-    name: "Customers",
-    icon: Users,
+    name: "Command Center",
+    icon: Home,
     items: [
-      { name: "Customers", href: "/dashboard/customers", icon: Users },
-      { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
+      { name: "Overview", href: "/dashboard", icon: Home },
     ]
   },
   {
-    name: "Sales",
+    name: "Business",
     icon: Building,
     items: [
-      { name: "Visits", href: "/dashboard/visits", icon: Calendar },
-      { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
-      { name: "Pricing", href: "/dashboard/pricing", icon: Tag },
+      { name: "Retail Accounts", href: "/dashboard/customers", icon: Users },
+      { name: "Institutions", href: "/dashboard/institutions", icon: Landmark },
+      { name: "Projects", href: "/dashboard/projects", icon: HardHat },
+      { name: "Client Groups", href: "/dashboard/groups", icon: Building },
     ]
   },
   {
-    name: "Employees",
+    name: "Execution Oversight",
+    icon: CalendarCheck,
+    items: [
+      { name: "Visit & Activity Oversight", href: "/dashboard/visits", icon: CalendarCheck },
+      { name: "NC Register", href: "/dashboard/nc-register", icon: AlertTriangle },
+      { name: "Document Depository", href: "/dashboard/documents", icon: FolderOpen, disabled: false },
+    ]
+  },
+  {
+    name: "Team Performance",
     icon: UserCheck,
     items: [
-      { name: "Employees", href: "/dashboard/employees", icon: User },
+      { name: "Employees and teams", href: "/dashboard/employees", icon: User },
       { name: "Attendance", href: "/dashboard/attendance", icon: CheckCircle },
-      { name: "Expenses", href: "/dashboard/expenses", icon: DollarSign },
+      { name: "Expense Claims", href: "/dashboard/expenses", icon: Receipt },
     ]
   },
   {
-    name: "Reports",
+    name: "Insights",
     icon: TrendingUp,
     items: [
+      { name: "Reports", href: "/dashboard/reports", icon: ChartNoAxesCombined },
+      { name: "Pricing Intelligence", href: "/dashboard/pricing", icon: Tag },
+    ]
+  },
+  {
+    name: "Administration",
+    icon: Settings,
+    items: [
+      { name: "Settings", href: "/dashboard/settings", icon: Settings },
       { name: "Approvals", href: "/dashboard/approvals", icon: FileText },
-      { name: "Reports", href: "/dashboard/reports", icon: BarChart },
+      { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
+      { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
     ]
   }
 ];
@@ -90,7 +105,9 @@ const allSidebarCategories = [
 const managerAllowedPages = [
   "/dashboard",
   "/dashboard/customers",
-  "/dashboard/enquiries", 
+  "/dashboard/groups",
+  "/dashboard/institutions",
+  "/dashboard/projects",
   "/dashboard/complaints",
   "/dashboard/visits",
   "/dashboard/meetings",
@@ -107,7 +124,7 @@ const getFilteredSidebarCategories = (userRole: string | null, currentUser: Curr
     // For managers, filter categories to only show allowed pages
     return allSidebarCategories.map(category => ({
       ...category,
-      items: category.items.filter(item => managerAllowedPages.includes(item.href))
+      items: category.items.filter(item => item.disabled || managerAllowedPages.includes(item.href))
     })).filter(category => category.items.length > 0); // Remove empty categories
   }
   
@@ -128,18 +145,10 @@ export default function DashboardLayout({
   const { requestNavigation } = useNavigationGuard();
   const { logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Get filtered sidebar categories based on user role
   const sidebarCategories = getFilteredSidebarCategories(userRole, currentUser);
   
-  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(() => {
-    const initialState: Record<string, boolean> = {};
-    sidebarCategories.forEach(category => {
-      initialState[category.name] = true;
-    });
-    return initialState;
-  });
 
   // Determine display role
   const getDisplayRole = () => {
@@ -178,24 +187,6 @@ export default function DashboardLayout({
     }
   }, [isManager, pathname, router]);
 
-  useEffect(() => {
-    const savedState = window.localStorage.getItem("germanSteels-sidebar-collapsed");
-    if (savedState) {
-      setSidebarCollapsed(savedState === "true");
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("germanSteels-sidebar-collapsed", String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
-
-  const toggleCategory = (categoryName: string) => {
-    setOpenCategories(prev => ({
-      ...prev,
-      [categoryName]: !prev[categoryName]
-    }));
-  };
-
   const isActive = (path: string) => {
     if (path === "/dashboard") {
       return pathname === path;
@@ -217,169 +208,83 @@ export default function DashboardLayout({
   };
 
   return (
-    <div className={`min-h-screen w-full grid ${sidebarCollapsed ? "md:grid-cols-[64px_1fr]" : "md:grid-cols-[184px_1fr] lg:grid-cols-[200px_1fr]"}`}>
+    <div className="min-h-screen w-full bg-background md:grid md:grid-cols-[216px_minmax(0,1fr)] lg:grid-cols-[224px_minmax(0,1fr)]">
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav sidebarCategories={sidebarCategories} isManager={isManager || false} />
 
       {/* Desktop sidebar */}
-      <div className="hidden border-r bg-background md:block sticky top-0 h-screen">
+      <aside className="sticky top-0 hidden h-screen border-r border-border bg-card md:block">
         <div className="flex h-full max-h-screen flex-col">
-          <div className={`flex h-14 items-center border-b ${sidebarCollapsed ? "justify-center px-2" : "justify-between px-2.5"}`}>
-            {!sidebarCollapsed && (
-              <Link href="/dashboard" className="flex min-w-0 items-center" aria-label="German Steels dashboard">
-                <BrandLogo className="h-6 w-auto max-w-[100px] object-contain" priority />
-              </Link>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={() => {
-                setUserMenuOpen(false);
-                setSidebarCollapsed((collapsed) => !collapsed);
-              }}
-            >
-              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            </Button>
+          <div className="flex h-[58px] items-center px-[18px]">
+            <Link href="/dashboard" className="flex min-w-0 items-center" aria-label="German Steels dashboard">
+              <BrandLogo className="h-auto w-[105px] rounded-sm object-contain object-left" priority />
+            </Link>
           </div>
-          <div className="flex-1 overflow-y-auto py-4">
-            <nav className="grid gap-1 px-1.5">
-              {/* Dashboard link (no category) */}
-              <Link
-                href="/dashboard"
-                title="Dashboard"
-                className={`flex items-center rounded-lg py-2 transition-all ${
-                  sidebarCollapsed ? "justify-center px-2" : "gap-2 px-2.5"
-                } ${
-                  pathname === "/dashboard"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <Home className="h-4 w-4" />
-                {!sidebarCollapsed && <span className="text-sm">Dashboard</span>}
-              </Link>
-              
-              {/* Settings link - only show for non-managers */}
-              {!isManager && (
-                <Link
-                  href="/dashboard/settings"
-                  title="Settings"
-                  className={`flex items-center rounded-lg py-2 transition-all ${
-                    sidebarCollapsed ? "justify-center px-2" : "gap-2 px-2.5"
-                  } ${
-                    pathname.startsWith("/dashboard/settings")
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  }`}
-                >
-                  <Settings className="h-4 w-4" />
-                  {!sidebarCollapsed && <span className="text-sm">Settings</span>}
-                </Link>
-              )}
-              
-              {/* Categories */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1 [scrollbar-color:#c8c8cc_transparent] [scrollbar-width:thin]">
+            <nav className="space-y-3" aria-label="Management navigation">
               {sidebarCategories.map((category) => {
-                const CategoryIcon = category.icon;
-                const isOpen = openCategories[category.name];
-                
-                if (sidebarCollapsed) {
-                  return (
-                    <div key={category.name} className="mt-1 border-t pt-1">
+                return (
+                  <section key={category.name}>
+                    <div className="px-2 pb-1 text-[10px] font-medium leading-4 text-muted-foreground/75">{category.name}</div>
+                    <div className="space-y-px">
                       {category.items.map((item) => {
                         const ItemIcon = item.icon;
-                        return (
-                          <Link
-                            key={item.name}
-                            href={item.href}
-                            title={item.name}
-                            aria-label={item.name}
-                            className={`flex items-center justify-center rounded-lg px-2 py-2 transition-all ${
-                              isActive(item.href)
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                            }`}
-                          >
-                            <ItemIcon className="h-4 w-4" />
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={category.name} className="flex flex-col">
-                    <Button
-                      variant="ghost"
-                      className="justify-between px-2.5 py-2 h-auto"
-                      onClick={() => toggleCategory(category.name)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <CategoryIcon className="h-4 w-4" />
-                        <span className="text-sm font-medium">{category.name}</span>
-                      </div>
-                      {isOpen ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                    
-                    {isOpen && (
-                      <div className="space-y-1 py-1 pl-2">
-                        {category.items.map((item) => {
-                          const ItemIcon = item.icon;
+                        if (item.disabled) {
                           return (
+                            <button
+                              key={item.name}
+                              type="button"
+                              disabled
+                              title={`${item.name} — Coming soon`}
+                              className="flex min-h-7 w-full cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium leading-4 text-muted-foreground"
+                            >
+                              <ItemIcon className="h-3.5 w-3.5 shrink-0 stroke-[1.7]" />
+                              <span className="min-w-0 flex-1">{item.name}</span>
+                            </button>
+                          );
+                        }
+                        return (
                             <Link
                               key={item.name}
                               href={item.href}
-                              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 transition-all ${
+                              className={`flex min-h-7 items-center gap-2 rounded-md px-2 py-1.5 text-[11px] font-medium leading-4 transition-colors ${
                                 isActive(item.href)
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                  ? "crm-sidebar-active"
+                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
                               }`}
                             >
-                              <ItemIcon className="h-4 w-4" />
-                              <span className="text-sm">{item.name}</span>
+                              <ItemIcon className="h-3.5 w-3.5 shrink-0 stroke-[1.7]" />
+                              <span className="min-w-0 truncate">{item.name}</span>
                             </Link>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  </section>
                 );
               })}
             </nav>
           </div>
-          <div className="relative border-t p-1.5">
+          <div className="relative border-t border-border bg-card p-3">
             <Button
               variant="ghost"
-              className={`h-9 w-full gap-1.5 ${sidebarCollapsed ? "justify-center px-0" : "justify-start px-1.5"}`}
+              className="h-auto w-full justify-start gap-2 rounded-md px-1.5 py-1.5 hover:bg-muted"
               onClick={() => setUserMenuOpen((open) => !open)}
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
               title={currentUser?.username || "User"}
             >
-              <CircleUser className="h-4 w-4 shrink-0" />
-              {!sidebarCollapsed && (
-                <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">{currentUser?.username || "User"}</span>
-                  <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {getDisplayRole()}
-                  </span>
-                </div>
-              )}
+              <CircleUser className="h-6 w-6 shrink-0 text-foreground/75" />
+              <div className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-[10px] font-semibold leading-4 text-foreground">{currentUser?.username || "User"}</span>
+                <span className="block truncate text-[9px] leading-3 text-muted-foreground">{getDisplayRole()}</span>
+              </div>
             </Button>
 
             {userMenuOpen && (
               <div
                 role="menu"
                 className={`absolute bottom-[calc(100%-0.5rem)] z-50 rounded-md border bg-popover p-1 text-popover-foreground shadow-md ${
-                  sidebarCollapsed ? "left-2 w-48" : "left-4 right-4"
+                  "left-4 right-4"
                 }`}
               >
                 {!isManager && (
@@ -415,7 +320,7 @@ export default function DashboardLayout({
             )}
           </div>
         </div>
-      </div>
+      </aside>
 
       {/* Main content area */}
       <div className="flex min-w-0 flex-col">

@@ -9,7 +9,6 @@ import {
   Calendar, 
   Users,
   BarChart3,
-  Route,
   Target
 } from "lucide-react";
 
@@ -19,7 +18,6 @@ import Allowance from "@/components/Allowance";
 import WorkingDays from "@/components/WorkingDays";
 import Teams from "@/components/Teams";
 import DailyBreakdown from "@/components/DailyBreakdown";
-import DistanceRecalculation from "@/components/DistanceRecalculation";
 import StoreTargets from "@/components/StoreTargets";
 
 function SettingsContent() {
@@ -29,7 +27,7 @@ function SettingsContent() {
   const tabParam = searchParams.get('tab');
   
   // Valid tab values
-  const validTabs = ['employeeSummary', 'allowance', 'working-days', 'team', 'targets', 'dailyBreakdown', 'distanceRecalculation'];
+  const validTabs = ['employeeSummary', 'allowance', 'working-days', 'team', 'targets', 'dailyBreakdown'];
   const initialTab = tabParam && validTabs.includes(tabParam) ? tabParam : 'employeeSummary';
   
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -103,10 +101,6 @@ function SettingsContent() {
             <BarChart3 className="h-3.5 w-3.5" />
             Daily Breakdown
           </TabsTrigger>
-          <TabsTrigger value="distanceRecalculation" className="h-9 gap-1.5 rounded-md px-3 text-xs font-medium whitespace-nowrap data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            <Route className="h-3.5 w-3.5" />
-            Distance
-          </TabsTrigger>
         </TabsList>
         </div>
         
@@ -132,10 +126,6 @@ function SettingsContent() {
         
         <TabsContent value="dailyBreakdown">
           <DailyBreakdown />
-        </TabsContent>
-
-        <TabsContent value="distanceRecalculation">
-          <DistanceRecalculation />
         </TabsContent>
       </Tabs>
     </div>

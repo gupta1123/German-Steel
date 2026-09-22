@@ -37,22 +37,21 @@ import {
   X
 } from 'lucide-react';
 
-import { API, EmployeeUserDto } from "@/lib/api";
+import { EmployeeUserDto } from "@/lib/api";
+import { teamsApi } from "@/lib/teams-api";
 import { formatCityLabel } from "@/lib/city-options";
 import { getEmployeeRoleFormValue } from "@/lib/employee-role";
-import { employeeIdExists, suggestEmployeeId } from "@/lib/employee-id";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { useDashboardHeader } from "@/components/dashboard-header-context";
 
 // --- Types & Initial State ---
 
 interface NewEmployeeState {
-  employeeId: string;
   firstName: string;
   lastName: string;
-  primaryContact: string;
-  secondaryContact: string;
-  departmentName: string;
+  mobile: string;
+  secondaryMobile: string;
+  department: string;
   email: string;
   role: string;
   addressLine1: string;
@@ -69,12 +68,11 @@ interface NewEmployeeState {
 type NewEmployeeField = keyof NewEmployeeState;
 
 const initialNewEmployeeState: NewEmployeeState = {
-  employeeId: "",
   firstName: "",
   lastName: "",
-  primaryContact: "",
-  secondaryContact: "",
-  departmentName: "Sales",
+  mobile: "",
+  secondaryMobile: "",
+  department: "Sales",
   email: "",
   role: "",
   addressLine1: "",
@@ -102,20 +100,15 @@ const mapEmployeeDtoToState = (employee: EmployeeUserDto): NewEmployeeState => {
   const normalizedRole = getEmployeeRoleFormValue(employee.role);
 
   return {
-    employeeId: employee.employeeId
-      ? String(employee.employeeId)
-      : employee.userDto?.employeeId
-      ? String(employee.userDto.employeeId)
-      : "",
     firstName: employee.firstName || "",
     lastName: employee.lastName || "",
-    primaryContact: employee.primaryContact
+    mobile: employee.primaryContact
       ? String(employee.primaryContact)
       : "",
-    secondaryContact: employee.secondaryContact
+    secondaryMobile: employee.secondaryContact
       ? String(employee.secondaryContact)
       : "",
-    departmentName: employee.departmentName || "",
+    department: employee.departmentName || "",
     email: employee.email || "",
     role: normalizedRole,
     addressLine1: employee.addressLine1 || "",
@@ -150,11 +143,13 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBackConfirmDialog, setShowBackConfirmDialog] = useState(false);
-  const [isFormReady, setIsFormReady] = useState(false);
+  const [isFormReady, setIsFormReady] = useState(!isEditMode);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [availableCities, setAvailableCities] = useState<string[]>([]);
+  const [regionOptions, setRegionOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedAssignedCities, setSelectedAssignedCities] = useState<string[]>([]);
   const [baselineAssignedCities, setBaselineAssignedCities] = useState<string[]>([]);
+  const [pendingRegionIds, setPendingRegionIds] = useState<number[] | null>(null);
   const [isCityAssignmentOpen, setIsCityAssignmentOpen] = useState(false);
   const [citySearch, setCitySearch] = useState("");
   const [usernameWasEdited, setUsernameWasEdited] = useState(false);
@@ -166,10 +161,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const { markSaved } = useUnsavedChanges(employeeFormIsDirty);
   
   // Validation State
-  const [primaryContactError, setPrimaryContactError] = useState<string | null>(null);
-  const [secondaryContactError, setSecondaryContactError] = useState<string | null>(null);
+  const [mobileError, setMobileError] = useState<string | null>(null);
+  const [secondaryMobileError, setSecondaryMobileError] = useState<string | null>(null);
   const [cityError, setCityError] = useState<string | null>(null);
-  const [isSuggestingId, setIsSuggestingId] = useState(false);
   
   // IDs for accessibility
   const rawUsernameId = useId();
@@ -190,23 +184,63 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     setShowPassword(false);
     setCitySearch("");
     setUsernameWasEdited(false);
-    setPrimaryContactError(null);
-    setSecondaryContactError(null);
+    setMobileError(null);
+    setSecondaryMobileError(null);
     setCityError(null);
   };
 
   useEffect(() => {
     if (!token) return;
 
-    API.getCities()
-      .then((cities) => {
-        const normalized = Array.from(
-          new Set((Array.isArray(cities) ? cities : []).map((city) => city.trim()).filter(Boolean))
-        ).sort((a, b) => a.localeCompare(b));
-        setAvailableCities(normalized);
-      })
-      .catch((error) => console.error('Failed to load assignable cities:', error));
+    // Documented location contract for employee regions is GET /api/common/regions (see migration guide 5.7)
+    // The legacy GET /employee/getCities is removed. For Field Officer operational cities, the new contract
+    // uses regionIds/teamId/managerId. Until a dedicated city-master for operational assignment is documented,
+    // show a gap and keep the UI functional with the employee's current city.
+    const loadRegions = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/regions?page=0&size=50`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+        if (!res.ok) throw new Error(`Regions failed (${res.status})`);
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>).content) ? (data as Record<string, unknown>).content as unknown[] : [];
+        const regionsWithId = items.map((r) => {
+          const rec = r as Record<string, unknown>;
+          const name = String(rec.name ?? rec.regionName ?? '').trim();
+          const id = Number(rec.id ?? rec.regionId ?? 0);
+          return { id, name };
+        }).filter(r => r.name && Number.isFinite(r.id) && r.id > 0);
+        const normalizedNames = Array.from(new Set(regionsWithId.map(r => r.name))).sort((a, b) => a.localeCompare(b));
+        const dedupedOptions = Array.from(new Map(regionsWithId.map(r => [r.name, r])).values()).sort((a, b) => a.name.localeCompare(b.name));
+        if (dedupedOptions.length > 0) {
+          setRegionOptions(dedupedOptions);
+          setAvailableCities(normalizedNames);
+        } else {
+          const fallback = items.map((r) => String((r as Record<string, unknown>).name ?? '').trim()).filter(Boolean);
+          const norm = Array.from(new Set(fallback)).sort((a, b) => a.localeCompare(b));
+          if (norm.length > 0) setAvailableCities(norm);
+        }
+      } catch (error) {
+        console.error('Failed to load regions for assignment:', error);
+      }
+    };
+    void loadRegions();
   }, [token]);
+
+  useEffect(() => {
+    if (!pendingRegionIds || regionOptions.length === 0) return;
+    const names = pendingRegionIds.map(id => regionOptions.find(r => String(r.id) === String(id))?.name).filter(Boolean) as string[];
+    if (names.length > 0) {
+      setSelectedAssignedCities(names);
+      setBaselineAssignedCities(names);
+    } else {
+      // Fallback: show raw #id so the chips aren't empty
+      const fallback = pendingRegionIds.map(id => `#${id}`);
+      setSelectedAssignedCities(fallback);
+      setBaselineAssignedCities(fallback);
+    }
+    setPendingRegionIds(null);
+  }, [pendingRegionIds, regionOptions]);
 
   // Reset form when navigating from employees list (create mode only)
   useEffect(() => {
@@ -254,9 +288,69 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
       try {
         setIsFormReady(false);
         setLoadError(null);
-        const employee = await API.getEmployeeById(employeeId);
+        if (!token) throw new Error('Authentication token not found. Please sign in again.');
+        // Documented direct lookup: GET /api/common/employees/{employeeId} (CommonDataController.java:139)
+        const data = await teamsApi.getEmployeeById(token, Number(employeeId));
+        const employee = {
+          id: data.id,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          employeeId: data.employeeCode,
+          email: data.email,
+          role: data.role,
+          departmentName: data.department,
+          userName: data.userName,
+          password: '',
+          primaryContact: data.mobile,
+          mobile: data.mobile,
+          secondaryContact: data.secondaryMobile,
+          secondaryMobile: data.secondaryMobile,
+          dateOfJoining: data.dateOfJoining,
+          city: data.city,
+          state: data.state,
+          country: data.country,
+          addressLine1: data.addressLine1,
+          addressLine2: data.addressLine2,
+          pincode: data.pincode,
+          assignedCity: data.assignedCity,
+          userDto: {
+            username: data.userName,
+            password: null,
+            roles: null,
+            employeeId: data.id,
+            firstName: data.firstName,
+            lastName: data.lastName,
+          },
+        } as unknown as EmployeeUserDto;
         const mapped = mapEmployeeDtoToState(employee);
-        resetFormState(mapped, employee.assignedCity ?? []);
+        const regionIds = Array.isArray((data as any).regionIds) ? (data as any).regionIds as number[] : [];
+        if (regionIds.length > 0) {
+          let names: string[] = [];
+          if (regionOptions.length > 0) {
+            names = regionIds.map(id => regionOptions.find(r => String(r.id) === String(id))?.name).filter(Boolean) as string[];
+          }
+          if (names.length === 0) {
+            // Direct fetch fallback — don't wait for regionOptions state to hydrate (race)
+            try {
+              const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/regions?page=0&size=50`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+              if (res.ok) {
+                const j: any = await res.json();
+                const items = Array.isArray(j) ? j : Array.isArray(j.content) ? j.content : [];
+                const map = new Map(items.map((r: any) => [String(r.id ?? r.regionId), String(r.name ?? r.regionName ?? '').trim()]));
+                names = regionIds.map(id => map.get(String(id)) || '').filter(Boolean) as string[];
+              }
+            } catch {}
+          }
+          console.log('[Edit prefill] regionIds', regionIds, 'names', names, 'regionOptions', regionOptions);
+          if (names.length > 0) {
+            resetFormState(mapped, names);
+          } else {
+            resetFormState(mapped, []);
+            setPendingRegionIds(regionIds);
+          }
+        } else {
+          resetFormState(mapped, (data as any).assignedCity ?? []);
+        }
         setIsFormReady(true);
       } catch (error) {
         console.error("Error loading employee:", error);
@@ -271,26 +365,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [isEditMode, employeeId]);
+  }, [isEditMode, employeeId, token]);
 
-  useEffect(() => {
-    if (isEditMode || !token) return;
-    let cancelled = false;
-    setIsSuggestingId(true);
-    Promise.all([API.getAllEmployees({ forceRefresh: true }), API.getArchivedEmployees()])
-      .then(([active, archived]) => {
-        if (cancelled) return;
-        if (!Array.isArray(active) || !Array.isArray(archived)) throw new Error('Invalid employee list');
-        const suggestion = suggestEmployeeId([...active, ...archived]);
-        setNewEmployee(current => current.employeeId ? current : { ...current, employeeId: suggestion });
-        setBaselineEmployee(current => current.employeeId ? current : { ...current, employeeId: suggestion });
-      })
-      .catch(() => {
-        if (!cancelled) toast.error('Could not suggest an employee ID. Please enter one manually.', { duration: 3000 });
-      })
-      .finally(() => { if (!cancelled) setIsSuggestingId(false); });
-    return () => { cancelled = true; };
-  }, [isEditMode, token]);
+
 
   useEffect(() => {
     if (isEditMode || usernameWasEdited) return;
@@ -339,14 +416,14 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     if (fieldName === "userName") setUsernameWasEdited(true);
 
     // Phone Validation
-    if (fieldName === 'primaryContact' || fieldName === 'secondaryContact') {
+    if (fieldName === 'mobile' || fieldName === 'secondaryMobile') {
       const digitsOnly = (value || '').replace(/\D/g, '');
       const capped = digitsOnly.slice(0, 10);
       const digitCount = capped.length;
       const err = digitCount > 0 && digitCount < 10 ? 'Must be 10 digits' : null;
       
-      if (fieldName === 'primaryContact') setPrimaryContactError(err);
-      if (fieldName === 'secondaryContact') setSecondaryContactError(err);
+      if (fieldName === 'mobile') setMobileError(err);
+      if (fieldName === 'secondaryMobile') setSecondaryMobileError(err);
       value = capped;
     }
 
@@ -367,12 +444,11 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const formIsValid = !!(
     newEmployee.firstName.trim() &&
     newEmployee.lastName.trim() &&
-    newEmployee.employeeId.trim() &&
-    newEmployee.primaryContact.length === 10 &&
-    !primaryContactError &&
-    newEmployee.departmentName &&
+    newEmployee.mobile.length === 10 &&
+    !mobileError &&
+    newEmployee.department &&
     newEmployee.role &&
-    (isEditMode || (newEmployee.userName.trim() && newEmployee.password))
+    (isEditMode || (newEmployee.userName.trim() && newEmployee.password.trim().length >= 8))
   );
 
   const toggleAssignedCity = (city: string) => {
@@ -381,23 +457,6 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         ? current.filter((item) => item.toLowerCase() !== city.toLowerCase())
         : [...current, city]
     );
-  };
-
-  const syncAssignedCities = async (targetEmployeeId: number) => {
-    const baselineByKey = new Map(baselineAssignedCities.map((city) => [city.trim().toLowerCase(), city]));
-    const selectedByKey = new Map(selectedAssignedCities.map((city) => [city.trim().toLowerCase(), city]));
-
-    const citiesToAssign = Array.from(selectedByKey.entries())
-      .filter(([key]) => !baselineByKey.has(key))
-      .map(([, city]) => city);
-    const citiesToRemove = Array.from(baselineByKey.entries())
-      .filter(([key]) => !selectedByKey.has(key))
-      .map(([, city]) => city);
-
-    await Promise.all([
-      ...citiesToAssign.map((city) => API.assignEmployeeCity(targetEmployeeId, city)),
-      ...citiesToRemove.map((city) => API.removeEmployeeCity(targetEmployeeId, city)),
-    ]);
   };
 
   const handleSubmit = async () => {
@@ -409,103 +468,98 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         return;
       }
 
-      // Final Data prep
       const roleForApi = newEmployee.role === 'Manager' || newEmployee.role === 'Regional Manager' 
-        ? 'Office Manager' 
+        ? 'MANAGER' 
+        : newEmployee.role === 'Field Officer' ? 'RETAIL_FE' 
         : newEmployee.role;
 
-      const primaryContactNum = Number(newEmployee.primaryContact);
-      const secondaryContactNum = newEmployee.secondaryContact ? Number(newEmployee.secondaryContact) : null;
+      const mobileNum = Number(newEmployee.mobile);
+      const secondaryMobileNum = newEmployee.secondaryMobile ? Number(newEmployee.secondaryMobile) : null;
 
-      // Final quick validation check
-      if (isNaN(primaryContactNum) || primaryContactNum.toString().length !== 10) throw new Error("Invalid Primary Contact");
-      if (secondaryContactNum && (isNaN(secondaryContactNum) || secondaryContactNum.toString().length !== 10)) throw new Error("Invalid Secondary Contact");
+      if (isNaN(mobileNum) || mobileNum.toString().length !== 10) throw new Error("Invalid mobile number");
+      if (secondaryMobileNum && (isNaN(secondaryMobileNum) || secondaryMobileNum.toString().length !== 10)) throw new Error("Invalid secondary mobile");
 
-      const employeePayload = {
-        employeeId: newEmployee.employeeId,
-        firstName: newEmployee.firstName,
-        lastName: newEmployee.lastName,
-        primaryContact: primaryContactNum,
-        secondaryContact: secondaryContactNum,
-        departmentName: newEmployee.departmentName,
-        email: newEmployee.email,
+      const selectedRegionIds = selectedAssignedCities
+        .map(city => regionOptions.find(r => r.name.toLowerCase() === city.toLowerCase())?.id)
+        .filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+
+      const employeePayload: Record<string, unknown> = {
+        firstName: newEmployee.firstName.trim(),
+        lastName: newEmployee.lastName.trim(),
+        mobile: mobileNum,
+        secondaryMobile: secondaryMobileNum,
+        department: newEmployee.department,
+        email: newEmployee.email.trim() || null,
+        employeeRole: roleForApi,
         role: roleForApi,
-        addressLine1: newEmployee.addressLine1,
-        addressLine2: newEmployee.addressLine2,
-        city: newEmployee.city,
-        state: newEmployee.state,
+        addressLine1: newEmployee.addressLine1.trim(),
+        addressLine2: newEmployee.addressLine2.trim(),
+        city: newEmployee.city.trim(),
+        state: newEmployee.state.trim(),
         country: newEmployee.country,
-        pincode: newEmployee.pincode,
-        dateOfJoining: newEmployee.dateOfJoining,
+        pincode: newEmployee.pincode ? String(newEmployee.pincode).trim() : null,
+        dateOfJoining: newEmployee.dateOfJoining || null,
+        ...(selectedRegionIds.length > 0 ? { regionIds: selectedRegionIds } : {}),
       };
 
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+
       if (!isEditMode) {
-        const [active, archived] = await Promise.all([
-          API.getAllEmployees({ forceRefresh: true }), API.getArchivedEmployees(),
-        ]);
-        if (!Array.isArray(active) || !Array.isArray(archived)) throw new Error('Could not verify employee ID. Please try again.');
-        const existing = [...active, ...archived];
-        if (employeeIdExists(existing, newEmployee.employeeId)) {
-          throw new Error(`Employee ID is already used. Try ${suggestEmployeeId(existing)} instead.`);
-        }
-        employeePayload.employeeId = employeePayload.employeeId.trim();
-        const requestBody = {
-          user: {
-            username: newEmployee.userName,
-            password: newEmployee.password,
-          },
-          employee: employeePayload,
-        };
-
-        await API.createEmployee(requestBody);
-
-        const allEmployees = await API.getAllEmployees({ forceRefresh: true });
-        const createdEmployee = allEmployees.find(
-          (emp: EmployeeUserDto) => emp?.userDto?.username === newEmployee.userName
-        );
-        if (createdEmployee) {
-          if (roleForApi === 'Field Officer') {
-            await syncAssignedCities(createdEmployee.id);
-            const refreshedEmployee = await API.getEmployeeById(createdEmployee.id);
-            const savedCityKeys = new Set((refreshedEmployee.assignedCity ?? []).map((city) => city.trim().toLowerCase()));
-            const missingCities = selectedAssignedCities.filter((city) => !savedCityKeys.has(city.trim().toLowerCase()));
-            if (missingCities.length > 0) {
-              throw new Error(`Employee was created, but these city assignments were not saved: ${missingCities.join(', ')}`);
-            }
-          }
-
-          try {
-            await API.createAttendanceLog(createdEmployee.id);
-          } catch (logErr) {
-            console.warn("Attendance log creation failed, but employee and city assignments were saved.", logErr);
-          }
-        } else if (roleForApi === 'Field Officer' && selectedAssignedCities.length > 0) {
-          throw new Error('Employee was created, but the new employee ID could not be resolved for city assignment.');
-        }
-      } else {
-        if (!employeeId) {
-          throw new Error("Invalid employee id");
-        }
-
-        const updatePayload: Record<string, unknown> = {
+        // Use documented create-with-credentials contract; do not expose password in logs
+        const createPayload = {
           ...employeePayload,
-          userName: newEmployee.userName,
+          username: newEmployee.userName.trim(),
+          password: newEmployee.password,
+          userRole: roleForApi === 'MANAGER' ? 'MANAGER' : 'EMPLOYEE',
         };
+
+        const createRes = await fetch(`${baseUrl}/api/auth/employees-with-credentials`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(createPayload),
+        });
+        if (!createRes.ok) {
+          let msg = '';
+          try { const j = await createRes.json(); msg = (j as any).message || (j as any).error || JSON.stringify(j); } catch { msg = await createRes.text().catch(() => ''); }
+          // Map duplicate entry to user-friendly field hint
+          if (msg.toLowerCase().includes('duplicate')) msg = 'Duplicate record — mobile, email or username already exists. Use a unique value.';
+          throw new Error(msg || `Create failed (${createRes.status})`);
+        }
+
+        const created = await createRes.json().catch(() => null) as Record<string, unknown> | null;
+        const createdId = (created?.id ?? created?.employeeId) as number | string | undefined;
+        toast.success("Employee created", { duration: 3000 });
+        markSaved();
+        router.push(createdId ? `/dashboard/employees/${createdId}` : '/dashboard/employees');
+        return;
+      } else {
+        if (!employeeId) throw new Error("Invalid employee id");
+
+        // Profile update only — documented PUT /api/common/employees/{id} (partial, no credentials)
+        const profilePayload: Record<string, unknown> = { ...employeePayload };
+        const res = await fetch(`${baseUrl}/api/common/employees/${employeeId}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(profilePayload),
+        });
+        if (!res.ok) {
+          let msg = '';
+          try { const j = await res.json(); msg = (j as any).message || (j as any).error || JSON.stringify(j); } catch { msg = await res.text().catch(() => ''); }
+          if (msg.toLowerCase().includes('duplicate')) msg = 'Duplicate record — mobile, email or username already exists. Use a unique value.';
+          throw new Error(msg || `Update failed (${res.status})`);
+        }
 
         const trimmedPassword = newEmployee.password?.trim();
-        if (trimmedPassword) {
-          updatePayload.password = trimmedPassword;
+        const trimmedUsername = newEmployee.userName?.trim();
+        const usernameChanged = usernameWasEdited && trimmedUsername && trimmedUsername !== baselineEmployee.userName;
+        if (trimmedPassword || usernameChanged) {
+          throw new Error('Password/username change is a separate auth action. Use the dedicated credentials flow (PUT /api/auth/users/{userId}/credentials) — not sent with profile update. Profile was updated, credentials unchanged.');
         }
 
-        await API.updateEmployee(employeeId, updatePayload);
-        if (roleForApi === 'Field Officer') {
-          await syncAssignedCities(employeeId);
-        }
+        toast.success("Employee updated", { duration: 3000 });
+        markSaved();
+        router.push('/dashboard/employees');
       }
-
-      toast.success(isEditMode ? "Employee updated" : "Employee created", { duration: 3000 });
-      markSaved();
-      router.push('/dashboard/employees');
     } catch (error) {
       console.error('Error saving employee:', error);
       toast.error(error instanceof Error ? error.message : 'Could not save employee', { duration: 3000 });
@@ -587,40 +641,36 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                             <Input id="lastName" name="lastName" placeholder="e.g. Doe" value={newEmployee.lastName} onChange={handleInputChange} className="h-9 bg-background" />
                                         </div>
                                     
-                                    <div className="space-y-2 xl:col-span-2">
-                                        <Label htmlFor="employeeId">Employee ID <span className="text-red-500">*</span></Label>
-                                        <Input id="employeeId" name="employeeId" placeholder={isSuggestingId ? 'Finding next ID…' : 'EMP-001'} value={newEmployee.employeeId} onChange={handleInputChange} disabled={isEditMode || isSuggestingId} aria-busy={isSuggestingId} className="h-9 bg-background font-mono uppercase disabled:opacity-70" />
-                                    </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <Label htmlFor="primaryContact">Primary Contact <span className="text-red-500">*</span></Label>
+                                            <Label htmlFor="mobile">Mobile <span className="text-red-500">*</span></Label>
                                             <Input 
-                                                id="primaryContact" 
-                                                name="primaryContact" 
+                                                id="mobile" 
+                                                name="mobile" 
                                                 placeholder="9876543210" 
                                                 maxLength={10} 
                                                 inputMode="numeric"
-                                                className={cn("h-9 bg-background", primaryContactError ? "border-red-500/50 focus-visible:ring-red-500" : "")}
-                                                value={newEmployee.primaryContact} 
+                                                className={cn("h-9 bg-background", mobileError ? "border-red-500/50 focus-visible:ring-red-500" : "")}
+                                                value={newEmployee.mobile} 
                                                 onChange={handleInputChange} 
                                             />
-                                            {primaryContactError && <span className="text-xs text-red-500 font-medium">{primaryContactError}</span>}
+                                            {mobileError && <span className="text-xs text-red-500 font-medium">{mobileError}</span>}
                                         </div>
                                         <div className="space-y-2">
-                                            <Label htmlFor="secondaryContact">Secondary Contact</Label>
+                                            <Label htmlFor="secondaryMobile">Secondary Mobile</Label>
                                             <Input 
-                                                id="secondaryContact" 
-                                                name="secondaryContact" 
+                                                id="secondaryMobile" 
+                                                name="secondaryMobile" 
                                                 placeholder="Optional" 
                                                 maxLength={10} 
                                                 inputMode="numeric"
-                                                className={cn("h-9 bg-background", secondaryContactError ? "border-red-500/50 focus-visible:ring-red-500" : "")}
-                                                value={newEmployee.secondaryContact} 
+                                                className={cn("h-9 bg-background", secondaryMobileError ? "border-red-500/50 focus-visible:ring-red-500" : "")}
+                                                value={newEmployee.secondaryMobile} 
                                                 onChange={handleInputChange} 
                                             />
-                                             {secondaryContactError && <span className="text-xs text-red-500 font-medium">{secondaryContactError}</span>}
+                                             {secondaryMobileError && <span className="text-xs text-red-500 font-medium">{secondaryMobileError}</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -640,7 +690,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                                         <div className="space-y-2">
                                             <Label>Department <span className="text-red-500">*</span></Label>
-                                            <Select value={newEmployee.departmentName} onValueChange={(val) => setNewEmployee({ ...newEmployee, departmentName: val })}>
+                                            <Select value={newEmployee.department} onValueChange={(val) => setNewEmployee({ ...newEmployee, department: val })}>
                                                 <SelectTrigger className="h-9 w-full bg-background">
                                                     <SelectValue placeholder="Select Department" />
                                                 </SelectTrigger>
@@ -665,7 +715,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     <SelectItem value="Field Officer">Field Officer</SelectItem>
-                                                    <SelectItem value="Manager">Regional Manager</SelectItem>
+                                                    <SelectItem value="Manager">Supervisor</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -702,9 +752,9 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                     {newEmployee.role === 'Field Officer' && (
                                         <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
                                             <div>
-                                                <Label>Assign Cities to Field Officer</Label>
+                                                <Label>Assign Sales Regions to Field Officer</Label>
                                                 <p className="mt-1 text-xs text-muted-foreground">
-                                                    Select one or more operational cities. These assignments are saved after the employee profile is created.
+                                                    Select one or more sales regions. These assignments control zone access and are saved with the profile.
                                                 </p>
                                             </div>
 
@@ -730,8 +780,8 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 <PopoverTrigger asChild>
                                                     <Button type="button" variant="outline" className="w-full justify-between">
                                                         {selectedAssignedCities.length === 0
-                                                            ? 'Select assigned cities'
-                                                            : `${selectedAssignedCities.length} ${selectedAssignedCities.length === 1 ? 'city' : 'cities'} selected`}
+                                                            ? 'Select assigned regions'
+                                                            : `${selectedAssignedCities.length} ${selectedAssignedCities.length === 1 ? 'region' : 'regions'} selected`}
                                                         <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
                                                     </Button>
                                                 </PopoverTrigger>

@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 import { AttendanceRule, attendanceRulesApi } from '@/lib/attendance-rules-api';
-import { CheckCircle2, Clock3, Loader2, Pencil, Route } from 'lucide-react';
+import { CheckCircle2, Clock3, Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface RuleFormData {
@@ -19,18 +19,6 @@ interface RuleFormData {
     fullDayVisitCount: number | '';
     active: boolean;
 }
-
-const roleLabel = (role: string): string => {
-    const labels: Record<string, string> = {
-        RETAIL_FE: 'Retail Field Executive',
-        INSTITUTION_PROJECT_FE: 'Institution & Project Field Executive',
-        DUAL_FE: 'Dual Field Executive',
-        ZONAL_SUPERVISOR: 'Zonal Supervisor',
-        MANAGER: 'Manager',
-        HO_ADMIN: 'Head Office Admin',
-    };
-    return labels[role] ?? role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
-};
 
 const WorkingDays: React.FC = () => {
     const { token } = useAuth();
@@ -64,6 +52,8 @@ const WorkingDays: React.FC = () => {
     );
     const { requestDiscard } = useUnsavedChanges(ruleIsDirty);
 
+    const hiddenRoles = useMemo(() => new Set([null, undefined, '', 'MANAGER', 'ZONAL_SUPERVISOR']), []);
+    const filteredRules = useMemo(() => rules.filter((r) => !hiddenRoles.has(r.employeeRole as unknown as string)), [rules, hiddenRoles]);
     const fetchRules = useCallback(async () => {
         if (!token) {
             setError('Authentication token not found. Please log in.');
@@ -144,18 +134,6 @@ const WorkingDays: React.FC = () => {
     return (
         <Card className="gap-0 border-border/70 py-0 shadow-sm">
             <CardContent className="space-y-4 p-4">
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                    <div className="flex items-start gap-3">
-                        <Route className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        <div>
-                            <p className="text-sm font-medium text-foreground">Attendance is based on completed visits</p>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                No vehicle means absent. With a vehicle, zero completed visits means present; reaching the configured thresholds changes the day to half day or full day.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
                 {isLoading && (
                     <div className="grid gap-3 lg:grid-cols-2">
                         {Array.from({ length: 4 }, (_, index) => (
@@ -175,15 +153,15 @@ const WorkingDays: React.FC = () => {
                     </div>
                 )}
 
-                {!isLoading && !error && rules.length === 0 && (
+                {!isLoading && !error && filteredRules.length === 0 && (
                     <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
                         No attendance rules are configured.
                     </div>
                 )}
 
-                {!isLoading && rules.length > 0 && (
+                {!isLoading && filteredRules.length > 0 && (
                     <div className="grid gap-3 lg:grid-cols-2">
-                        {rules.map((rule) => {
+                        {filteredRules.map((rule) => {
                             const isEditing = editingRuleId === rule.id && editedData;
                             return (
                                 <section key={rule.id} className="rounded-xl border border-border/70 bg-card p-4 shadow-sm">
@@ -195,7 +173,6 @@ const WorkingDays: React.FC = () => {
                                                     {rule.active ? 'Active' : 'Inactive'}
                                                 </Badge>
                                             </div>
-                                            <p className="mt-1 text-xs text-muted-foreground">{roleLabel(rule.employeeRole)}</p>
                                         </div>
                                         {!isEditing && (
                                             <Button variant="outline" size="sm" className="h-8" onClick={() => openEditor(rule)}>

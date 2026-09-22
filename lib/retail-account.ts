@@ -140,10 +140,6 @@ export const validateRetailAccountDraft = (draft: RetailAccountDraft): string[] 
     errors.push('Credit limit must be zero or more.');
   }
 
-  if (draft.networkMember && !draft.networkOnboardingDate) {
-    errors.push('Network onboarding date is required for a German TMT network member.');
-  }
-
   return errors;
 };
 
@@ -170,8 +166,8 @@ export const buildRetailAccountPayload = (draft: RetailAccountDraft): RetailAcco
   creditTermsDays: Number(draft.creditTermsDays),
   creditLimitAmount: Number(draft.creditLimitAmount),
   clientTier: draft.clientTier,
-  networkMember: draft.networkMember,
-  networkOnboardingDate: draft.networkMember ? draft.networkOnboardingDate : null,
-  networkStatus: draft.networkMember ? draft.networkStatus : null,
+  networkMember: false,
+  networkOnboardingDate: null,
+  networkStatus: null,
   active: true,
 });

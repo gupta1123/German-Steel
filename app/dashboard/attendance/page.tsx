@@ -11,7 +11,10 @@ import {
 import EmployeeAttendanceCard from "@/components/employee-attendance-card";
 import VisitDetailsModal from "@/components/visit-details-modal";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
-import { API } from "@/lib/api";
+import { attendanceApi, type AttendanceLog } from "@/lib/attendance-api";
+import { approvalsApi, type ApprovalRequest } from "@/lib/approvals-api";
+import { teamsApi } from "@/lib/teams-api";
+import { useAuth } from "@/components/auth-provider";
 import { getEmployeeRoleCategory, getEmployeeRoleLabel, isAdminEmployeeRole } from "@/lib/employee-role";
 
 interface AttendanceData {
@@ -21,6 +24,11 @@ interface AttendanceData {
   attendanceStatus: 'full day' | 'half day' | 'Absent';
   checkinDate: string;
   checkoutDate: string;
+  // Case discriminators (kept from AttendanceLogDto, backend read-only)
+  visitCount?: number | null;
+  marked?: boolean | null;
+  defaultRuleApplied?: boolean | null;
+  vehicleType?: string | null;
 }
 
 interface Employee {
@@ -62,6 +70,8 @@ export default function AttendancePage() {
   const [visitData, setVisitData] = useState<unknown[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedEmployeeName, setSelectedEmployeeName] = useState<string>('');
+  const [selectedDayLog, setSelectedDayLog] = useState<AttendanceLog | null>(null);
+  const [selectedDayRequest, setSelectedDayRequest] = useState<ApprovalRequest | null>(null);
 
   // Searchable year options
   const yearOptions = useMemo<SearchableOption[]>(() =>
@@ -116,59 +126,94 @@ export default function AttendancePage() {
     } catch {}
   }, [selectedYear, selectedMonth, selectedEmployeeId, selectedRoleFilter]);
 
-  // Get token from localStorage (you may need to adjust this based on your auth setup)
-  const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+  const { token: authToken } = useAuth();
+  const token = authToken ?? (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
 
   const fetchEmployees = useCallback(async () => {
     if (!token) {
-      console.error("Auth token is missing");
       return;
     }
 
     try {
-      const data = await API.getAllEmployees<Employee>();
+      // Use paginated employees endpoint per guide: GET /api/common/employees?active=true&page=0&size=50
+      const page = await teamsApi.getEmployeesPage(token, { active: true, page: 0, size: 50 });
+      const data = page.content as unknown as Employee[];
       setEmployees(data.filter((employee) => !isAdminEmployeeRole(employee.role)));
     } catch (error) {
       console.error("Error fetching employees:", error);
     }
   }, [token]);
 
-  const fetchAttendanceData = useCallback(async () => {
-    setIsLoading(true);
+  // Keep employees in a ref to avoid making attendance fetch callback unstable
+  const employeesRef = useRef<Employee[]>([]);
+  useEffect(() => { employeesRef.current = employees; }, [employees]);
 
+  // Day-case lookup: logs in ref (no extra fetch), requests cached per employee (lazy, frontend-only)
+  const attendanceDataRef = useRef<AttendanceData[]>([]);
+  useEffect(() => { attendanceDataRef.current = attendanceData; }, [attendanceData]);
+  const requestsCacheRef = useRef(new Map<number, ApprovalRequest[]>());
+  const dateKeyOf = (value: unknown): string => String(value ?? '').slice(0, 10);
+
+  const attendanceRequestIdRef = useRef(0);
+  const isFetchingAttendanceRef = useRef(false);
+
+  const fetchAttendanceData = useCallback(async () => {
     if (!token) {
-      console.error("Auth token is missing");
       setIsLoading(false);
       return;
     }
+    if (isFetchingAttendanceRef.current) return;
+    isFetchingAttendanceRef.current = true;
+    const requestId = ++attendanceRequestIdRef.current;
+    setIsLoading(true);
+    setNoDataMessage("");
 
     const monthPrefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
     const startDate = `${monthPrefix}-01`;
     const endDate = `${monthPrefix}-${new Date(selectedYear, selectedMonth + 1, 0).getDate()}`;
 
     try {
-      const response = await fetch(
-        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/getForRange1?start=${startDate}&end=${endDate}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      // Use paginated by-employee endpoint per guide; respect employee/role filters via ref to keep callback stable
+      const allEmployees = employeesRef.current;
+      const byRole = selectedRoleFilter === 'all' ? allEmployees : allEmployees.filter((e) => getEmployeeRoleCategory(e.role) === selectedRoleFilter);
+      const targetEmployees = selectedEmployeeId ? byRole.filter((e) => String(e.id) === selectedEmployeeId) : byRole;
+      let allLogs: AttendanceData[] = [];
+      if (targetEmployees.length > 0) {
+        const results = await Promise.all(
+          targetEmployees.map(async (emp) => {
+            try {
+              const page = await attendanceApi.getByEmployee(token, emp.id, startDate, endDate, 0, 50);
+              return page.content as unknown as AttendanceData[];
+            } catch {
+              return [];
+            }
+          })
+        );
+        // Ignore stale response if a newer request started
+        if (requestId !== attendanceRequestIdRef.current) return;
+        allLogs = results.flat();
+        if (allLogs.length === 0 && employeesRef.current.length === 0) {
+          const firstDay = await attendanceApi.getByDate(token, startDate, 0, 50);
+          if (requestId !== attendanceRequestIdRef.current) return;
+          allLogs = firstDay.content as unknown as AttendanceData[];
         }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch attendance data");
+      } else {
+        // Distinguish initial load (employees not yet loaded) vs filtered empty (no matching employee)
+        if (employeesRef.current.length === 0) {
+          const page = await attendanceApi.getByDate(token, startDate, 0, 50);
+          if (requestId !== attendanceRequestIdRef.current) return;
+          allLogs = page.content as unknown as AttendanceData[];
+        } else {
+          allLogs = [];
+        }
       }
 
-      const data = await response.json();
+      if (requestId !== attendanceRequestIdRef.current) return;
 
-      const modifiedData = data.map((item: Record<string, unknown>) => {
-        // Preserve original status for breakdowns
-        const originalStatus = typeof item.attendanceStatus === "string" ? item.attendanceStatus : "";
+      const modifiedData = allLogs.map((item: unknown) => {
+        const rec = item as Record<string, unknown>;
+        const originalStatus = typeof rec.attendanceStatus === "string" ? rec.attendanceStatus as string : "";
         const normalizedOriginal = originalStatus.trim().toLowerCase();
-
-        // Normalize the attendance status values used by calendar/summary
-        // Note: "present" is treated as "absent" per business requirements
         let normalizedStatus = originalStatus;
         if (normalizedOriginal === "present") {
           normalizedStatus = "absent";
@@ -183,24 +228,45 @@ export default function AttendancePage() {
         } else if (normalizedOriginal === "activity") {
           normalizedStatus = "activity";
         }
-
-        return { ...item, attendanceStatus: normalizedStatus, rawStatus: originalStatus };
+        const safeCheckinDate =
+          (typeof rec.checkinDate === "string" && rec.checkinDate.trim() ? (rec.checkinDate as string) : null) ??
+          (typeof rec.attendanceDate === "string" && (rec.attendanceDate as string).trim() ? (rec.attendanceDate as string) : null) ??
+          (typeof rec.date === "string" && (rec.date as string).trim() ? (rec.date as string) : null) ??
+          "";
+        const safeCheckoutDate =
+          (typeof rec.checkoutDate === "string" && (rec.checkoutDate as string).trim() ? (rec.checkoutDate as string) : null) ??
+          null;
+        return {
+          ...(item as object),
+          attendanceStatus: normalizedStatus,
+          rawStatus: originalStatus,
+          checkinDate: safeCheckinDate,
+          checkoutDate: safeCheckoutDate,
+          visitCount: typeof rec.visitCount === 'number' ? (rec.visitCount as number) : null,
+          marked: typeof rec.marked === 'boolean' ? (rec.marked as boolean) : null,
+          defaultRuleApplied: typeof rec.defaultRuleApplied === 'boolean' ? (rec.defaultRuleApplied as boolean) : null,
+          vehicleType: typeof rec.vehicleType === 'string' ? (rec.vehicleType as string) : null,
+        } as unknown as AttendanceData;
       });
 
       setAttendanceData(modifiedData);
       setNoDataMessage("");
 
-      if (data.length === 0) {
+      if (modifiedData.length === 0) {
         setNoDataMessage("No data available for the selected month and year. Please choose a different month or year.");
       }
     } catch (error) {
+      if (requestId !== attendanceRequestIdRef.current) return;
       console.error("Error fetching attendance data:", error);
       setAttendanceData([]);
       setNoDataMessage("No data available for the selected month and year. Please choose a different month or year.");
+    } finally {
+      if (requestId === attendanceRequestIdRef.current) {
+        setIsLoading(false);
+        isFetchingAttendanceRef.current = false;
+      }
     }
-
-    setIsLoading(false);
-  }, [token, selectedYear, selectedMonth]);
+  }, [token, selectedYear, selectedMonth, selectedEmployeeId, selectedRoleFilter]);
 
   const fetchVisitData = useCallback(
     async (date: string, employeeName: string) => {
@@ -210,38 +276,44 @@ export default function AttendancePage() {
       }
 
       try {
-        const url = `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/visit/getByDateSorted?startDate=${date}&endDate=${date}&employeeName=${employeeName}&page=0&size=100&sort=id,desc`;
-        
-        console.log('Making API request to:', url);
-        console.log('Request params:', { date, employeeName, token: token ? 'Present' : 'Missing' });
-        
-        const response = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch visit data");
+        // Use GET /api/common/visits?from={date}&to={date}&assignedEmployeeId={employeeId}&page=0&size=50 per guide
+        const matchedEmployee = employeesRef.current.find((e) => `${e.firstName} ${e.lastName}`.trim() === employeeName.trim());
+        const assignedEmployeeId = matchedEmployee?.id;
+        // Day-case lookup from already-loaded logs (no extra fetch)
+        const dayLog = assignedEmployeeId != null
+          ? (attendanceDataRef.current.find((a) => a.employeeId === assignedEmployeeId && (dateKeyOf(a.checkinDate) === date || dateKeyOf((a as unknown as Record<string, unknown>).attendanceDate) === date || dateKeyOf((a as unknown as Record<string, unknown>).date) === date)) ?? null)
+          : null;
+        setSelectedDayLog(dayLog as unknown as AttendanceLog | null);
+        setSelectedDayRequest(null);
+        if (!assignedEmployeeId) {
+          setVisitData([]);
+          setSelectedDate(date);
+          setSelectedEmployeeName(employeeName);
+          setIsModalOpen(true);
+          return;
         }
-
-        const data = await response.json();
-        
-        console.log('Visit API Response:', {
-          date,
-          employeeName,
-          totalElements: data.totalElements,
-          contentLength: data.content?.length,
-          content: data.content
-        });
-
-        // The API already filters by employeeName, so we can use all the content directly
-        setVisitData(data.content || []);
+        // Lazy day-case request lookup (cached per employee, frontend-only join)
+        try {
+          let cached = requestsCacheRef.current.get(assignedEmployeeId);
+          if (!cached) {
+            const page = await approvalsApi.getRequestsByEmployee(token, assignedEmployeeId, 0, 100);
+            cached = page.content;
+            requestsCacheRef.current.set(assignedEmployeeId, cached);
+          }
+          const dayRequest = cached.find((r) => dateKeyOf(r.logDate) === date) ?? null;
+          setSelectedDayRequest(dayRequest);
+        } catch {
+          // 403 for scoped roles or missing contract — visits modal still opens with log case only
+          setSelectedDayRequest(null);
+        }
+        const data = await attendanceApi.getVisits(token, date, date, assignedEmployeeId, 0, 50) as { content?: unknown[] };
+        const content = Array.isArray((data as { content?: unknown[] }).content) ? (data as { content: unknown[] }).content : Array.isArray(data) ? data as unknown[] : [];
+        setVisitData(content);
         setSelectedDate(date);
         setSelectedEmployeeName(employeeName);
         setIsModalOpen(true);
 
-        if (data.content.length === 0) {
+        if (content.length === 0) {
           setVisitData([]);
         }
       } catch (error) {
@@ -252,11 +324,17 @@ export default function AttendancePage() {
     [token]
   );
 
+  // Fetch employees once when hydrated/token available — stable, no loop
+  useEffect(() => {
+    if (!isFiltersHydrated || !token) return;
+    void fetchEmployees();
+  }, [isFiltersHydrated, token, fetchEmployees]);
+
+  // Fetch attendance when filters/hydration/employees change; stale requests ignored via requestId
   useEffect(() => {
     if (!isFiltersHydrated) return;
-    fetchAttendanceData();
-    fetchEmployees();
-  }, [isFiltersHydrated, selectedYear, selectedMonth, token, fetchAttendanceData, fetchEmployees]);
+    void fetchAttendanceData();
+  }, [isFiltersHydrated, selectedYear, selectedMonth, selectedEmployeeId, selectedRoleFilter, fetchAttendanceData, employees.length]);
 
   const attendanceByEmployee = useMemo(() => {
     const index = new Map<number, AttendanceData[]>();
@@ -371,13 +449,17 @@ export default function AttendancePage() {
         </div>
       </section>
 
-      {noDataMessage && <p className="mb-4 text-red-500">{noDataMessage}</p>}
+      {noDataMessage && !isLoading && filteredEmployees.length > 0 && attendanceData.length === 0 && <p className="mb-4 text-red-500">{noDataMessage}</p>}
 
       <div className="space-y-4">
         {isLoading ? (
           Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="h-48 bg-gray-200 animate-pulse rounded-lg"></div>
           ))
+        ) : filteredEmployees.length === 0 ? (
+          <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+            No employees match the selected filters. Try adjusting the role or employee filter.
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredEmployees.map((employee) => {
@@ -426,10 +508,16 @@ export default function AttendancePage() {
 
       <VisitDetailsModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedDayLog(null);
+          setSelectedDayRequest(null);
+        }}
         visitData={visitData as Record<string, unknown>[]}
         selectedDate={selectedDate}
         employeeName={selectedEmployeeName}
+        dayLog={selectedDayLog}
+        dayRequest={selectedDayRequest}
       />
     </div>
   );

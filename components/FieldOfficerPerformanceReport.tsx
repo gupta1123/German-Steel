@@ -9,7 +9,9 @@ import {
   Users,
 } from "lucide-react";
 
-import { API, type FieldOfficerPerformanceDto } from "@/lib/api";
+import { type FieldOfficerPerformanceDto } from "@/lib/api";
+import { useAuth } from "@/components/auth-provider";
+import { reportsApi } from "@/lib/reports-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,6 +127,7 @@ export default function FieldOfficerPerformanceReport({
   officersLoading = false,
   officersError,
 }: FieldOfficerPerformanceReportProps) {
+  const { token } = useAuth();
   const today = useMemo(() => new Date(), []);
   const initialRange = useMemo(() => getPresetRange("THIS_MONTH", today), [today]);
   const [preset, setPreset] = useState<DatePreset>("THIS_MONTH");
@@ -203,23 +206,55 @@ export default function FieldOfficerPerformanceReport({
     if (dateRangeInvalid) {
       return;
     }
+    if (isLoading) return;
 
     setIsLoading(true);
     setError(null);
+    setHasRun(true);
     try {
-      const response = await API.getFieldOfficerPerformance({
-        startDate,
-        endDate,
+      if (!token) throw new Error("Your session has expired. Please sign in again.");
+      const response = await reportsApi.employeeCounts(token, {
+        from: startDate,
+        to: endDate,
         employeeId: employeeId ? Number(employeeId) : undefined,
-        city: city === "ALL" ? undefined : city,
         teamId: teamId === "ALL" ? undefined : Number(teamId),
+        page: 0,
+        size: 100,
       });
-      setRows(Array.isArray(response) ? response : []);
-      setHasRun(true);
-    } catch (requestError) {
+      const mapped = response.content.map(({ activity, attendanceDays, attendanceCountByStatus }) => {
+        const officer = officers.find((item) => item.id === activity.employeeId);
+        const officerCity = officer?.city || officer?.assignedCity?.[0] || null;
+        const totalVisits = Number(activity.totalVisitCount) || 0;
+        const completedVisits = Number(activity.completedVisitCount) || 0;
+        const halfDays = Number(attendanceCountByStatus.HALF_DAY ?? attendanceCountByStatus.HALF ?? 0);
+        const absences = Number(attendanceCountByStatus.ABSENT ?? 0);
+        return {
+          employeeId: activity.employeeId,
+          employeeCode: activity.employeeCode,
+          employeeName: activity.employeeName,
+          city: officerCity,
+          teamId: activity.teamId,
+          startDate,
+          endDate,
+          targetValue: 0,
+          achievedValue: 0,
+          achievementPercent: 0,
+          totalVisits,
+          completedVisits,
+          completionRate: totalVisits > 0 ? (completedVisits / totalVisits) * 100 : 0,
+          uniqueStoresVisited: 0,
+          newStores: (Number(activity.newRetailAccountCount) || 0) + (Number(activity.newInstitutionCount) || 0),
+          presentDays: Number(attendanceCountByStatus.PRESENT ?? attendanceDays ?? 0),
+          fullDays: Math.max(0, Number(attendanceDays || 0) - halfDays - absences),
+          halfDays,
+          absences,
+          rating: "Not Rated",
+        } satisfies FieldOfficerPerformanceDto;
+      });
+      setRows(city === "ALL" ? mapped : mapped.filter((row) => row.city === city));
+    } catch (reportError) {
       setRows([]);
-      setHasRun(true);
-      setError(requestError instanceof Error ? requestError.message : "Failed to load field officer performance.");
+      setError(reportError instanceof Error ? reportError.message : "Failed to load officer performance.");
     } finally {
       setIsLoading(false);
     }

@@ -8,10 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { 
-  Calendar,
-  Sun,
-  CloudSun,
-  XCircle
+  Calendar
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Heading, Text } from "@/components/ui/typography";
@@ -125,7 +122,9 @@ export default function EmployeeAttendanceCard({ employee, selectedMonth, select
     let fullDays = 0;
 
     for (const r of attendanceData) {
+      if (!r.checkinDate || typeof r.checkinDate !== 'string' || !r.checkinDate.trim()) continue;
       const d = new Date(r.checkinDate);
+      if (Number.isNaN(d.getTime())) continue;
       if (d < monthStart || d > monthEnd) continue;
       const raw = r.rawStatus as string | undefined;
       const norm = r.attendanceStatus as string | undefined;
@@ -163,35 +162,26 @@ export default function EmployeeAttendanceCard({ employee, selectedMonth, select
         </CardHeader>
         <CardContent className="px-4 pb-4 pt-0">
           <div className="mb-3 grid grid-cols-3 gap-1.5">
-            <div className="w-full rounded-lg bg-emerald-50 p-2 text-center dark:bg-emerald-950/60">
-              <div className="mb-0.5 flex items-center justify-center">
-                <Sun className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              </div>
+            <div className="w-full min-w-0 rounded-lg bg-emerald-50 px-1 py-1.5 text-center dark:bg-emerald-950/60">
               <Heading as="p" size="lg" weight="semibold" className="text-emerald-800 dark:text-emerald-300">
                 {summary.fullDays}
               </Heading>
-              <Text size="xs" tone="muted" className="text-emerald-700 dark:text-emerald-400">
+              <Text size="xs" tone="muted" className="block truncate whitespace-nowrap text-[10px] leading-tight text-emerald-700 dark:text-emerald-400">
                 Full Days
               </Text>            </div>
-            <div className="rounded-lg bg-amber-50 p-2 text-center dark:bg-amber-950/60">
-              <div className="mb-0.5 flex items-center justify-center">
-                <CloudSun className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-              </div>
+            <div className="min-w-0 rounded-lg bg-amber-50 px-1 py-1.5 text-center dark:bg-amber-950/60">
               <Heading as="p" size="lg" weight="semibold" className="text-amber-800 dark:text-amber-300">
                 {summary.halfDays}
               </Heading>
-              <Text size="xs" tone="muted" className="text-amber-700 dark:text-amber-400">
+              <Text size="xs" tone="muted" className="block truncate whitespace-nowrap text-[10px] leading-tight text-amber-700 dark:text-amber-400">
                 Half Days
               </Text>
             </div>
-            <div className="rounded-lg bg-rose-50 p-2 text-center dark:bg-rose-950/60">
-              <div className="mb-0.5 flex items-center justify-center">
-                <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-              </div>
+            <div className="min-w-0 rounded-lg bg-rose-50 px-1 py-1.5 text-center dark:bg-rose-950/60">
               <Heading as="p" size="lg" weight="semibold" className="text-rose-800 dark:text-rose-300">
                 {summary.absentDays}
               </Heading>
-              <Text size="xs" tone="muted" className="text-rose-700 dark:text-rose-400">
+              <Text size="xs" tone="muted" className="block truncate whitespace-nowrap text-[10px] leading-tight text-rose-700 dark:text-rose-400">
                 Absent
               </Text>
             </div>

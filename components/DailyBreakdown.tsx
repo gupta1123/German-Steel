@@ -61,8 +61,8 @@ const StatusBadge = ({ status, isSunday }: { status: string; isSunday: boolean }
     let colorClass = "border-border bg-muted/50 text-muted-foreground";
     
     // Normalize "present" to "absent" for all checks
-    const normalizedStatus = status.toLowerCase() === "present" ? "Absent" : status;
-    const statusLower = normalizedStatus.toLowerCase();
+    const normalizedStatus = String(status || '').toLowerCase() === "present" ? "Absent" : (status || '');
+    const statusLower = String(normalizedStatus || '').toLowerCase();
     
     if (isSunday && statusLower !== "absent") {
         colorClass = "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/35 dark:text-violet-300";
@@ -151,20 +151,18 @@ const DailyBreakdown: React.FC = () => {
         setSelectedRecords(new Set()); // Reset selection on refetch
         
         try {
-            const empId = selectedEmployee;
-            const res = await fetch(
-                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/salary-calculation/daily-breakdown?employeeId=${empId}&startDate=${startDate}&endDate=${endDate}`,
-                { headers: { 'Authorization': `Bearer ${token}` } }
-            );
-            if (!res.ok) throw new Error("Failed to fetch data");
-            const data = await res.json();
-            setDailyBreakdownData(data || []);
+            const empId = Number(selectedEmployee);
+            const data = await API.getDailyBreakdown(empId, startDate, endDate);
+            const emp = employees.find((e: any) => String(e.id) === String(selectedEmployee));
+            const empName = emp ? ([(emp as any).firstName, (emp as any).lastName].filter(Boolean).join(' ') || (emp as any).name || `Emp #${empId}`) : `Emp #${empId}`;
+            const enriched = (data as any[]).map((d: any) => ({ ...d, employeeName: d.employeeName || empName }));
+            setDailyBreakdownData((enriched as unknown as DailyBreakdownData[]) || []);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Error fetching data");
         } finally {
             setIsLoading(false);
         }
-    }, [token, startDate, endDate, selectedEmployee, dateRangeInvalid]);
+    }, [token, startDate, endDate, selectedEmployee, dateRangeInvalid, employees]);
 
     useEffect(() => { if (token) fetchEmployees(); }, [token, fetchEmployees]);
 
@@ -215,28 +213,9 @@ const DailyBreakdown: React.FC = () => {
 
             console.log("Sending Bulk Updates:", updates);
 
-            // Update each record individually using the specified endpoint
+            // Use centralized API helper: tries /api/hr/attendance/logs/updateStatus then fallback to legacy admin/updateStatus (5.13)
             const updatePromises = updates.map(async (update) => {
-                // Normalize status to lowercase (e.g., "Full Day" -> "full day")
-                const normalizedStatus = update.status.toLowerCase();
-                
-                const response = await fetch(
-                    `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/attendance-log/admin/updateStatus?employeeId=${update.employeeId}&date=${update.date}&status=${encodeURIComponent(normalizedStatus)}`,
-                    {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'admin': 'true',
-                        },
-                    }
-                );
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Failed to update status for employee ${update.employeeId} on ${update.date}: ${response.status} ${response.statusText}. ${errorText}`);
-                }
-
-                return response;
+                await API.updateAttendanceStatus(update.employeeId, update.date, update.status);
             });
 
             await Promise.all(updatePromises);
@@ -496,7 +475,7 @@ const DailyBreakdown: React.FC = () => {
                                                         <Checkbox checked={isSelected} onCheckedChange={() => toggleRecord(day.date, day.employeeId)} />
                                                     </TableCell>
                                                     <TableCell className="font-medium">{day.employeeName}</TableCell>
-                                                    <TableCell>{format(new Date(day.date), 'MMM dd, yyyy')} <span className="text-muted-foreground text-xs ml-1">({day.dayOfWeek.slice(0,3)})</span></TableCell>
+                                                    <TableCell>{format(new Date(day.date), 'MMM dd, yyyy')} <span className="text-muted-foreground text-xs ml-1">({(day.dayOfWeek || '').slice(0,3)})</span></TableCell>
                                                     <TableCell><StatusBadge status={day.dayType} isSunday={day.isSunday} /></TableCell>
                                                     <TableCell className="text-center">{day.completedVisits}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(day.baseEarned)}</TableCell>

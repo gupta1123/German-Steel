@@ -36,8 +36,6 @@ interface User {
   email: string;
   role: string;
   departmentName: string;
-  userName: string;
-  password: string;
   primaryContact: string;
   dateOfJoining: string;
   name: string;
@@ -45,13 +43,18 @@ interface User {
   actions: string;
   city: string;
   state: string;
-  userDto: {
-    username: string;
-    password: string | null;
-    roles: string | null;
-    employeeId: number | null;
-    firstName: string | null;
-    lastName: string | null;
+  assignedCity: string[];
+  regionIds: number[];
+  mobile: string;
+  secondaryMobile: string | null;
+  userName?: string;
+  userDto?: {
+    username?: string;
+    password?: string | null;
+    roles?: string | null;
+    employeeId?: number | null;
+    firstName?: string | null;
+    lastName?: string | null;
   };
 }
 
@@ -104,6 +107,26 @@ function EmployeeList() {
   const searchParamsString = searchParams.toString();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [regionMap, setRegionMap] = useState<Map<number, string>>(new Map());
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+    if (!token) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/regions?page=0&size=50`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const items = Array.isArray(data) ? data : (data as any).content || [];
+        const map = new Map<number, string>();
+        (items as any[]).forEach((r: any) => {
+          const id = Number(r.id ?? r.regionId);
+          const name = String(r.name ?? r.regionName ?? '').trim();
+          if (Number.isFinite(id) && name) map.set(id, name);
+        });
+        setRegionMap(map);
+      })
+      .catch(() => {});
+  }, []);
   const [teamData, setTeamData] = useState<TeamData[] | null>(null);
   const [officeManager, setOfficeManager] = useState<OfficeManager | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -114,9 +137,11 @@ function EmployeeList() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [areFiltersVisible, setAreFiltersVisible] = useState(true);
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | string | null>(null);
-  const [selectedColumns, setSelectedColumns] = useState(['name', 'email', 'city', 'state', 'role', 'department', 'userName', 'dateOfJoining', 'primaryContact', 'actions']);
+  const [selectedColumns, setSelectedColumns] = useState(['name', 'email', 'city', 'state', 'role', 'department', 'dateOfJoining', 'mobile', 'assignedCity', 'actions']);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [newPassword, setNewPassword] = useState('');
@@ -156,44 +181,56 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const isManagerUser = !isAdminUser && (isManagerRoleValue(userRole) || isManagerRoleValue(authorityRole));
 
   const fetchEmployees = useCallback(async () => {
+    if (!token) {
+      setError('Authentication token not found. Please sign in again.');
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      if (isManagerUser) {
-        const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/getbyEmployee?id=${employeeId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch team data');
-        }
-
-        const teamData: TeamData[] = await response.json();
-        if (!teamData || teamData.length === 0) {
-          throw new Error('No team data found for the manager');
-        }
-
-        setTeamData(teamData);
-        const scopedFieldOfficers = getUniqueFieldOfficersFromTeams(teamData);
-        setUsers(scopedFieldOfficers.filter((user: User) => !isAdminEmployee(user)).map((user: User) => ({ ...user, userName: user.userDto?.username || "" })));
-      } else {
-        const data = await API.getAllEmployees<User>();
-        if (!data) {
-            throw new Error('No data received when fetching all employees');
-        }
-
-        const employees = data.filter((user: User) => !isAdminEmployee(user));
-        setUsers(employees.map((user: User) => ({ ...user, userName: user.userDto?.username || "" })));
-        setAssignedCities(employees.filter((user: User) => user.city).map((user: User) => user.city));
+      // Use new contract: GET /api/common/employees?active=true&page=0&size=50 with optional filters
+      const page = currentPage - 1;
+      const size = itemsPerPage;
+      const q = searchQuery.trim() || undefined;
+      // Map UI role filter to backend role enum; send only if actually selected
+      let role: string | undefined;
+      if (selectedRoleFilter === 'regional-manager') role = 'MANAGER';
+      else if (selectedRoleFilter === 'field-officer') role = 'RETAIL_FE';
+      const params: { active: boolean; page: number; size: number; q?: string; role?: string; managerId?: number } = {
+        active: true,
+        page,
+        size,
+        q,
+        role,
+      };
+      if (isManagerUser && employeeId) {
+        params.managerId = Number(employeeId);
       }
+      // Remove empty filters per guide: send only filters that are actually selected
+      if (!q) delete (params as Record<string, unknown>).q;
+      if (!role) delete (params as Record<string, unknown>).role;
+      if (!params.managerId) delete (params as Record<string, unknown>).managerId;
+
+      const { teamsApi } = await import('@/lib/teams-api');
+      const result = await teamsApi.getEmployeesPage(token, params);
+      // Filter out admins client-side as extra safety; backend should already scope
+      const filtered = result.content.filter((u: unknown) => !isAdminEmployee(u as Parameters<typeof isAdminEmployee>[0])) as unknown as User[];
+      setUsers(filtered as User[]);
+      setTotalElements(result.totalElements);
+      setTotalPages(result.totalPages);
+      setAssignedCities(filtered.filter((u) => (u as User).city).map((u) => (u as User).city));
+      // Clear legacy teamData for non-legacy flow; keep for permission display if needed
+      if (!isManagerUser) setTeamData(null);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'An unknown error occurred');
+      setUsers([]);
+      setTotalElements(0);
+      setTotalPages(1);
     } finally {
       setIsLoading(false);
     }
-  }, [token, employeeId, isManagerUser]);
+  }, [token, employeeId, isManagerUser, currentPage, itemsPerPage, searchQuery, selectedRoleFilter]);
 
   // Hydrate filters/paging
   useEffect(() => {
@@ -273,22 +310,13 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   }, [searchQuery, selectedRoleFilter, currentPage, itemsPerPage, isHydrated, pathname, searchParamsString]);
 
   const fetchArchivedEmployees = async () => {
+    if (!token) return;
     try {
-      console.log('Fetching archived employees...');
-      const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/getAllInactive', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch archived employees: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      console.log('Archived employees data:', data);
-      console.log('Number of archived employees:', data.length);
-      setArchivedEmployees(data);
+      const { teamsApi } = await import('@/lib/teams-api');
+      const result = await teamsApi.getEmployeesPage(token, { active: false, page: 0, size: 50, q: archiveSearchQuery.trim() || undefined });
+      // Filter out admins as extra safety
+      const filtered = (result.content as unknown as User[]).filter((u) => !isAdminEmployee(u as Parameters<typeof isAdminEmployee>[0]));
+      setArchivedEmployees(filtered as User[]);
     } catch (error) {
       console.error('Error fetching archived employees:', error);
     }
@@ -476,7 +504,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const getRoleTag = (role: string) => {
     const transformedRole = getEmployeeRoleLabel(role);
     
-    if (transformedRole === 'Regional Manager') {
+    if (transformedRole === 'Supervisor') {
       return (
         <Badge 
           variant="secondary" 
@@ -540,7 +568,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     try {
       sessionStorage.setItem('employees.last.view', JSON.stringify({ from: 'list' }));
     } catch {}
-    router.push(`/dashboard/employee/${userId}`);
+    router.push(`/dashboard/employees/${userId}`);
   };
 
   const handleGoToEdit = (userId: number) => {
@@ -555,200 +583,269 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     }, usernameDraftIsDirty);
   };
 
-  // Filtering and sorting logic
+  // With server pagination, users is already the page content filtered by q/role/managerId/active
+  // Keep only admin filter and sort client-side; do not re-filter by q/role
   const filteredUsers = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-
-    return users.filter((user) => {
-      if (isAdminEmployee(user)) return false;
-      const matchesRole = selectedRoleFilter === 'all' || getEmployeeRoleCategory(user.role) === selectedRoleFilter;
-      if (!matchesRole) return false;
-      if (!query) return true;
-
-      return (`${user.firstName ?? ''} ${user.lastName ?? ''}`).toLowerCase().includes(query) ||
-        String(user.email ?? '').toLowerCase().includes(query) ||
-        getEmployeeRoleLabel(user.role).toLowerCase().includes(query);
-    });
-  }, [users, searchQuery, selectedRoleFilter]);
+    return users.filter((user) => !isAdminEmployee(user));
+  }, [users]);
 
   const sortedUsers = useMemo(() => {
     return [...filteredUsers].sort((a, b) => {
-      if (a[sortColumn] < b[sortColumn]) return sortDirection === 'asc' ? -1 : 1;
-      if (a[sortColumn] > b[sortColumn]) return sortDirection === 'asc' ? 1 : -1;
+      const aVal = a[sortColumn] as unknown as string;
+      const bVal = b[sortColumn] as unknown as string;
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
   }, [filteredUsers, sortColumn, sortDirection]);
 
-  const indexOfLastUser = currentPage * itemsPerPage;
-  const indexOfFirstUser = indexOfLastUser - itemsPerPage;
-  const currentUsers = sortedUsers.slice(indexOfFirstUser, indexOfLastUser);
+  const currentUsers = sortedUsers;
 
 
   const filteredArchivedEmployees = useMemo(() => {
-    console.log('Filtering archived employees:', archivedEmployees.length, 'employees, search query:', archiveSearchQuery);
     const filtered = archivedEmployees.filter((employee) => !isAdminEmployee(employee)).filter((employee) =>
       `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
       employee.role.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
       employee.departmentName.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
       employee.city.toLowerCase().includes(archiveSearchQuery.toLowerCase())
     );
-    console.log('Filtered result:', filtered.length, 'employees');
     return filtered;
   }, [archivedEmployees, archiveSearchQuery]);
 
   return (
     <div className="mx-auto w-full max-w-none py-4">
-      <div className="mb-4 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  sessionStorage.setItem('addEmployee.navigation', 'fromEmployeesList');
-                }
-                router.push('/dashboard/employees/add');
-              }}
-              className="flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Add Employee
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAreFiltersVisible((visible) => !visible)}>
-              <Filter className="mr-2 h-4 w-4" />
-              {areFiltersVisible ? 'Hide Filters' : 'Show Filters'}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="flex items-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  Columns
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56">
-                {['name', 'city', 'state', 'role', 'userName', 'primaryContact', 'actions'].map((column) => (
-                  <DropdownMenuCheckboxItem
-                    key={column}
-                    checked={selectedColumns.includes(column)}
-                    onCheckedChange={() => {
-                      if (selectedColumns.includes(column)) {
-                        setSelectedColumns(selectedColumns.filter((col) => col !== column));
-                      } else {
-                        setSelectedColumns([...selectedColumns, column]);
-                      }
-                    }}
-                  >
-                    {column}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button 
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsArchivedModalOpen(true);
-                fetchArchivedEmployees();
-              }}
-              className="flex items-center gap-2"
-            >
-              <Archive className="h-4 w-4" />
-              Archived
-            </Button>
-          </div>
-      </div>
-
-      {areFiltersVisible && (
-        <div className="mb-4 rounded-xl border border-border/70 bg-muted/20 p-3">
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,28rem)_180px]">
-            <div className="relative">
+      {areFiltersVisible ? (
+        <>
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="min-w-0 flex-1">
               <Label htmlFor="employee-search" className="sr-only">Search employees</Label>
-              <Input
-                id="employee-search"
-                type="search"
-                autoComplete="off"
-                placeholder="Search name, email, or role"
-                value={searchQuery}
-                onChange={(event) => {
-                  setSearchQuery(event.target.value);
+              <div className="relative">
+                <Input
+                  id="employee-search"
+                  type="search"
+                  autoComplete="off"
+                  placeholder="Search name, email, or role"
+                  value={searchQuery}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 bg-background pr-8 text-xs shadow-none"
+                />
+                {searchQuery && (
+                  <button type="button" onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 flex items-center pr-2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="w-full shrink-0 lg:w-44">
+              <Label className="sr-only">Role</Label>
+              <Select
+                value={selectedRoleFilter}
+                onValueChange={(value: 'all' | 'regional-manager' | 'field-officer') => {
+                  setSelectedRoleFilter(value);
                   setCurrentPage(1);
                 }}
-                className="h-8 bg-background pr-8 text-xs shadow-none"
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 flex items-center pr-2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
-                  <XCircle className="h-3.5 w-3.5" />
-                </button>
-              )}
+              >
+                <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none" aria-label="Filter by role">
+                  <SelectValue placeholder="All roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All roles</SelectItem>
+                  <SelectItem value="regional-manager">Supervisor</SelectItem>
+                  <SelectItem value="field-officer">Field Officer</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select
-              value={selectedRoleFilter}
-              onValueChange={(value: 'all' | 'regional-manager' | 'field-officer') => {
-                setSelectedRoleFilter(value);
-                setCurrentPage(1);
-              }}
-            >
-              <SelectTrigger className="h-8 bg-background text-xs shadow-none" aria-label="Filter by role">
-                <SelectValue placeholder="All roles" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All roles</SelectItem>
-                <SelectItem value="regional-manager">Regional Manager</SelectItem>
-                <SelectItem value="field-officer">Field Officer</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="hidden text-xs text-muted-foreground xl:inline">{totalElements} employees</span>
+              <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => setAreFiltersVisible(false)} aria-label="Hide filters" title="Hide filters">
+                <Filter className="h-4 w-4" />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" aria-label="Columns" title="Columns">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56">
+                  {['name', 'city', 'state', 'role', 'primaryContact', 'assignedCity', 'actions'].map((column) => (
+                    <DropdownMenuCheckboxItem
+                      key={column}
+                      checked={selectedColumns.includes(column)}
+                      onCheckedChange={() => {
+                        if (selectedColumns.includes(column)) {
+                          setSelectedColumns(selectedColumns.filter((col) => col !== column));
+                        } else {
+                          setSelectedColumns([...selectedColumns, column]);
+                        }
+                      }}
+                    >
+                      {column}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shadow-none"
+                onClick={() => {
+                  setIsArchivedModalOpen(true);
+                  fetchArchivedEmployees();
+                }}
+                aria-label="Archived employees"
+                title="Archived employees"
+              >
+                <Archive className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    sessionStorage.setItem('addEmployee.navigation', 'fromEmployeesList');
+                  }
+                  router.push('/dashboard/employees/add');
+                }}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add Employee
+              </Button>
+            </div>
           </div>
+          <hr className="mb-4 border-border" />
+        </>
+      ) : (
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => setAreFiltersVisible(true)} aria-label="Show filters" title="Show filters">
+            <Filter className="h-4 w-4" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" aria-label="Columns" title="Columns">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              {['name', 'city', 'state', 'role', 'primaryContact', 'assignedCity', 'actions'].map((column) => (
+                <DropdownMenuCheckboxItem
+                  key={column}
+                  checked={selectedColumns.includes(column)}
+                  onCheckedChange={() => {
+                    if (selectedColumns.includes(column)) {
+                      setSelectedColumns(selectedColumns.filter((col) => col !== column));
+                    } else {
+                      setSelectedColumns([...selectedColumns, column]);
+                    }
+                  }}
+                >
+                  {column === 'assignedCity' ? 'Assigned Regions' : column}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shadow-none"
+            onClick={() => {
+              setIsArchivedModalOpen(true);
+              fetchArchivedEmployees();
+            }}
+            aria-label="Archived employees"
+            title="Archived employees"
+          >
+            <Archive className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('addEmployee.navigation', 'fromEmployeesList');
+              }
+              router.push('/dashboard/employees/add');
+            }}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Add Employee
+          </Button>
         </div>
       )}
 
       {isLoading && (
         <div className="space-y-4">
-          {/* Filters skeleton */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-2">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="space-y-2">
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ))}
-            <div className="flex items-end">
-              <Skeleton className="h-10 w-full" />
+          {/* Filters skeleton — matches one-line filter bar */}
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+            <Skeleton className="h-8 w-full flex-1" />
+            <Skeleton className="h-8 w-full flex-1" />
+            <div className="flex shrink-0 items-center gap-2">
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="h-8 w-28" />
             </div>
           </div>
+          <hr className="mb-4 border-border" />
 
-          {/* Table skeleton */}
-          <Card className="w-full">
-            <CardContent className="pt-6">
-              <div className="rounded-md border overflow-hidden w-full">
-                <div className="overflow-x-auto w-full">
-                  <Table className="min-w-full">
-                    <TableHeader>
-                      <TableRow>
-                        {['Name','Role','User Name','Phone','City','State','Actions'].map(h => (
-                          <TableHead key={h} className="whitespace-nowrap">{h}</TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {[...Array(6)].map((_, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-4 w-40" /></TableCell>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-4 w-24" /></TableCell>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-4 w-28" /></TableCell>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-4 w-28" /></TableCell>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-4 w-24" /></TableCell>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-4 w-20" /></TableCell>
-                          <TableCell className="whitespace-nowrap"><Skeleton className="h-8 w-8 rounded" /></TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Mobile cards skeleton */}
+          <div className="space-y-3 md:hidden">
+            {[...Array(3)].map((_, i) => (
+              <Card key={i} className="overflow-hidden shadow-none">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-40" />
+                    </div>
+                    <Skeleton className="h-5 w-20" />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop table skeleton — matches table-fixed columns */}
+          <div className="hidden min-w-0 md:block">
+            <Table className="table-fixed text-xs">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[14%]" />
+                <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+              </colgroup>
+              <TableHeader>
+                <TableRow>
+                  {['Name', 'Role', 'Phone', 'City', 'State', 'Assigned Regions', 'Actions'].map(h => (
+                    <TableHead key={h} className="overflow-hidden text-ellipsis whitespace-nowrap">{h}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...Array(6)].map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-3/4" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-8" /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
       {error && <div className="text-red-500">Error: {error}</div>}
@@ -767,22 +864,22 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                       </Avatar>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold" title={`${user.firstName} ${user.lastName}`}>{`${user.firstName} ${user.lastName}`}</p>
-                        <p className="truncate text-xs text-muted-foreground" title={user.userName}>{user.userName || 'No username'}</p>
+                        <p className="truncate text-xs text-muted-foreground" title={user.email}>{user.email || user.departmentName || ''}</p>
                       </div>
                     </div>
                     <div className="shrink-0">{getRoleTag(user.role)}</div>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs">
-                    <div className="min-w-0"><span className="text-muted-foreground">Phone</span><Ellipsis value={user.primaryContact} /></div>
+                    <div className="min-w-0"><span className="text-muted-foreground">Phone</span><Ellipsis value={user.mobile} /></div>
                     <div className="min-w-0"><span className="text-muted-foreground">Location</span><Ellipsis value={[toSentenceCase(user.city), user.state].filter(Boolean).join(', ')} /></div>
                   </div>
-                  <div className="mt-3 flex justify-end gap-1">
+                    <div className="mt-3 flex justify-end gap-1">
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleGoToEdit(user.id)}>Edit</Button>
                     <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={() => handleViewUser(user.id)}>View details</Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="More employee actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName)}>Edit Username</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName ?? '')}>Edit Username</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>Reset Password</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>Delete</DropdownMenuItem>
                       </DropdownMenuContent>
@@ -798,12 +895,12 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               <Table className="table-fixed text-xs font-poppins">
               <colgroup>
                 {selectedColumns.includes('name') && <col className="w-[22%]" />}
-                {selectedColumns.includes('role') && <col className="w-[16%]" />}
-                {selectedColumns.includes('userName') && <col className="w-[16%]" />}
-                {selectedColumns.includes('primaryContact') && <col className="w-[14%]" />}
+                {selectedColumns.includes('role') && <col className="w-[14%]" />}
+                {selectedColumns.includes('mobile') && <col className="w-[14%]" />}
                 {selectedColumns.includes('city') && <col className="w-[12%]" />}
-                {selectedColumns.includes('state') && <col className="w-[14%]" />}
-                {selectedColumns.includes('actions') && <col className="w-[6%]" />}
+                {selectedColumns.includes('state') && <col className="w-[12%]" />}
+                {selectedColumns.includes('assignedCity') && <col className="w-[14%]" />}
+                {selectedColumns.includes('actions') && <col className="w-[10%]" />}
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -827,20 +924,10 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                       )}
                     </TableHead>
                   )}
-                  {selectedColumns.includes('userName') && (
-                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('userName')}>
-                      User Name
-                      {sortColumn === 'userName' && (
-                        <span className="ml-2">
-                          {sortDirection === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </TableHead>
-                  )}
-                  {selectedColumns.includes('primaryContact') && (
-                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('primaryContact')}>
+                  {selectedColumns.includes('mobile') && (
+                    <TableHead className="cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" onClick={() => handleSort('mobile')}>
                       Phone
-                      {sortColumn === 'primaryContact' && (
+                      {sortColumn === 'mobile' && (
                         <span className="ml-2">
                           {sortDirection === 'asc' ? '▲' : '▼'}
                         </span>
@@ -867,6 +954,11 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                       )}
                     </TableHead>
                   )}
+                  {selectedColumns.includes('assignedCity') && (
+                    <TableHead className="overflow-hidden text-ellipsis whitespace-nowrap">
+                      Assigned Regions
+                    </TableHead>
+                  )}
                   {selectedColumns.includes('actions') && (
                     <TableHead className="overflow-hidden text-ellipsis text-right whitespace-nowrap">Actions</TableHead>
                   )}
@@ -879,10 +971,21 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                       <TableCell className="font-medium"><Ellipsis value={`${user.firstName} ${user.lastName}`} /></TableCell>
                     )}
                     {selectedColumns.includes('role') && <TableCell className="overflow-hidden">{getRoleTag(user.role)}</TableCell>}
-                    {selectedColumns.includes('userName') && <TableCell><Ellipsis value={user.userName} /></TableCell>}
-                    {selectedColumns.includes('primaryContact') && <TableCell><Ellipsis value={user.primaryContact} /></TableCell>}
+                    {selectedColumns.includes('mobile') && <TableCell><Ellipsis value={user.mobile} /></TableCell>}
                     {selectedColumns.includes('city') && <TableCell><Ellipsis value={toSentenceCase(user.city)} /></TableCell>}
                     {selectedColumns.includes('state') && <TableCell><Ellipsis value={user.state} /></TableCell>}
+                    {selectedColumns.includes('assignedCity') && (
+                      <TableCell>
+                        <Ellipsis value={(() => {
+                          const ids = user.regionIds;
+                          if (Array.isArray(ids) && ids.length > 0) {
+                            const names = ids.map(id => regionMap.get(Number(id)) || `#${id}`).filter(Boolean);
+                            return names.length > 0 ? names.join(', ') : '—';
+                          }
+                          return Array.isArray(user.assignedCity) && user.assignedCity.length > 0 ? user.assignedCity.join(', ') : '—';
+                        })()} />
+                      </TableCell>
+                    )}
                     {selectedColumns.includes('actions') && (
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -896,7 +999,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                             <DropdownMenuItem onClick={() => handleGoToEdit(user.id)}>
                               Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName)}>
+                            <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName ?? '')}>
                               Edit Username
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleViewUser(user.id)}>
@@ -947,14 +1050,14 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               </Button>
               
               <span className="text-xs text-muted-foreground">
-                Page {currentPage} of {Math.max(Math.ceil(sortedUsers.length / itemsPerPage), 1)}
+                Page {currentPage} of {Math.max(totalPages, 1)} ({totalElements} total)
               </span>
               
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(Math.min(Math.ceil(sortedUsers.length / itemsPerPage), currentPage + 1))}
-                disabled={currentPage >= Math.ceil(sortedUsers.length / itemsPerPage)}
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage >= totalPages}
               >
                 <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-4 w-4" />
@@ -980,7 +1083,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               <Label htmlFor="newPassword">New Password</Label>
               <Input
                 id="newPassword"
-                type="password"
+                type="text"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
@@ -989,7 +1092,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <Input
                 id="confirmPassword"
-                type="password"
+                type="text"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />

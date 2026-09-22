@@ -6,6 +6,8 @@ import { normalizeVisitTask } from '@/lib/visit-task';
 const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const SECONDARY_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const DISTANCE_RECALCULATION_API_URL = `${API_BASE_URL}/attendance-log/updateDistanceTravelledForEmployeesWithOlaMaps`;
+const SALARY_DATE_RANGE_BREAKDOWN_PATH = '/api/hr/salary/date-range-breakdown';
+const SALARY_DAILY_BREAKDOWN_PATH = '/api/hr/salary/daily-breakdown';
 
 // Types based on API responses from api.md
 export interface EmployeeDto {
@@ -425,7 +427,9 @@ export interface EmployeeUserDto {
   userName: string;
   password: string;
   primaryContact: string;
+  mobile?: string;
   secondaryContact?: string;
+  secondaryMobile?: string;
   dateOfJoining: string;
   city: string;
   state: string;
@@ -726,6 +730,10 @@ export class API {
 
   static async getDailyBreakdown(employeeId: number, startDate: string, endDate: string): Promise<DailyBreakdownDto[]> {
     return apiService.getDailyBreakdown(employeeId, startDate, endDate);
+  }
+
+  static async updateAttendanceStatus(employeeId: number, date: string, status: string): Promise<unknown> {
+    return apiService.updateAttendanceStatus(employeeId, date, status);
   }
 
 
@@ -1394,18 +1402,98 @@ Please check your internet connection and try again.`);
 
   async recalculateDistanceForEmployeesWithOlaMaps(employeeIds: number[], startDate: string, endDate: string): Promise<string> {
     const employeeIdsParam = employeeIds.join(',');
-    return this.makeTextRequest(
-      `${DISTANCE_RECALCULATION_API_URL}?employeeIds=${employeeIdsParam}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-      {
-        method: 'PUT',
+    // Guide 5.13: POST /api/hr/salary/distance/recalculate-employees?employeeIds=...&from=&to=
+    const newPath = `/api/hr/salary/distance/recalculate-employees?employeeIds=${encodeURIComponent(employeeIdsParam)}&from=${encodeURIComponent(startDate)}&to=${encodeURIComponent(endDate)}`;
+    try {
+      return await this.makeTextRequest(newPath, { method: 'POST' });
+    } catch (error) {
+      // Fallback to legacy PUT for backward compatibility where new endpoint not yet deployed
+      if (error instanceof Error && /404|Not Found/i.test(error.message)) {
+        return this.makeTextRequest(
+          `${DISTANCE_RECALCULATION_API_URL}?employeeIds=${employeeIdsParam}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+          { method: 'PUT' }
+        );
       }
+      throw error;
+    }
+  }
+
+  // Preferred new helper per guide 5.13 - POST range recalculation alternatives
+  async recalculateDistanceForEmployeeRange(employeeId: number, from: string, to: string): Promise<string> {
+    return this.makeTextRequest(
+      `/api/hr/salary/distance/recalculate-range?employeeId=${employeeId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { method: 'POST' }
     );
   }
 
   async getDailyBreakdown(employeeId: number, startDate: string, endDate: string): Promise<DailyBreakdownDto[]> {
-    return this.makeRequest<DailyBreakdownDto[]>(
-      `/salary-calculation/daily-breakdown?employeeId=${employeeId}&startDate=${startDate}&endDate=${endDate}`
-    );
+    // Guide 5.13 + 5.7a: GET /api/hr/salary/date-range-breakdown?employeeId=&from=&to=
+    const newQuery = new URLSearchParams({ employeeId: String(employeeId), from: startDate, to: endDate });
+    const mapLegacy = (rows: any[]): DailyBreakdownDto[] => rows.map((r: any) => {
+      const d = new Date(r.date);
+      const dayOfWeek = Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { weekday: 'long' });
+      return {
+        date: r.date,
+        employeeId: r.employeeId,
+        employeeName: r.employeeName ?? r.employeeId ? `Emp #${r.employeeId}` : '',
+        dayType: r.attendanceStatus ?? r.dayType ?? r.status ?? 'Absent',
+        completedVisits: r.completedVisits ?? r.visitCount ?? 0,
+        dayOfWeek,
+        hasAttendance: r.attendanceStatus ? String(r.attendanceStatus).toUpperCase() !== 'ABSENT' : !!r.hasAttendance,
+        isSunday: d.getDay() === 0,
+        bikeDistanceKm: Number(r.bikeDistance ?? r.bikeDistanceKm ?? 0),
+        carDistanceKm: Number(r.carDistance ?? r.carDistanceKm ?? 0),
+        dailyBaseSalary: Number(r.baseSalary ?? r.dailyBaseSalary ?? r.dailySalary ?? 0),
+        baseEarned: Number(r.baseSalary ?? r.baseEarned ?? r.dailyBaseSalary ?? 0),
+        dailyDearnessAllowance: Number(r.dearnessAllowance ?? r.dailyDearnessAllowance ?? 0),
+        travelAllowance: Number(r.travelAllowance ?? 0),
+        totalDailySalary: Number(r.totalSalary ?? r.totalDailySalary ?? r.totalDailySalary ?? 0),
+      } as DailyBreakdownDto;
+    });
+    try {
+      const res: any = await this.makeRequest<DailyBreakdownDto[]>(`${SALARY_DATE_RANGE_BREAKDOWN_PATH}?${newQuery}`);
+      if (Array.isArray(res) && res.length && 'carDistance' in res[0]) return mapLegacy(res);
+      return res as DailyBreakdownDto[];
+    } catch (error) {
+      // Fallback to legacy where new endpoint not yet deployed
+      if (error instanceof Error && /404|Not Found/i.test(error.message)) {
+        const res: any = await this.makeRequest<DailyBreakdownDto[]>(
+          `/salary-calculation/daily-breakdown?employeeId=${employeeId}&startDate=${startDate}&endDate=${endDate}`
+        );
+        if (Array.isArray(res) && res.length && 'carDistance' in res[0]) return mapLegacy(res);
+        return res as DailyBreakdownDto[];
+      }
+      throw error;
+    }
+  }
+
+  async getSalaryDailyBreakdown(employeeId: number, date: string): Promise<DailyBreakdownDto[]> {
+    const query = new URLSearchParams({ employeeId: String(employeeId), date });
+    return this.makeRequest<DailyBreakdownDto[]>(`${SALARY_DAILY_BREAKDOWN_PATH}?${query}`);
+  }
+
+  async getSalaryDistanceBreakdown(employeeId: number, from: string, to: string, page: number = 0, size: number = 50): Promise<unknown> {
+    const query = new URLSearchParams({ employeeId: String(employeeId), from, to, page: String(page), size: String(size) });
+    return this.makeRequest<unknown>(`/api/hr/salary/distance-breakdown?${query}`);
+  }
+
+  async updateAttendanceStatus(employeeId: number, date: string, status: string): Promise<unknown> {
+    const normalizedStatus = status.toLowerCase();
+    // No documented replacement for /attendance-log/admin/updateStatus; try HR attendance path first, fallback to legacy.
+    try {
+      return await this.makeRequest<unknown>(
+        `/api/hr/attendance/logs/updateStatus?employeeId=${employeeId}&date=${encodeURIComponent(date)}&status=${encodeURIComponent(normalizedStatus)}`,
+        { method: 'PUT' }
+      );
+    } catch (error) {
+      if (error instanceof Error && /404|Not Found/i.test(error.message)) {
+        return this.makeRequest<unknown>(
+          `/attendance-log/admin/updateStatus?employeeId=${employeeId}&date=${date}&status=${encodeURIComponent(normalizedStatus)}`,
+          { method: 'PUT', headers: { admin: 'true' } as unknown as Record<string,string> }
+        );
+      }
+      throw error;
+    }
   }
 
   // Report APIs
@@ -1654,8 +1742,9 @@ Please check your internet connection and try again.`);
     }
 
     const version = this.employeeDirectoryVersion;
-    const promise = this.makeRequest<EmployeeUserDto[]>('/employee/getAll')
-      .then((employees) => {
+    const promise = this.makeRequest<{ content: EmployeeUserDto[] } | EmployeeUserDto[]>('/api/common/employees?page=0&size=200')
+      .then((res) => {
+        const employees = Array.isArray(res) ? res : (res as { content: EmployeeUserDto[] }).content || [];
         if (version === this.employeeDirectoryVersion) {
           this.employeeDirectoryCache = {
             token: requestToken,

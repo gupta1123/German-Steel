@@ -6,7 +6,7 @@ import Head from 'next/head';
 import { useAuth } from '@/components/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { format, formatDuration, intervalToDuration } from "date-fns";
+import { format } from "date-fns";
 import { Badge } from '@/components/ui/badge';
 import { Building2, Calendar as CalendarIcon, CalendarDays, Mail, MapPin, Pencil, Phone } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -19,38 +19,178 @@ import {
   SelectItem
 } from "@/components/ui/select";
 import { SpacedCalendar } from "@/components/ui/spaced-calendar";
-import { API } from "@/lib/api";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 import { useDashboardHeader } from '@/components/dashboard-header-context';
 import { getEmployeeRoleLabel } from '@/lib/employee-role';
 import { formatCityLabel } from '@/lib/city-options';
 import { EmployeeManagedTeams } from '@/components/employee-managed-teams';
+import { visitsApi } from '@/lib/visits-api';
+import { attendanceApi } from '@/lib/attendance-api';
+import { expensesApi } from '@/lib/expenses-api';
+import { teamsApi } from '@/lib/teams-api';
 
 const ACTIVITY_TABS = [
   { value: 'visits', label: 'Visits', icon: 'fas fa-map-marked-alt' },
   { value: 'attendance', label: 'Attendance', icon: 'fas fa-calendar-check' },
   { value: 'expenses', label: 'Expenses', icon: 'fas fa-receipt' },
-  { value: 'daily-pricing', label: 'Daily Pricing', icon: 'fas fa-tags' },
+  { value: 'salary', label: 'Salary', icon: 'fas fa-money-bill' },
+  { value: 'targets', label: 'Targets', icon: 'fas fa-bullseye' },
+  { value: 'tracking', label: 'Tracking', icon: 'fas fa-location-dot' },
 ];
 
 const VISIT_FILTER_OPTIONS = ['today', 'yesterday', 'last-2-days', 'this-week', 'this-month', 'last-month'] as const;
 type VisitFilterOption = typeof VISIT_FILTER_OPTIONS[number];
 const VISIT_FILTER_SET = new Set<string>(VISIT_FILTER_OPTIONS);
 
+// --- Salary & Tracking normalizers (documented fields only, safe for null/missing) ---
+type SalaryBreakdownRow = {
+  employeeId: number;
+  date: string;
+  attendanceStatus: string;
+  visitCount: number;
+  fullMonthSalary: number;
+  dailySalary: number;
+  baseSalary: number;
+  travelAllowance: number;
+  dearnessAllowance: number;
+  approvedExpenses: number;
+  pendingExpenses: number;
+  totalSalary: number;
+  carDistance: number;
+  bikeDistance: number;
+  totalVisits: number;
+  completedVisits: number;
+};
+
+type TrackingCurrent = {
+  latitude: number | null;
+  longitude: number | null;
+  capturedAt: string | null;
+  provider: string | null;
+  accuracyMeters: number | null;
+  batteryPercent: number | null;
+};
+
+type TrackingPoint = {
+  id: string | number;
+  latitude: number | null;
+  longitude: number | null;
+  capturedAt: string | null;
+  provider: string | null;
+  accuracyMeters: number | null;
+  batteryPercent: number | null;
+};
+
+const asRecord = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null);
+const asNumber = (v: unknown): number | null => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() && Number.isFinite(Number(v))) return Number(v);
+  return null;
+};
+const asString = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const formatCurrency = (v: unknown): string => {
+  const n = asNumber(v);
+  if (n == null) return '—';
+  return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+};
+const formatDateLabel = (v: unknown): string => {
+  const s = asString(v);
+  if (!s) return '—';
+  try { return format(new Date(s), 'MMM dd, yyyy'); } catch { return s; }
+};
+const formatTimestampLabel = (v: unknown): string => {
+  const s = asString(v);
+  if (!s) return '—';
+  try {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return format(d, 'MMM dd, yyyy hh:mm a');
+  } catch { return s; }
+};
+const formatDistance = (v: unknown): string => {
+  const n = asNumber(v);
+  if (n == null) return '—';
+  return `${n.toFixed(2)} km`;
+};
+const normalizeSalaryRows = (data: unknown): SalaryBreakdownRow[] => {
+  const src = asRecord(data);
+  const raw: unknown[] = Array.isArray(data) ? data : Array.isArray(src?.content) ? src!.content as unknown[] : Array.isArray(src?.data) ? src!.data as unknown[] : [];
+  return raw.map((entry, idx) => {
+    const r = asRecord(entry) ?? {};
+    return {
+      employeeId: asNumber(r.employeeId) ?? 0,
+      date: asString(r.date) ?? `row-${idx}`,
+      attendanceStatus: asString(r.attendanceStatus) ?? '—',
+      visitCount: asNumber(r.visitCount) ?? 0,
+      fullMonthSalary: asNumber(r.fullMonthSalary) ?? 0,
+      dailySalary: asNumber(r.dailySalary) ?? 0,
+      baseSalary: asNumber(r.baseSalary) ?? 0,
+      travelAllowance: asNumber(r.travelAllowance) ?? 0,
+      dearnessAllowance: asNumber(r.dearnessAllowance) ?? 0,
+      approvedExpenses: asNumber(r.approvedExpenses) ?? 0,
+      pendingExpenses: asNumber(r.pendingExpenses) ?? 0,
+      totalSalary: asNumber(r.totalSalary) ?? 0,
+      carDistance: asNumber(r.carDistance) ?? 0,
+      bikeDistance: asNumber(r.bikeDistance) ?? 0,
+      totalVisits: asNumber(r.totalVisits) ?? 0,
+      completedVisits: asNumber(r.completedVisits) ?? 0,
+    };
+  });
+};
+const normalizeTrackingCurrent = (data: unknown): TrackingCurrent | null => {
+  if (!data || typeof data !== 'object') return null;
+  const r = asRecord(data) ?? {};
+  const loc = asRecord(r.location) ?? asRecord(r.currentLocation) ?? r;
+  const lat = asNumber(loc.latitude ?? loc.lat);
+  const lng = asNumber(loc.longitude ?? loc.lng ?? loc.lon);
+  if (lat == null || lng == null) return null;
+  return {
+    latitude: lat,
+    longitude: lng,
+    capturedAt: asString(loc.capturedAt ?? loc.recordedAt ?? loc.updatedAt ?? r.capturedAt),
+    provider: asString(loc.provider ?? loc.source),
+    accuracyMeters: asNumber(loc.accuracyMeters ?? loc.accuracy),
+    batteryPercent: asNumber(loc.batteryPercent ?? loc.battery),
+  };
+};
+const normalizeTrackingHistory = (data: unknown): TrackingPoint[] => {
+  const src = asRecord(data);
+  const raw: unknown[] = Array.isArray(data) ? data : Array.isArray(src?.content) ? src!.content as unknown[] : Array.isArray(src?.data) ? src!.data as unknown[] : [];
+  return raw.map((entry, idx) => {
+    const r = asRecord(entry) ?? {};
+    const loc = asRecord(r.location) ?? r;
+    return {
+      id: (asNumber(r.id) ?? asString(r.id) ?? `${idx}`) as string | number,
+      latitude: asNumber(loc.latitude ?? loc.lat),
+      longitude: asNumber(loc.longitude ?? loc.lng ?? loc.lon),
+      capturedAt: asString(loc.capturedAt ?? loc.recordedAt ?? r.capturedAt),
+      provider: asString(loc.provider ?? r.provider),
+      accuracyMeters: asNumber(loc.accuracyMeters ?? loc.accuracy),
+      batteryPercent: asNumber(loc.batteryPercent),
+    };
+  }).filter((p) => p.latitude != null && p.longitude != null);
+};
+const isPermissionError = (msg: string | null): boolean => !!msg && /403|forbidden|permission/i.test(msg);
+
 interface Visit {
   id: number;
-  storeId: number;
-  storeName: string;
-  employeeName: string;
-  visit_date: string;
-  scheduledStartTime: string | null;
-  scheduledEndTime: string | null;
-  checkinDate: string | null;
-  checkoutDate: string | null;
-  checkinTime: string | null;
-  checkoutTime: string | null;
-  purpose: string;
-  outcome: string | null;
+  storeId?: number;
+  storeName?: string;
+  parentName?: string;
+  employeeName?: string;
+  assignedEmployeeName?: string;
+  visit_date?: string;
+  scheduledVisitDate?: string;
+  purpose?: string;
+  outcome?: string | null;
+  scheduledStartTime?: string | null;
+  scheduledEndTime?: string | null;
+  checkinDate?: string | null;
+  checkoutDate?: string | null;
+  checkinTime?: string | null;
+  checkoutTime?: string | null;
+  actualCheckinAt?: string | null;
+  actualCheckoutAt?: string | null;
 }
 
 interface Expense {
@@ -80,13 +220,6 @@ interface EmployeeData {
   departmentName: string;
 }
 
-interface PricingData {
-  id: number;
-  brandName: string;
-  price: number;
-  city: string;
-}
-
 export default function SalesExecutivePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -95,34 +228,44 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
 
   const resolvedParams = use(params);
   const id = resolvedParams.id;
+  const employeeIdNum = Number(id);
   const { token } = useAuth();
 
   const [activeTab, setActiveTab] = useState('visits');
-  const [showExpenseStartCalendar, setShowExpenseStartCalendar] = useState(false);
-  const [showExpenseEndCalendar, setShowExpenseEndCalendar] = useState(false);
-
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
+  const [employeeError, setEmployeeError] = useState<string | null>(null);
+  const [employeeGap, setEmployeeGap] = useState<string | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [visitsLoading, setVisitsLoading] = useState(false);
+  const [visitsError, setVisitsError] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
+  const [expensesError, setExpensesError] = useState<string | null>(null);
   const [attendanceStats, setAttendanceStats] = useState<Record<string, unknown> | null>(null);
-  const [dailyPricing, setDailyPricing] = useState<PricingData[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [salaryData, setSalaryData] = useState<Record<string, unknown> | null>(null);
+  const [salaryLoading, setSalaryLoading] = useState(false);
+  const [salaryError, setSalaryError] = useState<string | null>(null);
+  const [targets, setTargets] = useState<Record<string, unknown>[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
+  const [targetsError, setTargetsError] = useState<string | null>(null);
+  const [trackingCurrent, setTrackingCurrent] = useState<Record<string, unknown> | null>(null);
+  const [trackingHistory, setTrackingHistory] = useState<Record<string, unknown>[]>([]);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
 
   const [visitFilter, setVisitFilter] = useState<VisitFilterOption>('today');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [expenseStartDate, setExpenseStartDate] = useState<Date | undefined>(new Date());
   const [expenseEndDate, setExpenseEndDate] = useState<Date | undefined>(new Date());
-  const [pricingStartDate, setPricingStartDate] = useState<Date | undefined>(new Date());
-  const [pricingEndDate, setPricingEndDate] = useState<Date | undefined>(new Date());
   const expenseDateRangeInvalid = isDateRangeInvalid(expenseStartDate, expenseEndDate);
-  const pricingDateRangeInvalid = isDateRangeInvalid(pricingStartDate, pricingEndDate);
   const [visitPage, setVisitPage] = useState(1);
   const [visitPageSize, setVisitPageSize] = useState(5);
   const [visitTotalElements, setVisitTotalElements] = useState(0);
   const [visitTotalPages, setVisitTotalPages] = useState(1);
 
-  const [showPricingStartCalendar, setShowPricingStartCalendar] = useState(false);
-  const [showPricingEndCalendar, setShowPricingEndCalendar] = useState(false);
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   const handleVisitFilterChange = useCallback((value: string) => {
@@ -151,7 +294,6 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
   };
   
   const handleBack = useCallback(() => {
-    // If navigated from employees list, simple back will restore persisted filters
     try {
       const raw = sessionStorage.getItem('employees.last.view');
       if (raw) {
@@ -236,140 +378,261 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
     }
   }, [activeTab, visitFilter, filtersHydrated, pathname, router, searchParamsString]);
 
+  // Employee fetch — documented GET /api/common/employees/{employeeId} via authenticated teamsApi client
   useEffect(() => {
-    const fetchEmployeeData = async () => {
+    if (!token || !id || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
+    const fetchEmployee = async () => {
+      setEmployeeError(null);
+      setEmployeeGap(null);
       try {
-        const employee = await API.getEmployeeById(Number(id));
-        setEmployeeData(employee as EmployeeData);
-      } catch (error) {
-        console.error("Error fetching employee data:", error);
+        const employee = await teamsApi.getEmployeeById(token, employeeIdNum);
+        if (cancelled) return;
+        const normalized: EmployeeData = {
+          id: employee.id,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          employeeId: employee.employeeCode || String(employee.id),
+          primaryContact: employee.mobile,
+          email: employee.email,
+          role: employee.role,
+          city: employee.city,
+          state: employee.state,
+          country: employee.country,
+          dateOfJoining: employee.dateOfJoining,
+          departmentName: employee.department,
+        };
+        setEmployeeData(normalized);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Failed to load employee';
+        setEmployeeError(msg);
       }
     };
+    void fetchEmployee();
+    return () => { cancelled = true; };
+  }, [token, id, employeeIdNum]);
 
-    if (token && id) {
-      fetchEmployeeData();
-    }
-  }, [token, id]);
-
+  // Visits — documented GET /api/common/visits with pagination/date filters
   useEffect(() => {
-    const fetchVisitsAndStats = async () => {
-      if (!filtersHydrated || !token || !id) {
-        return;
-      }
-
+    if (!filtersHydrated || !token || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
+    const fetchVisits = async () => {
+      setVisitsLoading(true);
+      setVisitsError(null);
       const now = new Date();
       let startDate = now.toISOString().split('T')[0];
       let endDate = startDate;
-
       if (visitFilter === 'today') {
         startDate = now.toISOString().split('T')[0];
-        endDate = now.toISOString().split('T')[0];
+        endDate = startDate;
       } else if (visitFilter === 'yesterday') {
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        startDate = yesterday.toISOString().split('T')[0];
-        endDate = yesterday.toISOString().split('T')[0];
+        const d = new Date(now); d.setDate(d.getDate() - 1);
+        startDate = d.toISOString().split('T')[0]; endDate = startDate;
       } else if (visitFilter === 'last-2-days') {
-        const twoDaysAgo = new Date(now);
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-        startDate = twoDaysAgo.toISOString().split('T')[0];
-        endDate = now.toISOString().split('T')[0];
+        const d = new Date(now); d.setDate(d.getDate() - 2);
+        startDate = d.toISOString().split('T')[0]; endDate = now.toISOString().split('T')[0];
       } else if (visitFilter === 'this-week') {
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay()); // Start from Sunday
-        startDate = startOfWeek.toISOString().split('T')[0];
-        endDate = now.toISOString().split('T')[0]; // Cap at today
+        const s = new Date(now); s.setDate(now.getDate() - now.getDay());
+        startDate = s.toISOString().split('T')[0]; endDate = now.toISOString().split('T')[0];
       } else if (visitFilter === 'this-month') {
         startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        endDate = now.toISOString().split('T')[0]; // Cap at today instead of end of month
+        endDate = now.toISOString().split('T')[0];
       } else if (visitFilter === 'last-month') {
         startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
         endDate = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
       }
-
       try {
-        const data = await API.getEmployeeStatsOptimized(
-          Number(id),
-          startDate,
-          endDate,
-          visitPage - 1,
-          visitPageSize,
-          'id,desc',
-        );
-        setVisits((data.visitPage.content || []) as Visit[]);
-        setVisitTotalElements(data.visitPage.totalElements || 0);
-        setVisitTotalPages(Math.max(data.visitPage.totalPages || 1, 1));
-      } catch (error) {
-        console.error("Error fetching visits and stats:", error);
+        const page = await visitsApi.getCommonVisits(token, {
+          page: visitPage - 1,
+          size: visitPageSize,
+          from: startDate,
+          to: endDate,
+          assignedEmployeeId: employeeIdNum,
+        });
+        if (cancelled) return;
+        setVisits(page.content as unknown as Visit[]);
+        setVisitTotalElements(page.totalElements);
+        setVisitTotalPages(Math.max(page.totalPages || 1, 1));
+      } catch (e) {
+        if (cancelled) return;
+        setVisitsError(e instanceof Error ? e.message : 'Failed to load visits');
+        setVisits([]);
+      } finally {
+        if (!cancelled) setVisitsLoading(false);
       }
     };
+    void fetchVisits();
+    return () => { cancelled = true; };
+  }, [token, employeeIdNum, visitFilter, filtersHydrated, visitPage, visitPageSize]);
 
-    fetchVisitsAndStats();
-  }, [token, id, visitFilter, filtersHydrated, visitPage, visitPageSize]);
-
+  // Expenses — documented GET /api/hr/expenses/by-employee
   useEffect(() => {
+    if (expenseDateRangeInvalid || !token || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
     const fetchExpenses = async () => {
-      if (expenseDateRangeInvalid) return;
-      if (token && id) {
-        const start = expenseStartDate ? expenseStartDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
-        const end = expenseEndDate ? expenseEndDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-30`;
-        try {
-          const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/getByEmployeeAndDate?start=${start}&end=${end}&id=${id}`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          const data = await response.json();
-          setExpenses(data);
-        } catch (error) {
-          console.error("Error fetching expenses:", error);
-        }
+      setExpensesLoading(true);
+      setExpensesError(null);
+      const start = expenseStartDate ? expenseStartDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
+      const end = expenseEndDate ? expenseEndDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-30`;
+      try {
+        const page = await expensesApi.getByEmployee(token, employeeIdNum, start, end, 0, 50);
+        if (cancelled) return;
+        setExpenses(page.content as unknown as Expense[]);
+      } catch (e) {
+        if (cancelled) return;
+        setExpensesError(e instanceof Error ? e.message : 'Failed to load expenses');
+        setExpenses([]);
+      } finally {
+        if (!cancelled) setExpensesLoading(false);
       }
     };
+    void fetchExpenses();
+    return () => { cancelled = true; };
+  }, [token, employeeIdNum, expenseStartDate, expenseEndDate, expenseDateRangeInvalid]);
 
-    fetchExpenses();
-  }, [token, id, expenseStartDate, expenseEndDate, expenseDateRangeInvalid]);
+  // Attendance — documented GET /api/hr/attendance/logs/by-employee
+  const [attendanceYear] = useState(new Date().getFullYear());
+  const [attendanceMonth] = useState(new Date().getMonth() + 1);
+  // Keep selectedYear/selectedMonth for attendance to reuse existing state, but map correctly
+  // attendance tab uses selectedYear/selectedMonth already defined as visit filter? Actually we have selectedYear/selectedMonth for visits? No, we have selectedYear/selectedMonth for attendance
+  // The page already has selectedYear/selectedMonth state for attendance
 
   useEffect(() => {
-    const fetchAttendanceStats = async () => {
-      if (token && id) {
-        try {
-          const start = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
-          const end = format(new Date(selectedYear, selectedMonth, 0), 'yyyy-MM-dd');
-          const data = await API.getEmployeeDashboardSummary(Number(id), start, end);
-          setAttendanceStats({ statsDto: data.statsDto });
-        } catch (error) {
-          console.error("Error fetching attendance stats:", error);
-        }
+    if (!token || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
+    const fetchAttendance = async () => {
+      setAttendanceLoading(true);
+      setAttendanceError(null);
+      try {
+        const start = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+        const endDateObj = new Date(selectedYear, selectedMonth, 0);
+        const end = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`;
+        const page = await attendanceApi.getByEmployee(token, employeeIdNum, start, end, 0, 50);
+        if (cancelled) return;
+        // Summarize small display from bounded page per guide
+        const fullDays = page.content.filter((r: unknown) => {
+          const s = (r as Record<string, unknown>).attendanceStatus as string;
+          return typeof s === 'string' && s.toLowerCase().includes('full');
+        }).length;
+        const halfDays = page.content.filter((r: unknown) => {
+          const s = (r as Record<string, unknown>).attendanceStatus as string;
+          return typeof s === 'string' && s.toLowerCase().includes('half');
+        }).length;
+        const absences = page.content.length - fullDays - halfDays;
+        setAttendanceStats({ statsDto: { fullDays, halfDays, absences }, pageMeta: { totalElements: page.totalElements } });
+      } catch (e) {
+        if (cancelled) return;
+        setAttendanceError(e instanceof Error ? e.message : 'Failed to load attendance');
+        setAttendanceStats(null);
+      } finally {
+        if (!cancelled) setAttendanceLoading(false);
       }
     };
+    void fetchAttendance();
+    return () => { cancelled = true; };
+  }, [token, employeeIdNum, selectedYear, selectedMonth]);
 
-    fetchAttendanceStats();
-  }, [token, id, selectedYear, selectedMonth]);
-
+  // Salary — documented GET /api/hr/salary/date-range-breakdown
   useEffect(() => {
-    const fetchDailyPricing = async () => {
-      if (pricingDateRangeInvalid) return;
-      if (token && id) {
-        const start = pricingStartDate ? pricingStartDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
-        const end = pricingEndDate ? pricingEndDate.toISOString().split('T')[0] : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-30`;
-        try {
-          const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/brand/getByDateRangeForEmployee?start=${start}&end=${end}&id=${id}`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          const data = await response.json();
-          setDailyPricing(data);
-        } catch (error) {
-          console.error("Error fetching daily pricing:", error);
-        }
+    if (!token || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
+    const fetchSalary = async () => {
+      setSalaryLoading(true);
+      setSalaryError(null);
+      try {
+        const start = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+        const endDateObj = new Date(selectedYear, selectedMonth, 0);
+        const end = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`;
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/hr/salary/date-range-breakdown?employeeId=${employeeIdNum}&from=${start}&to=${end}`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+        if (!res.ok) throw new Error(`Salary breakdown failed (${res.status})`);
+        const data = await res.json();
+        if (cancelled) return;
+        setSalaryData(Array.isArray(data) ? { content: data } : data);
+      } catch (e) {
+        if (cancelled) return;
+        setSalaryError(e instanceof Error ? e.message : 'Failed to load salary');
+        setSalaryData(null);
+      } finally {
+        if (!cancelled) setSalaryLoading(false);
       }
     };
+    void fetchSalary();
+    return () => { cancelled = true; };
+  }, [token, employeeIdNum, selectedYear, selectedMonth]);
 
-    fetchDailyPricing();
-  }, [token, id, pricingStartDate, pricingEndDate, pricingDateRangeInvalid]);
+  // Targets — documented GET /api/hr/targets
+  useEffect(() => {
+    if (!token || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
+    const fetchTargets = async () => {
+      setTargetsLoading(true);
+      setTargetsError(null);
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/hr/targets?employeeId=${employeeIdNum}&year=${selectedYear}&month=${selectedMonth}&page=0&size=20`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+        if (!res.ok) throw new Error(`Targets failed (${res.status})`);
+        const data = await res.json();
+        if (cancelled) return;
+        const content = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>).content) ? (data as Record<string, unknown>).content as Record<string, unknown>[] : [];
+        setTargets(content);
+      } catch (e) {
+        if (cancelled) return;
+        setTargetsError(e instanceof Error ? e.message : 'Failed to load targets');
+        setTargets([]);
+      } finally {
+        if (!cancelled) setTargetsLoading(false);
+      }
+    };
+    void fetchTargets();
+    return () => { cancelled = true; };
+  }, [token, employeeIdNum, selectedYear, selectedMonth]);
 
+  // Tracking — documented GET /api/hr/tracking/*
+  useEffect(() => {
+    if (!token || Number.isNaN(employeeIdNum)) return;
+    let cancelled = false;
+    const fetchTracking = async () => {
+      setTrackingLoading(true);
+      setTrackingError(null);
+      try {
+        const [currentRes, historyRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/hr/tracking/current-location/${employeeIdNum}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } }),
+          fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/hr/tracking/location-history/${employeeIdNum}?from=${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01T00:00:00&to=${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(new Date(selectedYear, selectedMonth, 0).getDate()).padStart(2, '0')}T23:59:59&page=0&size=20`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } }),
+        ]);
+        if (cancelled) return;
+        let current: Record<string, unknown> | null = null;
+        let history: Record<string, unknown>[] = [];
+        if (currentRes.ok) {
+          const d = await currentRes.json();
+          current = (d && typeof d === 'object' ? d : { data: d }) as Record<string, unknown>;
+        } else if (currentRes.status !== 404) {
+          throw new Error(`Current location failed (${currentRes.status})`);
+        }
+        if (historyRes.ok) {
+          const d = await historyRes.json();
+          const content = Array.isArray(d) ? d : Array.isArray((d as Record<string, unknown>).content) ? (d as Record<string, unknown>).content as Record<string, unknown>[] : [];
+          history = content;
+        } else if (historyRes.status !== 404) {
+          throw new Error(`History failed (${historyRes.status})`);
+        }
+        setTrackingCurrent(current);
+        setTrackingHistory(history);
+      } catch (e) {
+        if (cancelled) return;
+        setTrackingError(e instanceof Error ? e.message : 'Failed to load tracking');
+        setTrackingCurrent(null);
+        setTrackingHistory([]);
+      } finally {
+        if (!cancelled) setTrackingLoading(false);
+      }
+    };
+    void fetchTracking();
+    return () => { cancelled = true; };
+  }, [token, employeeIdNum, selectedYear, selectedMonth]);
 
   const paginatedVisits = visits;
   const totalVisitPages = visitTotalPages;
@@ -401,6 +664,15 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
       <Head>
         <title>{employeeData ? `${employeeData.firstName} ${employeeData.lastName}` : 'Employee Details'}</title>
       </Head>
+
+      {employeeGap && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <strong>Backend gap:</strong> {employeeGap}
+        </div>
+      )}
+      {employeeError && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{employeeError}</div>
+      )}
 
       <Card className="gap-0 py-0 shadow-none">
         <CardContent className="p-4">
@@ -530,6 +802,9 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         {Math.min(visitPage * visitPageSize, visitTotalElements)} of {visitTotalElements}
                       </p>
                     </div>
+                    {visitsLoading && <div className="rounded-md border p-4 text-center text-sm text-muted-foreground">Loading visits…</div>}
+                    {visitsError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{visitsError}</div>}
+                    {!visitsLoading && !visitsError && (
                     <div className="space-y-3">
                       {paginatedVisits.length === 0 ? (
                         <div className="rounded-lg border bg-muted/30 p-5 text-center text-sm text-muted-foreground">
@@ -552,9 +827,9 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                   <div>
-                                    <h4 className="font-semibold text-sm">{visit.storeName}</h4>
+                                    <h4 className="font-semibold text-sm">{visit.storeName || (visit as unknown as { parentName?: string }).parentName || `Visit #${visit.id}`}</h4>
                                     <p className="text-xs text-muted-foreground">
-                                      Visit on {format(new Date(visit.visit_date), 'MMM dd, yyyy')}
+                                      Visit on {visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : visit.scheduledVisitDate ? format(new Date(visit.scheduledVisitDate), 'MMM dd, yyyy') : '—'}
                                     </p>
                                   </div>
                                 </div>
@@ -565,19 +840,8 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                                 </span>
                               </div>
                               <div className="text-sm text-muted-foreground mb-2">
-                                <span className="font-medium">Purpose:</span> {visit.purpose}
+                                <span className="font-medium">Purpose:</span> {visit.purpose || '—'}
                               </div>
-                              {visit.checkinTime && visit.checkoutTime && (
-                                <div className="text-sm text-muted-foreground">
-                                  <span className="font-medium">Duration:</span>{' '}
-                                  {formatDuration(
-                                    intervalToDuration({
-                                      start: new Date(`${visit.checkinDate}T${visit.checkinTime}`),
-                                      end: new Date(`${visit.checkoutDate}T${visit.checkoutTime}`),
-                                    })
-                                  )}
-                                </div>
-                              )}
                               <div className="flex justify-end mt-4">
                                 <Button variant="outline" size="sm" onClick={() => handleViewVisit(visit.id)}>
                                   View Visit
@@ -588,6 +852,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         })
                       )}
                     </div>
+                    )}
                     {paginatedVisits.length > 0 && totalVisitPages > 1 && (
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t">
                         <p className="text-sm text-muted-foreground">
@@ -645,6 +910,9 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                       </Select>
                     </div>
 
+                    {attendanceLoading && <div className="rounded-md border p-4 text-center text-sm text-muted-foreground">Loading attendance…</div>}
+                    {attendanceError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{attendanceError}</div>}
+                    {!attendanceLoading && !attendanceError && (
                     <div className="rounded-lg border bg-card p-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="text-center">
@@ -667,6 +935,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                         </div>
                       </div>
                     </div>
+                    )}
                   </div>
                 )}
 
@@ -708,9 +977,15 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                     </div>
 
                     <DateRangeError fromDate={expenseStartDate} toDate={expenseEndDate} />
+                    {expensesLoading && <div className="rounded-md border p-4 text-center text-sm text-muted-foreground">Loading expenses…</div>}
+                    {expensesError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{expensesError}</div>}
 
+                    {!expensesLoading && !expensesError && (
                     <div className="space-y-3">
-                      {expenses.map((expense) => (
+                      {expenses.length === 0 ? (
+                        <div className="rounded-lg border bg-muted/30 p-5 text-center text-sm text-muted-foreground">No expenses for this period</div>
+                      ) : (
+                      expenses.map((expense) => (
                         <div key={expense.id} className="rounded-lg border bg-card p-4">
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -718,7 +993,7 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                               <div>
                                 <h4 className="font-semibold text-sm capitalize">{expense.type}</h4>
                                 <p className="text-xs text-muted-foreground">
-                                  {format(new Date(expense.expenseDate), 'MMM dd, yyyy')}
+                                  {expense.expenseDate ? format(new Date(expense.expenseDate), 'MMM dd, yyyy') : '—'}
                                 </p>
                               </div>
                             </div>
@@ -734,70 +1009,146 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
                             <span className="font-medium">Amount:</span> ₹{expense.amount.toFixed(2)}
                           </div>
                         </div>
-                      ))}
+                      )))}
                     </div>
+                    )}
                   </div>
                 )}
 
-                {activeTab === 'daily-pricing' && (
+                {activeTab === 'salary' && (
                   <div className="space-y-4">
-        <div className="flex items-center gap-4">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-[200px] justify-start">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {pricingStartDate ? format(pricingStartDate, 'MMM dd, yyyy') : 'Select Start Date'}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <SpacedCalendar
-                            mode="single"
-                            selected={pricingStartDate}
-                            onSelect={setPricingStartDate}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-[200px] justify-start">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {pricingEndDate ? format(pricingEndDate, 'MMM dd, yyyy') : 'Select End Date'}
-          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <SpacedCalendar
-                            mode="single"
-                            selected={pricingEndDate}
-                            onSelect={setPricingEndDate}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-        </div>
-        <DateRangeError fromDate={pricingStartDate} toDate={pricingEndDate} />
-        
-                    <div className="space-y-3">
-                      {dailyPricing.map((pricing) => (
-                        <div key={pricing.id} className="rounded-lg border bg-card p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-lg">🏷️</span>
-                              <div>
-                                <h4 className="font-semibold text-sm capitalize">{pricing.brandName}</h4>
-                                <p className="text-xs text-muted-foreground">{formatCityLabel(pricing.city)}</p>
-                              </div>
+                    {salaryLoading && <div className="rounded-md border p-4 text-center text-sm text-muted-foreground">Loading salary breakdown…</div>}
+                    {salaryError && isPermissionError(salaryError) && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">You do not have permission to view salary data for this employee.</div>
+                    )}
+                    {salaryError && !isPermissionError(salaryError) && (
+                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{salaryError}</div>
+                    )}
+                    {!salaryLoading && !salaryError && (() => {
+                      const rows = normalizeSalaryRows(salaryData);
+                      if (rows.length === 0) {
+                        return <div className="rounded-lg border bg-muted/30 p-5 text-center text-sm text-muted-foreground">No salary data for this period</div>;
+                      }
+                      return (
+                        <div className="space-y-4">
+                          <div className="rounded-lg border bg-card overflow-hidden">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted/50">
+                                  <tr className="text-left">
+                                    <th className="px-3 py-2 font-medium">Date</th>
+                                    <th className="px-3 py-2 font-medium">Attendance</th>
+                                    <th className="px-3 py-2 font-medium text-right">Visits</th>
+                                    <th className="px-3 py-2 font-medium text-right">Base Salary</th>
+                                    <th className="px-3 py-2 font-medium text-right">Travel Allowance</th>
+                                    <th className="px-3 py-2 font-medium text-right">Dearness Allowance</th>
+                                    <th className="px-3 py-2 font-medium text-right">Approved Expenses</th>
+                                    <th className="px-3 py-2 font-medium text-right">Total Salary</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((row) => (
+                                    <tr key={row.date} className="border-t">
+                                      <td className="px-3 py-2 whitespace-nowrap">{formatDateLabel(row.date)}</td>
+                                      <td className="px-3 py-2"><span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{row.attendanceStatus}</span></td>
+                                      <td className="px-3 py-2 text-right">{row.visitCount} <span className="text-muted-foreground">({row.completedVisits}/{row.totalVisits})</span></td>
+                                      <td className="px-3 py-2 text-right">{formatCurrency(row.baseSalary)}</td>
+                                      <td className="px-3 py-2 text-right">{formatCurrency(row.travelAllowance)}</td>
+                                      <td className="px-3 py-2 text-right">{formatCurrency(row.dearnessAllowance)}</td>
+                                      <td className="px-3 py-2 text-right">{formatCurrency(row.approvedExpenses)}</td>
+                                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(row.totalSalary)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                            <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded-full">
-                              {formatCityLabel(pricing.city)}
-                            </span>
                           </div>
-                          <div className="text-2xl font-bold text-foreground">
-                            ₹{pricing.price.toFixed(2)}
+                          <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {rows.slice(0, 1).map((r) => (
+                                <span key="meta" className="contents">
+                                  <span>Full month salary: <strong className="text-foreground">{formatCurrency(r.fullMonthSalary)}</strong></span>
+                                  <span>Daily salary: <strong className="text-foreground">{formatCurrency(r.dailySalary)}</strong></span>
+                                  <span>Car distance: <strong className="text-foreground">{formatDistance(r.carDistance)}</strong></span>
+                                  <span>Bike distance: <strong className="text-foreground">{formatDistance(r.bikeDistance)}</strong></span>
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {activeTab === 'targets' && (
+                  <div className="space-y-4">
+                    {targetsLoading && <div className="rounded-md border p-4 text-center text-sm text-muted-foreground">Loading targets…</div>}
+                    {targetsError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{targetsError}</div>}
+                    {!targetsLoading && !targetsError && targets.length === 0 && (
+                      <div className="rounded-lg border bg-muted/30 p-5 text-center text-sm text-muted-foreground">No targets for this period</div>
+                    )}
+                    {!targetsLoading && !targetsError && targets.length > 0 && (
+                      <div className="space-y-3">
+                        {targets.map((t, idx) => (
+                          <div key={idx} className="rounded-lg border bg-card p-4 text-sm">
+                            <div className="font-medium">Target #{(t as Record<string, unknown>).id as number ?? idx + 1}</div>
+                            <div className="text-xs text-muted-foreground">{JSON.stringify(t)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'tracking' && (
+                  <div className="space-y-4">
+                    {trackingLoading && <div className="rounded-md border p-4 text-center text-sm text-muted-foreground">Loading tracking…</div>}
+                    {trackingError && isPermissionError(trackingError) && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">You do not have permission to view tracking data for this employee.</div>
+                    )}
+                    {trackingError && !isPermissionError(trackingError) && (
+                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">{trackingError}</div>
+                    )}
+                    {!trackingLoading && !trackingError && (() => {
+                      const current = normalizeTrackingCurrent(trackingCurrent);
+                      const history = normalizeTrackingHistory(trackingHistory);
+                      return (
+                        <>
+                          <div className="rounded-lg border bg-card p-4">
+                            <h4 className="font-medium text-sm">Current location</h4>
+                            {current ? (
+                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                <div><span className="text-muted-foreground">Latitude</span><div className="font-medium text-sm">{current.latitude?.toFixed(6) ?? '—'}</div></div>
+                                <div><span className="text-muted-foreground">Longitude</span><div className="font-medium text-sm">{current.longitude?.toFixed(6) ?? '—'}</div></div>
+                                <div><span className="text-muted-foreground">Captured at</span><div className="font-medium">{formatTimestampLabel(current.capturedAt)}</div></div>
+                                <div><span className="text-muted-foreground">Provider</span><div className="font-medium">{current.provider ?? '—'}</div></div>
+                                <div><span className="text-muted-foreground">Accuracy</span><div className="font-medium">{current.accuracyMeters != null ? `${current.accuracyMeters} m` : '—'}</div></div>
+                                <div><span className="text-muted-foreground">Battery</span><div className="font-medium">{current.batteryPercent != null ? `${current.batteryPercent}%` : '—'}</div></div>
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-sm text-muted-foreground">No current location for this period</p>
+                            )}
+                          </div>
+                          <div className="rounded-lg border bg-card p-4">
+                            <h4 className="font-medium text-sm">Location history ({history.length})</h4>
+                            {history.length === 0 ? (
+                              <p className="mt-2 text-sm text-muted-foreground">No history for this period</p>
+                            ) : (
+                              <div className="mt-3 space-y-2 max-h-72 overflow-auto pr-1">
+                                {history.slice(0, 20).map((pt) => (
+                                  <div key={String(pt.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                                    <span className="font-medium">{formatTimestampLabel(pt.capturedAt)}</span>
+                                    <span className="font-mono">{pt.latitude?.toFixed(6)}, {pt.longitude?.toFixed(6)}</span>
+                                    <span className="text-muted-foreground">{pt.provider ?? 'GPS'} {pt.accuracyMeters != null ? `· ${pt.accuracyMeters} m` : ''} {pt.batteryPercent != null ? `· ${pt.batteryPercent}%` : ''}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -807,4 +1158,4 @@ export default function SalesExecutivePage({ params }: { params: Promise<{ id: s
       </div>
     </div>
   );
-};
+}

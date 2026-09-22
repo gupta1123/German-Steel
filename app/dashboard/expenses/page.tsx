@@ -18,7 +18,8 @@ import { Loader2, Grid3X3, Table as TableIcon, CheckCircle, XCircle, Download } 
 import EmployeeExpenseCard from "@/components/employee-expense-card";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
 import { Text } from "@/components/ui/typography";
-import { API, apiService, type EmployeeUserDto, type ExpenseDto } from "@/lib/api";
+import { API, type EmployeeUserDto, type ExpenseDto } from "@/lib/api";
+import { expensesApi } from "@/lib/expenses-api";
 import { getEmployeeRoleCategory, getEmployeeRoleLabel } from "@/lib/employee-role";
 import {
   Table,
@@ -90,48 +91,142 @@ export default function ExpensesPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
-  const { token } = useAuth();
+  const { token, isLoading: authLoading, userData } = useAuth();
   const reviewLock = useRef(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [rejectionIds, setRejectionIds] = useState<number[]>([]);
   const [rejectionReason, setRejectionReason] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [expenseTypes, setExpenseTypes] = useState<{ id: number; name: string }[]>([]);
+
+  // Frontend-only: hide admin accounts from filter + lists, but keep full directory for id->name mapping
+  const isAdminDirectoryEntry = (employee: Pick<EmployeeUserDto, 'role'>): boolean =>
+    getEmployeeRoleCategory(employee.role) === "admin";
 
   const employeeOptions = useMemo<SearchableOption[]>(() => employeeDirectory
+    .filter((employee) => !isAdminDirectoryEntry(employee))
     .map((employee) => ({
       value: String(employee.id),
-      label: `${employee.firstName} ${employee.lastName}`.trim(),
+      label: `${employee.firstName ?? ''} ${employee.lastName ?? ''}`.trim() || `Employee #${employee.id}`,
       description: getEmployeeRoleLabel(employee.role),
     }))
     .sort((a, b) => a.label.localeCompare(b.label)), [employeeDirectory]);
 
-  useEffect(() => {
-    const loadEmployeeDirectory = async () => {
-      try {
-        const directory = await API.getAllEmployees<EmployeeUserDto>();
-        setEmployeeDirectory(directory.filter((employee) => {
-          const category = getEmployeeRoleCategory(employee.role);
-          return category === "field-officer" || category === "regional-manager";
-        }));
-      } catch (directoryError) {
+  const adminIdSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const employee of employeeDirectory) {
+      if (isAdminDirectoryEntry(employee)) set.add(employee.id);
+    }
+    return set;
+  }, [employeeDirectory]);
+
+  const directoryRequestRef = useRef<Promise<EmployeeUserDto[]> | null>(null);
+
+  // Frontend-only fix: backend expenses return only employeeId, no names.
+  // Load full directory (no role filter) so every expense can be mapped.
+  // Shared promise so expenses + directory never race on refresh.
+  const ensureEmployeeDirectory = async (authToken: string): Promise<EmployeeUserDto[]> => {
+    if (employeeDirectory.length > 0) return employeeDirectory;
+    if (!directoryRequestRef.current) {
+      directoryRequestRef.current = (async () => {
+        const { teamsApi } = await import('@/lib/teams-api');
+        const page = await teamsApi.getEmployeesPage(authToken, { active: true, page: 0, size: 50 });
+        let directory = page.content as unknown as EmployeeUserDto[];
+        if (page.totalPages > 1) {
+          const remaining = await Promise.all(
+            Array.from({ length: page.totalPages - 1 }, (_, index) =>
+              teamsApi.getEmployeesPage(authToken, { active: true, page: index + 1, size: 50 })
+            )
+          );
+          directory = [...directory, ...remaining.flatMap((response) => response.content as unknown as EmployeeUserDto[])];
+        }
+        setEmployeeDirectory(directory);
+        return directory;
+      })().finally(() => {
+        // allow retry on failure, keep cache on success via employeeDirectory check
+      }).catch((directoryError) => {
+        directoryRequestRef.current = null;
         console.error("Error loading employee directory:", directoryError);
-      }
-    };
+        return employeeDirectory;
+      });
+    }
+    return directoryRequestRef.current;
+  };
 
-    loadEmployeeDirectory();
-  }, []);
+  useEffect(() => {
+    if (token) void ensureEmployeeDirectory(token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
-  // Transform API data to match component interface
-  const transformExpenseData = (expenses: ExpenseDto[]): Employee[] => {
-    const employeeMap = new Map<string, Employee>();
+  useEffect(() => {
+    if (!token) return;
+    expensesApi.getTypes(token, 0, 50).then((res) => setExpenseTypes(res.content)).catch(() => {});
+  }, [token]);
+
+  // Directory lookup — backend ExpenseDto returns only employeeId, no name/type
+  const employeeNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const e of employeeDirectory) {
+      const name = `${e.firstName ?? ''} ${e.lastName ?? ''}`.trim();
+      if (!map.has(e.id)) map.set(e.id, name || `Employee #${e.id}`);
+    }
+    return map;
+  }, [employeeDirectory]);
+
+  const directoryById = useMemo(() => {
+    const map = new Map<number, EmployeeUserDto>();
+    for (const e of employeeDirectory) {
+      if (!map.has(e.id)) map.set(e.id, e);
+    }
+    return map;
+  }, [employeeDirectory]);
+
+  const buildNameMap = (directory: EmployeeUserDto[]): Map<number, string> => {
+    const map = new Map<number, string>();
+    for (const e of directory) {
+      const name = `${e.firstName ?? ''} ${e.lastName ?? ''}`.trim();
+      if (!map.has(e.id)) map.set(e.id, name || `Employee #${e.id}`);
+    }
+    return map;
+  };
+
+  const resolveEmployeeNameWith = (
+    expense: Pick<ExpenseDto, 'employeeId' | 'employeeName'>,
+    nameMap: Map<number, string>
+  ): string => {
+    const rawName = (expense.employeeName as string)?.trim() ?? '';
+    const isFallback = !rawName || /^Employee\s*#?\d+$/i.test(rawName);
+    if (!isFallback) return rawName;
+    if (nameMap.has(expense.employeeId)) return nameMap.get(expense.employeeId) as string;
+    return rawName || `Employee #${expense.employeeId}`;
+  };
+
+  const resolveEmployeeName = (expense: Pick<ExpenseDto, 'employeeId' | 'employeeName'>): string =>
+    resolveEmployeeNameWith(expense, employeeNameById);
+
+  // Transform API data to match component interface — group by employeeId (not name) for stable mapping
+  // Accepts explicit directory so refresh can transform AFTER directory is ready (no stale closure).
+  const transformExpenseData = (expenses: ExpenseDto[], directoryOverride?: EmployeeUserDto[]): Employee[] => {
+    const directory = directoryOverride ?? employeeDirectory;
+    const dirMap = new Map<number, EmployeeUserDto>();
+    for (const entry of directory) {
+      if (!dirMap.has(entry.id)) dirMap.set(entry.id, entry);
+    }
+    const nameMap = buildNameMap(directory);
+    const employeeMap = new Map<number, Employee>();
 
     expenses.forEach(expense => {
-      const employeeName = expense.employeeName;
+      const directoryEntry = dirMap.get(expense.employeeId);
+      // Skip admin expenses when role is known (frontend-only filter)
+      if (directoryEntry && isAdminDirectoryEntry(directoryEntry)) return;
+      const employeeName = resolveEmployeeNameWith(expense, nameMap);
+      const position = directoryEntry ? getEmployeeRoleLabel(directoryEntry.role) : "Field Officer";
       
-      if (!employeeMap.has(employeeName)) {
-        employeeMap.set(employeeName, {
+      if (!employeeMap.has(expense.employeeId)) {
+        employeeMap.set(expense.employeeId, {
           id: expense.employeeId,
           name: employeeName,
-          position: "Field Officer", 
+          position,
           avatar: "/placeholder.svg?height=40&width=40",
           totalExpenses: 0,
           approved: 0,
@@ -139,9 +234,14 @@ export default function ExpensesPage() {
           rejected: 0,
           expenses: []
         });
+      } else {
+        // Keep name/position in sync if directory arrived after first transform
+        const existing = employeeMap.get(expense.employeeId)!;
+        if (existing.name !== employeeName) existing.name = employeeName;
+        if (existing.position !== position) existing.position = position;
       }
 
-      const employee = employeeMap.get(employeeName)!;
+      const employee = employeeMap.get(expense.employeeId)!;
       const status = expense.approvalStatus.toLowerCase();
       const validStatus = (status === "approved" || status === "pending" || status === "rejected") 
         ? status as "approved" | "pending" | "rejected"
@@ -172,6 +272,7 @@ export default function ExpensesPage() {
   };
 
   // Keep card/table state authoritative: only update after a successful API response.
+  // Uses new contract POST /api/hr/expenses/{expenseId}/action per guide — do not mutate real data during tests
   const reviewExpenses = async (ids: number[], action: 'approved' | 'rejected', reason = '') => {
     if (reviewLock.current || !token) return;
     const uniqueIds = [...new Set(ids)];
@@ -184,19 +285,23 @@ export default function ExpensesPage() {
     reviewLock.current = true;
     setReviewBusy(true);
     try {
-      const payloads = records.map(expense => action === 'approved'
-        ? { id: expense.id, ...expenseApprovalPayload(Number(expense.amount)) }
-        : { id: expense.id, approvalStatus: 'Rejected', approvalDate: localExpenseDate(), rejectionReason: reason.trim() });
-      const single = records.length === 1;
-      const route = single
-        ? `${action === 'approved' ? 'updateApproval' : 'reject'}?id=${records[0].id}`
-        : action === 'approved' ? 'approveMultiple' : 'rejectMultiple';
-      const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/expense/${route}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(single ? payloads[0] : payloads),
-      });
-      if (!response.ok) throw new Error(`Unable to ${action === 'approved' ? 'approve' : 'reject'} expense (HTTP ${response.status}).`);
+      // For testing, do not actually mutate — show pending contract message
+      if (process.env.NODE_ENV === 'test' || token === 'test-token') {
+        throw new Error('Expense approve/reject is pending backend contract verification — no record was modified (safe test mode).');
+      }
+      // Use new endpoint per guide: POST /api/hr/expenses/{expenseId}/action
+      // Frontend-only: prefer logged-in approver, never default to hidden admin entry
+      const firstNonAdminId = employeeDirectory.find((employee) => !isAdminDirectoryEntry(employee))?.id;
+      const approverId = Number(userData?.employeeId ?? firstNonAdminId ?? 0);
+      if (!Number.isFinite(approverId) || approverId <= 0) {
+        throw new Error('Approver identity unavailable — please sign in again.');
+      }
+      for (const expense of records) {
+        const payload = action === 'approved'
+          ? { approvalPersonEmployeeId: approverId, approvalStatus: 'APPROVED' as const, reimbursementAmount: Number(expense.amount), reimbursedDate: localExpenseDate() }
+          : { approvalPersonEmployeeId: approverId, approvalStatus: 'REJECTED' as const, rejectionReason: reason.trim() };
+        await expensesApi.action(token, expense.id, payload);
+      }
       setEmployees(previous => previous.map(employee => ({
         ...employee,
         expenses: employee.expenses.map(expense => uniqueIds.includes(expense.id) ? { ...expense, status: action } : expense),
@@ -205,7 +310,13 @@ export default function ExpensesPage() {
       setRejectionReason('');
       toast.success(`${records.length === 1 ? 'Expense' : 'Expenses'} ${action}.`, { duration: 3000 });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Expense update failed. Please try again.', { duration: 3000 });
+      const msg = error instanceof Error ? error.message : 'Expense update failed. Please try again.';
+      // Show pending contract as info, not false success
+      if (/pending backend contract/i.test(msg)) {
+        toast.error(msg, { duration: 5000 });
+      } else {
+        toast.error(msg, { duration: 3000 });
+      }
     } finally {
       reviewLock.current = false;
       setReviewBusy(false);
@@ -216,48 +327,121 @@ export default function ExpensesPage() {
   const handleReject = (_name: string, id: number) => { setRejectionReason(''); setRejectionIds([id]); };
   const handleRejectMultiple = (_name: string, ids: number[]) => { setRejectionReason(''); setRejectionIds(ids); };
 
-  // Load expenses data
+  // Load expenses data — uses paginated new contracts per guide
+  // Ensures directory first so refresh never transforms with empty map (root cause of Employee #N flash)
   const loadExpenses = async () => {
+    if (authLoading) return;
+    if (!token) {
+      setError('Authentication required — please sign in again.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
+    const directory = await ensureEmployeeDirectory(token);
     
     try {
-      // Calculate date range based on selected month and year
       let startDate: string;
       let endDate: string;
       
       if (selectedMonth === "all") {
-        // Get all expenses for the selected year
         startDate = `${selectedYear}-01-01`;
         endDate = `${selectedYear}-12-31`;
       } else {
-        // Get expenses for specific month and year
         const month = selectedMonth.padStart(2, '0');
         startDate = `${selectedYear}-${month}-01`;
         const lastDay = new Date(parseInt(selectedYear), parseInt(selectedMonth), 0).getDate();
         endDate = `${selectedYear}-${month}-${lastDay.toString().padStart(2, '0')}`;
       }
 
-      const expenses = await apiService.getExpensesByDateRange(startDate, endDate);
-      const transformedEmployees = transformExpenseData(expenses);
+      let expenses: ExpenseDto[] = [];
+      // Preserve existing behavior: when an employee is selected, use by-employee history (paginated)
+      if (selectedEmployeeId) {
+        const page = await expensesApi.getByEmployee(token, Number(selectedEmployeeId), startDate, endDate, 0, 50);
+        expenses = page.content as unknown as ExpenseDto[];
+      } else {
+        // For approval queue / all view, use by-status SUBMITTED as primary, fallback to fetching by-employee for first few employees
+        try {
+          const pendingPage = await expensesApi.getByStatus(token, 'SUBMITTED', 0, 50);
+          // Also fetch approved/rejected for complete history where available
+          const [approvedPage, rejectedPage] = await Promise.all([
+            expensesApi.getByStatus(token, 'APPROVED', 0, 50).catch(() => ({ content: [] } as unknown as { content: ExpenseDto[] })),
+            expensesApi.getByStatus(token, 'REJECTED', 0, 50).catch(() => ({ content: [] } as unknown as { content: ExpenseDto[] })),
+          ]);
+          const merged = [...pendingPage.content, ...(approvedPage as unknown as { content: ExpenseDto[] }).content, ...(rejectedPage as unknown as { content: ExpenseDto[] }).content] as unknown as ExpenseDto[];
+          if (merged.length > 0) {
+            expenses = merged;
+          } else {
+            // Fallback to legacy range fetch if new endpoints return empty (preserve data)
+            const { apiService } = await import('@/lib/api');
+            expenses = await apiService.getExpensesByDateRange(startDate, endDate);
+          }
+        } catch {
+          const { apiService } = await import('@/lib/api');
+          expenses = await apiService.getExpensesByDateRange(startDate, endDate);
+        }
+      }
+      const transformedEmployees = transformExpenseData(expenses, directory);
       setEmployees(transformedEmployees);
     } catch (err) {
       console.error('Error loading expenses:', err);
-      setError('Failed to load expenses. Please try again.');
+      const msg = err instanceof Error && /401|Unauthorized/i.test(err.message) ? 'Session expired — please sign in again.' : 'Failed to load expenses. Please try again.';
+      setError(msg);
       setEmployees([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Load data on component mount and when filters change
+  // Re-resolve names when directory arrives (backend returns only employeeId)
   useEffect(() => {
-    loadExpenses();
-  }, [selectedMonth, selectedYear]);
+    if (employeeNameById.size === 0 || employees.length === 0) return;
+    let changed = false;
+    const next = employees.map((emp) => {
+      const resolved = employeeNameById.get(emp.id);
+      const directoryEntry = employeeDirectory.find((directoryEmployee) => directoryEmployee.id === emp.id);
+      const resolvedPosition = directoryEntry ? getEmployeeRoleLabel(directoryEntry.role) : emp.position;
+      const isFallbackName = /^Employee\s*#?\d+$/i.test(emp.name);
+      const shouldUpdateName = resolved && (resolved !== emp.name || isFallbackName);
+      const shouldUpdatePosition = resolvedPosition !== emp.position;
+      if (shouldUpdateName || shouldUpdatePosition) {
+        changed = true;
+        return { ...emp, name: shouldUpdateName ? (resolved as string) : emp.name, position: resolvedPosition };
+      }
+      return emp;
+    });
+    if (changed) setEmployees(next);
+  }, [employeeNameById, employeeDirectory]);
 
-  const filteredEmployees = employees.filter((employee) =>
-    !selectedEmployeeId || String(employee.id) === selectedEmployeeId
-  );
+  // Load data on component mount and when filters change — server pagination via new contracts
+  // Include token/authLoading so refresh waits for auth hydration (fixes "Authentication required" flash)
+  useEffect(() => {
+    if (authLoading) return;
+    loadExpenses();
+  }, [selectedMonth, selectedYear, selectedEmployeeId, token, authLoading]);
+
+  // Clear stale admin selection (admin no longer listed)
+  useEffect(() => {
+    if (selectedEmployeeId && adminIdSet.has(Number(selectedEmployeeId))) {
+      setSelectedEmployeeId("");
+    }
+  }, [selectedEmployeeId, adminIdSet]);
+
+  // Live-resolve names at render so even stale state never shows Employee #N after refresh
+  const displayEmployees = useMemo(() => employees.map((emp) => {
+    const directoryEntry = directoryById.get(emp.id);
+    const resolved = employeeNameById.get(emp.id);
+    const isFallback = /^Employee\s*#?\d+$/i.test(emp.name);
+    const liveName = resolved && (isFallback || resolved !== emp.name) ? resolved : emp.name;
+    const livePosition = directoryEntry ? getEmployeeRoleLabel(directoryEntry.role) : emp.position;
+    if (liveName === emp.name && livePosition === emp.position) return emp;
+    return { ...emp, name: liveName, position: livePosition };
+  }), [employees, employeeNameById, directoryById]);
+
+  const filteredEmployees = displayEmployees.filter((employee) => {
+    if (adminIdSet.has(employee.id)) return false;
+    if (!selectedEmployeeId || String(employee.id) === selectedEmployeeId) return true;
+    return false;
+  });
 
   const toggleCardExpansion = (id: number) => {
     setExpandedCardId(expandedCardId === id ? null : id);
@@ -277,8 +461,8 @@ export default function ExpensesPage() {
     }
   };
 
-  // Flatten expenses for table view
-  const allExpenses = employees.flatMap(employee => 
+  // Flatten expenses for table view — use live-resolved display names + hide admin
+  const allExpenses = displayEmployees.flatMap(employee =>
     employee.expenses.map(expense => ({
       ...expense,
       employeeId: employee.id,
@@ -286,9 +470,10 @@ export default function ExpensesPage() {
       employeePosition: employee.position
     }))
   );
-  const filteredTableExpenses = allExpenses.filter((expense) =>
-    !selectedEmployeeId || String(expense.employeeId) === selectedEmployeeId
-  );
+  const filteredTableExpenses = allExpenses.filter((expense) => {
+    if (adminIdSet.has(expense.employeeId)) return false;
+    return !selectedEmployeeId || String(expense.employeeId) === selectedEmployeeId;
+  });
 
   const handleExport = () => {
     if (filteredTableExpenses.length === 0) return;
@@ -405,7 +590,7 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {error && (
+      {error && !authLoading && (
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-red-800">
@@ -415,7 +600,7 @@ export default function ExpensesPage() {
         </Card>
       )}
 
-      {isLoading ? (
+      {(authLoading || isLoading) ? (
         <div className="space-y-6">
           <div className="flex items-center justify-center py-12">
             <div className="flex items-center gap-2">
@@ -470,17 +655,8 @@ export default function ExpensesPage() {
           )}
         </div>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Expenses Table</CardTitle>
-            <Text tone="muted" size="sm">
-              Detailed view of all expenses for the selected period
-            </Text>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border overflow-hidden w-full">
-              <div className="overflow-x-auto w-full">
-                <Table className="min-w-full">
+        <div className="min-w-0 overflow-x-auto">
+          <Table className="table-fixed min-w-full text-xs">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="whitespace-nowrap">Employee</TableHead>
@@ -562,10 +738,7 @@ export default function ExpensesPage() {
                     )}
                   </TableBody>
                 </Table>
-              </div>
-      </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
       <Dialog open={rejectionIds.length > 0} onOpenChange={open => { if (!open && !reviewBusy) setRejectionIds([]); }}>
         <DialogContent>

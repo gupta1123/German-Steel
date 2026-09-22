@@ -1,52 +1,103 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Download, Eye, Loader2, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import AddCustomerModal from '@/components/AddCustomerModal';
 import { useAuth } from '@/components/auth-provider';
 import { getErrorMessage } from '@/lib/api-error';
 import { RetailAPI, type ApiPage, type RetailAccount } from '@/lib/retail-api';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
 
-const PAGE_SIZE = 20;
-const emptyPage: ApiPage<RetailAccount> = { content: [], number: 0, size: PAGE_SIZE, totalElements: 0, totalPages: 1 };
+const emptyPage: ApiPage<RetailAccount> = { content: [], number: 0, size: 10, totalElements: 0, totalPages: 1 };
 
-const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : '—';
-const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
+function Ellipsis({ value }: { value: string | number | null | undefined }) {
+  const displayValue = value === null || value === undefined || value === '' ? '—' : String(value);
+  return <span className="block min-w-0 truncate" title={displayValue}>{displayValue}</span>;
+}
 
-const statusClass = (status: RetailAccount['accountStatus']) => ({
-  ACTIVE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  PROSPECT: 'border-blue-200 bg-blue-50 text-blue-700',
-  DORMANT: 'border-amber-200 bg-amber-50 text-amber-700',
-  LOST: 'border-rose-200 bg-rose-50 text-rose-700',
-}[status]);
+const humanize = (value: string | null | undefined) =>
+  value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
+
+const formatLastActivity = (value: string | null | undefined): string => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const statusClassName = (status: RetailAccount['accountStatus']) => {
+  if (status === 'ACTIVE') return 'bg-emerald-50 text-emerald-700 ring-emerald-600/15';
+  if (status === 'PROSPECT') return 'bg-sky-50 text-sky-700 ring-sky-600/15';
+  if (status === 'DORMANT') return 'bg-amber-50 text-amber-700 ring-amber-600/15';
+  return 'bg-rose-50 text-rose-700 ring-rose-600/15';
+};
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
 export default function CustomersPage() {
-  const router = useRouter();
   const { token, userData, userRole } = useAuth();
+  const searchParams = useSearchParams();
+  const presetGroupId = searchParams?.get('groupId') ?? '';
   const [pageData, setPageData] = useState<ApiPage<RetailAccount>>(emptyPage);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [hasUserChosenPageSize, setHasUserChosenPageSize] = useState(false);
+
+  // Default to 10 rows per page as requested — no viewport auto-fill.
+  useEffect(() => {
+    if (hasUserChosenPageSize) return;
+    const calc = () => {
+      setPageSize(10);
+      return;
+      const h = window.innerHeight;
+      const w = window.innerWidth;
+      // Approximate: header+filters+pagination ~ 320px, row ~ 36px inc. borders
+      const available = h - 320;
+      const byHeight = Math.floor(available / 36);
+      let target = 10;
+      if (w >= 1536) target = Math.max(target, 20);
+      else if (w >= 1280) target = Math.max(target, 15);
+      if (byHeight >= 18) target = Math.max(target, 20);
+      else if (byHeight >= 14) target = Math.max(target, 15);
+      else if (byHeight >= 10) target = Math.max(target, 12);
+      target = Math.min(100, Math.max(5, target));
+      // Snap to nearest offered size to keep selector in sync (10/15/20 map to 10/25/50 buckets)
+      const snap = target <= 10 ? 10 : target <= 12 ? 12 : target <= 15 ? 15 : target <= 20 ? 20 : 25;
+      // Only use sizes the UI offers (10,25,50,100) unless snapped intermediate — allow intermediate for auto fill
+      setPageSize((prev) => (prev === snap ? prev : snap));
+    };
+    calc();
+    window.addEventListener('resize', calc);
+    return () => window.removeEventListener('resize', calc);
+  }, [hasUserChosenPageSize]);
   const [queryInput, setQueryInput] = useState('');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('ALL');
   const [clientType, setClientType] = useState('ALL');
   const [activeFilter, setActiveFilter] = useState('ACTIVE');
+  const [areFiltersVisible, setAreFiltersVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RetailAccount | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<{ id: number; firstName: string; lastName: string }[]>([]);
+
+  useEffect(() => {
+    if (searchParams?.get('create') === '1') setAddOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -56,48 +107,65 @@ export default function CustomersPage() {
     return () => window.clearTimeout(timer);
   }, [queryInput]);
 
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    RetailAPI.getEmployees(token).then((list) => {
+      if (!cancelled) setEmployees(list.map((e) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName })));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const ownerNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const e of employees) {
+      const name = [e.firstName, e.lastName].filter(Boolean).join(' ').trim();
+      if (!map.has(e.id)) map.set(e.id, name || `Employee #${e.id}`);
+    }
+    return map;
+  }, [employees]);
+  const resolveOwnerName = (r: Pick<RetailAccount, 'ownerEmployeeName' | 'ownerEmployeeId'>): string => {
+    if (r.ownerEmployeeName && r.ownerEmployeeName.trim() && r.ownerEmployeeName !== '—') return r.ownerEmployeeName;
+    if (r.ownerEmployeeId != null && ownerNameById.has(r.ownerEmployeeId)) return ownerNameById.get(r.ownerEmployeeId) as string;
+    return r.ownerEmployeeId ? `Employee #${r.ownerEmployeeId}` : '—';
+  };
+
   const loadAccounts = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
+    setError(null);
     try {
       const result = await RetailAPI.getAccounts(token, {
         page,
-        size: PAGE_SIZE,
+        size: pageSize,
         q: query || undefined,
         active: activeFilter === 'ALL' ? undefined : activeFilter === 'ACTIVE',
+        accountStatus: status === 'ALL' ? undefined : status,
+        clientType: clientType === 'ALL' ? undefined : clientType,
       });
       setPageData(result);
-    } catch (error) {
+    } catch (err) {
       setPageData(emptyPage);
-      toast.error(getErrorMessage(error, 'Unable to load customers from the new retail API.'));
+      const msg = getErrorMessage(err, 'Unable to load retailers.');
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
-  }, [token, page, query, activeFilter]);
+  }, [token, page, pageSize, query, activeFilter, status, clientType]);
 
-  useEffect(() => { void loadAccounts() }, [loadAccounts]);
-
-  const customers = useMemo(() => pageData.content.filter((customer) => (
-    (status === 'ALL' || customer.accountStatus === status) &&
-    (clientType === 'ALL' || customer.clientType === clientType)
-  )), [pageData.content, status, clientType]);
-
-  const visibleStats = useMemo(() => ({
-    active: pageData.content.filter((item) => item.active && item.accountStatus === 'ACTIVE').length,
-    prospects: pageData.content.filter((item) => item.accountStatus === 'PROSPECT').length,
-    network: pageData.content.filter((item) => item.networkMember).length,
-  }), [pageData.content]);
+  useEffect(() => { void loadAccounts(); }, [loadAccounts]);
 
   const confirmDelete = async () => {
     if (!token || !deleteTarget) return;
     setIsDeleting(true);
     try {
       await RetailAPI.deleteAccount(deleteTarget.id, token);
-      toast.success(`${deleteTarget.accountName} was marked inactive.`);
+      toast.success(`${deleteTarget.accountName} deactivated.`);
       setDeleteTarget(null);
       await loadAccounts();
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Unable to deactivate this customer.'));
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Unable to deactivate retailer.'));
     } finally {
       setIsDeleting(false);
     }
@@ -105,101 +173,281 @@ export default function CustomersPage() {
 
   const exportCustomers = async () => {
     if (!token) return;
+    if (pageData.totalElements > 2000) {
+      toast.error('Too many records to export — narrow the filters first.');
+      return;
+    }
     setIsExporting(true);
     try {
-      const first = await RetailAPI.getAccounts(token, { page: 0, size: 500, q: query || undefined, active: activeFilter === 'ALL' ? undefined : activeFilter === 'ACTIVE' });
+      const first = await RetailAPI.getAccounts(token, {
+        page: 0, size: 500,
+        q: query || undefined,
+        active: activeFilter === 'ALL' ? undefined : activeFilter === 'ACTIVE',
+        accountStatus: status === 'ALL' ? undefined : status,
+        clientType: clientType === 'ALL' ? undefined : clientType,
+      });
       const all = [...first.content];
-      for (let index = 1; index < first.totalPages; index += 1) {
-        const next = await RetailAPI.getAccounts(token, { page: index, size: first.size, q: query || undefined, active: activeFilter === 'ALL' ? undefined : activeFilter === 'ACTIVE' });
+      for (let i = 1; i < first.totalPages; i += 1) {
+        const next = await RetailAPI.getAccounts(token, {
+          page: i, size: first.size,
+          q: query || undefined,
+          active: activeFilter === 'ALL' ? undefined : activeFilter === 'ACTIVE',
+          accountStatus: status === 'ALL' ? undefined : status,
+          clientType: clientType === 'ALL' ? undefined : clientType,
+        });
         all.push(...next.content);
       }
-      const filtered = all.filter((customer) => (status === 'ALL' || customer.accountStatus === status) && (clientType === 'ALL' || customer.clientType === clientType));
       const rows = [
-        ['Account ID', 'Account Name', 'Type', 'Status', 'GSTIN', 'Owner', 'City', 'District', 'State', 'PIN', 'Region', 'Monthly Sales MT', 'Credit Terms Days', 'Credit Limit', 'Tier', 'Network Member', 'Active'],
-        ...filtered.map((item) => [item.id, item.accountName, item.clientType, item.accountStatus, item.gstNumber, item.ownerEmployeeName, item.addressCity, item.addressDistrict, item.addressState, item.pinCode, item.regionName, item.declaredMonthlySalesMt ?? '', item.creditTermsDays, item.creditLimitAmount, item.clientTier, item.networkMember ? 'Yes' : 'No', item.active ? 'Yes' : 'No']),
+        ['Retailer', 'Location', 'Retailer Type', 'Owner', 'Status', 'Tier', 'Monthly Sales', 'Last Activity'],
+        ...all.map((a) => [
+          a.accountName,
+          [humanize(a.addressCity), humanize(a.addressState)].filter((v) => v && v !== '—').join(', '),
+          humanize(a.clientType), resolveOwnerName(a),
+          humanize(a.accountStatus), a.clientTier ?? '', a.declaredMonthlySalesMt ?? '', formatLastActivity(a.updatedAt || a.createdAt),
+        ]),
       ];
-      const blob = new Blob([rows.map((row) => row.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+      const blob = new Blob([rows.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `retail-customers-${new Date().toISOString().slice(0, 10)}.csv`;
-      anchor.click();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'retailers.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Exported ${filtered.length} customers.`);
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Unable to export customers.'));
+      toast.success(`Exported ${all.length} retailers.`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Unable to export retailers.'));
     } finally {
       setIsExporting(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Retail Customers</h1>
-          <p className="text-sm text-muted-foreground">Dealer and distributor accounts from the new German TMT retail API.</p>
+    <div className="mx-auto w-full max-w-none py-4">
+      {areFiltersVisible ? (
+        <>
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="retailer-search" className="sr-only">Search retailers</Label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="retailer-search"
+                  type="search"
+                  autoComplete="off"
+                  placeholder="Search retailer, GSTIN, location…"
+                  value={queryInput}
+                  onChange={(e) => setQueryInput(e.target.value)}
+                  className="h-8 bg-background pl-8 pr-8 text-xs shadow-none"
+                />
+                {queryInput && (
+                  <button
+                    type="button"
+                    onClick={() => { setQueryInput(''); setQuery(''); setPage(0); }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <Label className="sr-only">Status</Label>
+              <Select value={status} onValueChange={(v) => { setPage(0); setStatus(v); }}>
+                <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value="PROSPECT">Prospect</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="DORMANT">Dormant</SelectItem>
+                  <SelectItem value="LOST">Lost</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <Label className="sr-only">Retailer type</Label>
+              <Select value={clientType} onValueChange={(v) => { setPage(0); setClientType(v); }}>
+                <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Retailer type" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Types</SelectItem>
+                  <SelectItem value="DEALER">Dealer</SelectItem>
+                  <SelectItem value="DISTRIBUTOR">Distributor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <Label className="sr-only">Record state</Label>
+              <Select value={activeFilter} onValueChange={(v) => { setPage(0); setActiveFilter(v); }}>
+                <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Record state" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  <SelectItem value="ALL">All Records</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="hidden text-xs text-muted-foreground xl:inline">{pageData.totalElements} retailers</span>
+              <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => setAreFiltersVisible(false)} aria-label="Hide filters" title="Hide filters">
+                <Filter className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => void exportCustomers()} disabled={isExporting} aria-label="Export retailers" title="Export retailers">
+                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadIcon className="h-4 w-4" />}
+              </Button>
+              <Button size="sm" className="h-8 text-xs" onClick={() => setAddOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />Create Retailer
+              </Button>
+            </div>
+          </div>
+          <hr className="mb-4 border-border" />
+        </>
+      ) : (
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => setAreFiltersVisible(true)} aria-label="Show filters" title="Show filters">
+            <Filter className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => void exportCustomers()} disabled={isExporting} aria-label="Export retailers" title="Export retailers">
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadIcon className="h-4 w-4" />}
+          </Button>
+          <Button size="sm" className="h-8 text-xs" onClick={() => setAddOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />Create Retailer
+          </Button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void loadAccounts()} disabled={isLoading}><RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />Refresh</Button>
-          <Button variant="outline" onClick={() => void exportCustomers()} disabled={isExporting}><Download className="mr-2 h-4 w-4" />{isExporting ? 'Exporting…' : 'Export CSV'}</Button>
-          <Button onClick={() => setAddOpen(true)}><Plus className="mr-2 h-4 w-4" />Create Customer</Button>
+      )}
+
+      {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2.5 text-sm text-red-700" role="alert">{error}</div>}
+
+      <div className="overflow-x-auto">
+        <Table className="table-fixed text-xs">
+          <colgroup>
+            <col className="w-[16%]" />
+            <col className="w-[13%]" />
+            <col className="w-[9%]" />
+            <col className="w-[13%]" />
+            <col className="w-[11%]" />
+            <col className="w-[7%]" />
+            <col className="w-[9%]" />
+            <col className="w-[10%]" />
+            <col className="w-[12%]" />
+          </colgroup>
+          <TableHeader>
+            <TableRow>
+              {['Retailer', 'Location', 'Retailer Type', 'Owner', 'Status', 'Tier', 'Monthly Sales', 'Last Activity', 'Actions'].map((h) => (
+                <TableHead key={h} className={`overflow-hidden text-ellipsis whitespace-nowrap ${h === 'Actions' ? 'text-right' : h === 'Last Activity' ? 'pl-3' : ''}`} title={h}>{h}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: pageSize }, (_, i) => (
+                <TableRow key={`sk-${i}`}>{Array.from({ length: 9 }, (_, c) => <TableCell key={c}><Skeleton className="h-4 w-full max-w-24" /></TableCell>)}</TableRow>
+              ))
+            ) : pageData.content.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                  No retailers match the selected filters
+                </TableCell>
+              </TableRow>
+            ) : (
+              pageData.content.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-medium"><Ellipsis value={r.accountName} /></TableCell>
+                  <TableCell>
+                    <Ellipsis value={humanize(r.addressCity) || '—'} />
+                    <span className="block truncate text-[11px] text-muted-foreground" title={humanize(r.addressState) || ''}>
+                      {humanize(r.addressState) || '—'}
+                    </span>
+                  </TableCell>
+                  <TableCell><Ellipsis value={humanize(r.clientType)} /></TableCell>
+                  <TableCell><Ellipsis value={resolveOwnerName(r)} /></TableCell>
+                  <TableCell>
+                    <span className={`inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${statusClassName(r.accountStatus)}`}>
+                      {humanize(r.accountStatus)}
+                    </span>
+                    {!r.active && <span className="mt-1 block text-[11px] text-muted-foreground">Inactive</span>}
+                  </TableCell>
+                  <TableCell className="text-center"><Ellipsis value={r.clientTier || '—'} /></TableCell>
+                  <TableCell><Ellipsis value={r.declaredMonthlySalesMt != null ? `${r.declaredMonthlySalesMt} MT` : '—'} /></TableCell>
+                  <TableCell className="pl-3"><Ellipsis value={formatLastActivity(r.updatedAt || r.createdAt)} /></TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
+                        <Link href={`/dashboard/customers/${r.id}`}>View</Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        aria-label={`Deactivate ${r.accountName}`}
+                        disabled={!r.active}
+                        onClick={() => setDeleteTarget(r)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs">
+          <Label htmlFor="retailer-page-size" className="text-xs">Rows per page:</Label>
+          <Select value={String(pageSize)} onValueChange={(v) => { setHasUserChosenPageSize(true); setPage(0); setPageSize(Number(v)); }}>
+            <SelectTrigger id="retailer-page-size" className="h-8 w-20 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>{[10, 12, 15, 20, 25, 50, 100].map((n) => <SelectItem key={n} value={String(n)}>{String(n)}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page <= 0 || isLoading}>
+            <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Previous</span>
+          </Button>
+          <span className="text-xs text-muted-foreground">Page {pageData.number + 1} of {Math.max(1, pageData.totalPages)}</span>
+          <Button variant="outline" size="sm" className="h-8" onClick={() => setPage((p) => p + 1)} disabled={page + 1 >= pageData.totalPages || isLoading}>
+            <span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardDescription>Total matching accounts</CardDescription><CardTitle className="text-2xl">{pageData.totalElements}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription>Active on this page</CardDescription><CardTitle className="text-2xl text-emerald-700">{visibleStats.active}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription>Prospects on this page</CardDescription><CardTitle className="text-2xl text-blue-700">{visibleStats.prospects}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription>Network members on this page</CardDescription><CardTitle className="text-2xl">{visibleStats.network}</CardTitle></CardHeader></Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Customer directory</CardTitle>
-          <CardDescription>Search is sent to the backend. Status and type refine the loaded page.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_180px_180px]">
-            <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Search customer name or code" className="pl-9" /></div>
-            <Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue placeholder="Account status" /></SelectTrigger><SelectContent><SelectItem value="ALL">All statuses</SelectItem><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select>
-            <Select value={clientType} onValueChange={setClientType}><SelectTrigger><SelectValue placeholder="Client type" /></SelectTrigger><SelectContent><SelectItem value="ALL">All client types</SelectItem><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select>
-            <Select value={activeFilter} onValueChange={(value) => { setPage(0); setActiveFilter(value) }}><SelectTrigger><SelectValue placeholder="Record state" /></SelectTrigger><SelectContent><SelectItem value="ACTIVE">Active records</SelectItem><SelectItem value="INACTIVE">Inactive records</SelectItem><SelectItem value="ALL">All records</SelectItem></SelectContent></Select>
-          </div>
-
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Status</TableHead><TableHead>Location</TableHead><TableHead>Owner</TableHead><TableHead>Commercial</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={6} className="h-36 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /><span className="mt-2 block text-muted-foreground">Loading customers…</span></TableCell></TableRow>
-                ) : customers.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="h-36 text-center text-muted-foreground"><Users className="mx-auto mb-2 h-8 w-8 opacity-40" />No customers match these filters.</TableCell></TableRow>
-                ) : customers.map((customer) => (
-                  <TableRow key={customer.id} className="cursor-pointer" onClick={() => router.push(`/dashboard/customers/${customer.id}`)}>
-                    <TableCell><div className="font-medium">{customer.accountName}</div><div className="text-xs text-muted-foreground">#{customer.id} · {humanize(customer.clientType)}{customer.gstNumber ? ` · ${customer.gstNumber}` : ''}</div></TableCell>
-                    <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline" className={statusClass(customer.accountStatus)}>{humanize(customer.accountStatus)}</Badge>{customer.networkMember && <Badge variant="secondary">Network</Badge>}{!customer.active && <Badge variant="destructive">Inactive</Badge>}</div></TableCell>
-                    <TableCell><div>{customer.addressCity || '—'}</div><div className="text-xs text-muted-foreground">{[customer.addressDistrict, customer.addressState, customer.pinCode].filter(Boolean).join(', ') || 'Address unavailable'}</div></TableCell>
-                    <TableCell>{customer.ownerEmployeeName || (customer.ownerEmployeeId ? `Employee #${customer.ownerEmployeeId}` : '—')}</TableCell>
-                    <TableCell><div>{customer.declaredMonthlySalesMt == null ? 'Not declared' : `${customer.declaredMonthlySalesMt} MT/month`}</div><div className="text-xs text-muted-foreground">Tier {customer.clientTier} · {money(customer.creditLimitAmount)}</div></TableCell>
-                    <TableCell className="text-right"><Button size="icon" variant="ghost" aria-label={`View ${customer.accountName}`} onClick={(event) => { event.stopPropagation(); router.push(`/dashboard/customers/${customer.id}`) }}><Eye className="h-4 w-4" /></Button><Button size="icon" variant="ghost" aria-label={`Deactivate ${customer.accountName}`} disabled={!customer.active} onClick={(event) => { event.stopPropagation(); setDeleteTarget(customer) }}><Trash2 className="h-4 w-4 text-destructive" /></Button></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="flex flex-col items-center justify-between gap-3 text-sm sm:flex-row">
-            <p className="text-muted-foreground">Page {pageData.number + 1} of {Math.max(1, pageData.totalPages)} · {pageData.totalElements} total</p>
-            <div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 0 || isLoading} onClick={() => setPage((value) => Math.max(0, value - 1))}>Previous</Button><Button variant="outline" size="sm" disabled={page + 1 >= pageData.totalPages || isLoading} onClick={() => setPage((value) => value + 1)}>Next</Button></div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {token && <AddCustomerModal isOpen={addOpen} onClose={() => setAddOpen(false)} token={token} employeeId={userData?.employeeId ?? null} userRole={userRole ?? undefined} userData={userData ? { ...userData } : undefined} onCustomerAdded={() => { setAddOpen(false); setPage(0); void loadAccounts() }} />}
+      {token && (
+        <AddCustomerModal
+          key={presetGroupId || 'no-group'}
+          isOpen={addOpen}
+          onClose={() => setAddOpen(false)}
+          token={token}
+          employeeId={userData?.employeeId ?? null}
+          userRole={userRole ?? undefined}
+          userData={userData ? { ...userData } as Record<string, unknown> : undefined}
+          initialGroupId={presetGroupId || undefined}
+          onCustomerAdded={() => { setAddOpen(false); setPage(0); void loadAccounts(); }}
+        />
+      )}
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !isDeleting && setDeleteTarget(null)}>
-        <DialogContent><DialogHeader><DialogTitle>Deactivate customer?</DialogTitle><DialogDescription>This uses the new soft-delete endpoint. The account stays in history but is no longer active.</DialogDescription></DialogHeader><div className="rounded-lg border bg-muted/40 p-3 text-sm font-medium">{deleteTarget?.accountName}</div><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</Button><Button variant="destructive" onClick={() => void confirmDelete()} disabled={isDeleting}>{isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Deactivate</Button></DialogFooter></DialogContent>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Deactivate retailer?</DialogTitle><DialogDescription>This will mark the retailer as inactive. The record remains in history and can be reactivated.</DialogDescription></DialogHeader>
+          {deleteTarget && (
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <span className="font-medium">{deleteTarget.accountName}</span>
+              <span className="text-muted-foreground"> · #{deleteTarget.id}</span>
+              {deleteTarget.gstNumber && <span className="text-muted-foreground"> · {deleteTarget.gstNumber}</span>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</Button>
+            <Button variant="destructive" onClick={() => void confirmDelete()} disabled={isDeleting}>
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Deactivate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );

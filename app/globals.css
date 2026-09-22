@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .crm-sidebar-active {
+    background-color: hsl(var(--muted));
+    color: hsl(var(--foreground));
+    box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.35);
+  }
+
+  html.dark .crm-sidebar-active {
+    background-color: rgb(38 38 38) !important;
+    color: rgb(250 250 250) !important;
+  }
+}
+
 /* Mobile bottom navigation safe area support */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .safe-area-pb {

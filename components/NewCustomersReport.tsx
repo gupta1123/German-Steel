@@ -18,10 +18,10 @@ import { Label } from '@/components/ui/label';
 import { format, subMonths } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
 import { Calendar as CalendarIcon, UserCheck, UserX, RefreshCw } from 'lucide-react';
-import { API } from '@/lib/api';
 import { hasManagerPrivileges } from '@/lib/auth';
-import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
+import { teamsApi } from '@/lib/teams-api';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
+import { reportsApi } from '@/lib/reports-api';
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -94,25 +94,20 @@ const NewCustomersReport = () => {
         }
     }, [token, startDate, endDate, dateRangeInvalid]);
 
-    // --- Data Fetching ---
+    // --- Data Fetching — documented paginated employees only; report aggregate is backend gap ---
     const fetchEmployees = async () => {
+        if (!token) return;
         try {
-            const employeeDirectory = await API.getAllEmployees<Employee>();
             const isManager = hasManagerPrivileges(userRole, currentUser);
-            let scopedFieldOfficerIds: Set<number> | null = null;
-
-            if (isManager) {
-                if (!userData?.employeeId) {
-                    scopedFieldOfficerIds = new Set();
-                } else {
-                    const teamData = await API.getTeamByEmployee(userData.employeeId);
-                    scopedFieldOfficerIds = new Set(getUniqueFieldOfficersFromTeams(teamData).map((officer) => officer.id));
-                }
+            const params: Record<string, unknown> = { active: true, page: 0, size: 50 };
+            if (isManager && userData?.employeeId) {
+                (params as Record<string, unknown>).managerId = userData.employeeId;
             }
-
-            const fieldOfficers = employeeDirectory
+            // Use documented paginated GET /api/common/employees with active/role/search filters
+            const page = await teamsApi.getEmployeesPage(token, params as never);
+            const fieldOfficers = (page.content as unknown as Employee[])
                 .filter(emp => emp.role === "Field Officer")
-                .filter(emp => scopedFieldOfficerIds === null || scopedFieldOfficerIds.has(emp.id));
+                .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
             const employeeOptions = fieldOfficers
                 .map((emp: Employee) => ({
                     value: emp.id,
@@ -129,14 +124,13 @@ const NewCustomersReport = () => {
         if (!startDate || !endDate || dateRangeInvalid) return;
         setIsLoading(true);
         try {
-            const groupedReport = await API.getReportForEmployeeRange<ReportData>(startDate, endDate);
-            setReportData(groupedReport ?? {});
+            const response = await reportsApi.employeeActivity(token!, { from: startDate, to: endDate, recordType: 'ALL', page: 0, size: 100 });
+            const label = `${format(new Date(`${startDate}T00:00:00`), 'MMM d')} – ${format(new Date(`${endDate}T00:00:00`), 'MMM d, yyyy')}`;
+            setReportData({ [label]: response.content.map((row) => ({ employeeName: row.employeeName, newStoreCount: row.newRetailAccountCount + row.newInstitutionCount })) });
         } catch (error) {
             console.error('Error fetching new-customer report:', error);
             setReportData({});
-        } finally {
-            setIsLoading(false);
-        }
+        } finally { setIsLoading(false); }
     };
 
     // --- Calculations ---
@@ -391,6 +385,25 @@ const NewCustomersReport = () => {
                     </div>
                     <DateRangeError fromDate={startDate} toDate={endDate} />
             </section>
+
+            {/* Empty state */}
+            {!isLoading && Object.keys(reportData).length === 0 && (
+                <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <CardContent className="p-4">
+                        <div className="flex gap-3">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                                <span className="text-sm">⚠️</span>
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">No new customers found</p>
+                                <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200/80">
+                                    There are no retail or institution customer acquisitions in the selected period.
+                                </p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Chart Section */}
             <Card className="border-border/80 shadow-sm">

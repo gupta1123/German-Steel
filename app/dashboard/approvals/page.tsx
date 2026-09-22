@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
     Check, 
     X, 
@@ -16,9 +16,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { toast } from 'sonner';
-import { isManagerRoleValue, normalizeRoleValue } from '@/lib/auth';
-import { API, type TeamDataDto } from '@/lib/api';
-import { getUniqueFieldOfficersFromTeams } from '@/lib/team-access';
+import { getCorrectedRoleFlags } from '@/lib/auth';
+import { API } from '@/lib/api';
+import { ApprovalsApiError, approvalsApi } from '@/lib/approvals-api';
+import { teamsApi } from '@/lib/teams-api';
 import { isAdminEmployeeRole } from '@/lib/employee-role';
 
 // UI Components
@@ -58,11 +59,8 @@ interface EmployeeDirectoryEntry {
     email?: string;
 }
 
-type ApprovalTypeValue = 'full day' | 'half day';
-type ApprovalTypeState = Record<number, ApprovalTypeValue>;
-
 export default function ApprovalsPage() {
-    const { token, userData } = useAuth();
+    const { token, userData, currentUser, teamId: authTeamId, correctedRoleFlags, userRole } = useAuth();
     
     // Data State
     const [requests, setRequests] = useState<ApprovalRequest[]>([]);
@@ -74,53 +72,64 @@ export default function ApprovalsPage() {
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
     const [eligibleEmployees, setEligibleEmployees] = useState<EmployeeDirectoryEntry[]>([]);
     const [activeTab, setActiveTab] = useState('pending');
-    const [approvalType, setApprovalType] = useState<ApprovalTypeState>({});
     const [savingIds, setSavingIds] = useState<number[]>([]);
     
-    // Role State
-    const [isManager, setIsManager] = useState(false);
-    const [isFieldOfficer, setIsFieldOfficer] = useState(false);
-    const [teamId, setTeamId] = useState<number | null>(null);
+    // Role State — derived from canonical auth context (GET /api/auth/me) per guide §5.1/§5.7
+    const roleFlags = getCorrectedRoleFlags(userRole, currentUser, correctedRoleFlags, authTeamId);
+    const isManager = roleFlags.isManager;
+    const isFieldOfficer = roleFlags.isFieldOfficer;
+    const [teamId, setTeamId] = useState<number | null>(authTeamId);
     const [teamMemberIds, setTeamMemberIds] = useState<number[]>([]);
 
-    // --- 1. Initial Data Loading ---
+    // Sync teamId from auth context
     useEffect(() => {
-        const fetchCurrentUser = async () => {
-            if (!token) return;
-            try {
-                const response = await fetch('http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/user/manage/current-user', {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const role = data.authorities?.[0]?.authority;
-                    const normalizedRole = normalizeRoleValue(role);
-                    
-                    setIsManager(isManagerRoleValue(role));
-                    setIsFieldOfficer(normalizedRole === 'ROLE_FIELD OFFICER' || normalizedRole === 'FIELD OFFICER');
-                }
-            } catch (error) {
-                console.error('Error fetching user:', error);
-            }
-        };
-        fetchCurrentUser();
-    }, [token]);
+        setTeamId(authTeamId);
+    }, [authTeamId]);
 
     useEffect(() => {
         const loadTeamData = async () => {
-            if ((!isManager && !isFieldOfficer) || !userData?.employeeId) return;
+            if ((!isManager && !isFieldOfficer) || !userData?.employeeId || !token) return;
             try {
-                const teamData: TeamDataDto[] = await API.getTeamByEmployee(userData.employeeId);
-                setTeamId(teamData.length > 0 ? teamData[0].id : null);
-                setTeamMemberIds(getUniqueFieldOfficersFromTeams(teamData).map((officer) => officer.id));
+                // New: GET /api/common/teams + GET /api/common/teams/{id}/employees (§5.8) + scopes fallback
+                const teams = await teamsApi.getTeams(token);
+                const managed = teams.filter((t) => t.officeManagerId === userData.employeeId);
+                if (managed.length > 0) {
+                    setTeamId(managed[0].id);
+                    setTeamMemberIds(managed.flatMap((t) => t.employees.map((e) => e.id)));
+                    return;
+                }
+                // Field officer or non-managing manager: try access-control scopes
+                try {
+                    const scopesRes = await fetch(
+                        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/access-control/employees/${userData.employeeId}/scopes?page=0&size=50`,
+                        { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } }
+                    );
+                    if (scopesRes.ok) {
+                        const scopesData = await scopesRes.json();
+                        const items = Array.isArray(scopesData) ? scopesData : (scopesData.content ?? scopesData.data ?? []);
+                        const ids: number[] = Array.isArray(items)
+                            ? items.flatMap((s: unknown) => {
+                                const r = s as Record<string, unknown>;
+                                const id = typeof r.employeeId === 'number' ? r.employeeId : typeof r.id === 'number' ? r.id : null;
+                                return id != null ? [id] : [];
+                              })
+                            : [];
+                        if (ids.length) setTeamMemberIds(ids);
+                    }
+                } catch {}
+                // Fallback to legacy team lookup for compatibility
+                if (teamMemberIds.length === 0) {
+                    const teamData = await API.getTeamByEmployee(userData.employeeId);
+                    const { getUniqueFieldOfficersFromTeams } = await import('@/lib/team-access');
+                    setTeamId(teamData.length > 0 ? teamData[0].id : authTeamId);
+                    setTeamMemberIds(getUniqueFieldOfficersFromTeams(teamData).map((officer) => officer.id));
+                }
             } catch (err) {
-                setTeamId(null);
                 setTeamMemberIds([]);
             }
         };
         loadTeamData();
-    }, [isManager, isFieldOfficer, userData?.employeeId]);
+    }, [isManager, isFieldOfficer, userData?.employeeId, token, authTeamId]);
 
     useEffect(() => {
         if (token) fetchRequests();
@@ -130,12 +139,14 @@ export default function ApprovalsPage() {
         if (!token) return;
 
         let isMounted = true;
-        API.getAllEmployees()
+        // Migrated: GET /api/common/employees?active=true&page=&size= (§5.7) via teamsApi
+        teamsApi.getEmployees(token)
             .then((data) => {
                 if (!isMounted) return;
                 setEligibleEmployees(
                     data
                         .filter((employee) => !isAdminEmployeeRole(employee.role))
+                        .map((e) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, role: e.role } as EmployeeDirectoryEntry))
                         .sort((a, b) => {
                             const aName = `${a.firstName ?? ''} ${a.lastName ?? ''}`.trim();
                             const bName = `${b.firstName ?? ''} ${b.lastName ?? ''}`.trim();
@@ -144,7 +155,7 @@ export default function ApprovalsPage() {
                 );
             })
             .catch(() => {
-                if (isMounted) setEligibleEmployees([]);
+                if (!isMounted) setEligibleEmployees([]);
             });
 
         return () => {
@@ -152,25 +163,21 @@ export default function ApprovalsPage() {
         };
     }, [token]);
 
-    // --- 2. API Logic ---
+    // --- 2. API Logic — verified contract GET /api/hr/attendance/requests/by-status?status=PENDING|APPROVED|REJECTED&page=0&size=50 (200 uppercase) ---
     const fetchRequests = async () => {
-        if (!token) return;
+        if (!token) {
+            setError('Authentication required — please sign in again.');
+            setLoading(false);
+            setIsRefreshing(false);
+            return;
+        }
         if ((isManager || isFieldOfficer) && teamId === null) return;
         
         try {
             if (requests.length === 0) setLoading(true);
             else setIsRefreshing(true);
 
-            const results = await Promise.all(['pending', 'approved', 'rejected'].map(async (status) => {
-                const response = await fetch(`http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/getByStatus?status=${status}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (!response.ok) throw new Error('Unable to load attendance requests.');
-                const records = await response.json();
-                if (!Array.isArray(records)) throw new Error('Invalid attendance response.');
-                return records as ApprovalRequest[];
-            }));
-            const data = Array.from(new Map(results.flat().map(request => [request.id, request])).values());
+            const data = await approvalsApi.getAll(token);
 
             // --- MOCK DESCRIPTION LOGIC (Remove this block when API has real descriptions) ---
             // Uncomment the lines below to see how descriptions look in the UI right now
@@ -189,7 +196,15 @@ export default function ApprovalsPage() {
             setRequests(scopedData);
             setError(null);
         } catch (err) {
-            setError('Failed to fetch requests.');
+            const isAuthError = err instanceof ApprovalsApiError && err.status === 401;
+            const isForbidden = err instanceof ApprovalsApiError && err.status === 403;
+            const isNetwork = err instanceof TypeError && String(err.message).includes('Failed to fetch');
+            let message = 'Failed to fetch attendance requests.';
+            if (isAuthError) message = 'Session expired — please sign in again.';
+            else if (isForbidden) message = 'You do not have permission to view attendance requests.';
+            else if (isNetwork) message = 'Network error — unable to reach the attendance API. Please check your connection.';
+            else if (err instanceof Error && err.message) message = err.message;
+            setError(message);
         } finally {
             setLoading(false);
             setIsRefreshing(false);
@@ -198,36 +213,37 @@ export default function ApprovalsPage() {
 
     const handleAction = async (id: number, action: 'approved' | 'rejected') => {
         if (!token || savingIds.includes(id)) return;
-        
-        const currentReq = requests.find(r => r.id === id);
-        const type = approvalType[id] || (currentReq?.requestedStatus || 'full day');
-        
+
+        const actionByEmployeeId = userData?.employeeId;
+        if (!actionByEmployeeId) {
+            const msg = 'Unable to determine your employee ID — please sign in again.';
+            setError(msg);
+            toast.error(msg, { duration: 3000 });
+            return;
+        }
+
         setSavingIds(prev => [...prev, id]);
 
         try {
-            const response = await fetch(
-                `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/request/updateStatus?id=${id}&status=${action}&attendance=${encodeURIComponent(type)}`,
-                {
-                    method: 'PUT',
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        requestId: id.toString()
-                    }
-                }
-            );
-            if (!response.ok) {
-                const failure = await response.json().catch(() => null);
-                const detail = typeof failure?.message === 'string' ? failure.message : '';
-                if (response.status === 404 && /log not found/i.test(detail)) {
-                    throw new Error('No attendance log exists for this date. The request is still pending; an administrator needs to resolve the missing log before approval.');
-                }
-                throw new Error(`Unable to update attendance request (HTTP ${response.status}).${detail ? ` ${detail}` : ' Please try again.'}`);
-            }
-            setRequests(prev => prev.map(request => request.id === id ? { ...request, status: action, requestedStatus: type } : request));
+            const updated = await approvalsApi.updateStatus(token, id, action, actionByEmployeeId);
+            const nextStatus = updated.status?.toUpperCase() || action.toUpperCase();
+            setRequests(prev => prev.map(request => request.id === id
+                ? { ...request, status: nextStatus, actionDate: updated.actionDate ?? new Date().toISOString() }
+                : request));
             setError(null);
             toast.success(`Attendance request ${action}.`, { duration: 3000 });
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Unable to update attendance request. Please try again.';
+            const raw = err instanceof Error ? err.message : 'Unable to update attendance request. Please try again.';
+            if (err instanceof ApprovalsApiError && err.status === 400 && /actionByEmployeeId/i.test(raw)) {
+                setError(raw);
+                toast.error(raw, { duration: 4000 });
+                return;
+            }
+            const message = /log not found/i.test(raw)
+                ? 'No attendance log exists for this date. The request is still pending; an administrator needs to resolve the missing log before approval.'
+                : /forbidden|403/i.test(raw)
+                  ? 'You do not have permission to approve/reject attendance requests (ADMIN/MANAGER only).'
+                  : raw;
             setError(message);
             toast.error(message, { duration: 3000 });
         } finally {
@@ -267,6 +283,13 @@ export default function ApprovalsPage() {
             }
         }).sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
     }, [requests, selectedEmployeeId, activeTab]);
+
+    // Preselect employee when linked from employee detail (?employee={id}) — frontend-only
+    useEffect(() => {
+      if (typeof window === 'undefined') return;
+      const id = new URLSearchParams(window.location.search).get('employee');
+      if (id && /^\d+$/.test(id)) setSelectedEmployeeId(id);
+    }, []);
 
     const employeeOptions = useMemo<SearchableOption[]>(() => eligibleEmployees.map((employee) => {
         const name = `${employee.firstName ?? ''} ${employee.lastName ?? ''}`.trim();
@@ -349,8 +372,6 @@ export default function ApprovalsPage() {
                                                 req={req}
                                                 saving={savingIds.includes(req.id)}
                                                 activeTab={activeTab}
-                                                approvalType={approvalType}
-                                                setApprovalType={setApprovalType}
                                                 handleAction={handleAction}
                                                 formatDate={formatDate}
                                                 getInitials={getInitials}
@@ -371,8 +392,6 @@ interface RequestRowProps {
     saving: boolean;
     req: ApprovalRequest;
     activeTab: string;
-    approvalType: ApprovalTypeState;
-    setApprovalType: React.Dispatch<React.SetStateAction<ApprovalTypeState>>;
     handleAction: (id: number, action: 'approved' | 'rejected') => Promise<void> | void;
     formatDate: (date: string) => string;
     getInitials: (name: string) => string;
@@ -382,14 +401,19 @@ function RequestRow({
     saving,
     req, 
     activeTab, 
-    approvalType, 
-    setApprovalType, 
     handleAction, 
     formatDate,
     getInitials 
 }: RequestRowProps) {
     const isPending = activeTab === 'pending';
-    const currentType = approvalType[req.id] || req.requestedStatus || 'full day';
+    const requestedType = String(req.requestedStatus || '').trim().toUpperCase().replace(/[ -]+/g, '_');
+    const requestedTypeLabel = requestedType === 'FULL_DAY'
+        ? 'Full Day'
+        : requestedType === 'HALF_DAY'
+          ? 'Half Day'
+          : requestedType === 'LEAVE'
+            ? 'Leave · duration not specified'
+            : req.requestedStatus || 'Not specified';
 
     // Duplicate logic styles
     const rowClass = req.isDuplicate 
@@ -462,44 +486,14 @@ function RequestRow({
                 </div>
             </div>
 
-            {/* 3. Type Selector */}
+            {/* 3. Requested attendance type (read-only; action API does not accept type changes) */}
             <div className="col-span-2 flex w-full items-center">
-                {isPending ? (
-                    <div className="w-full">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2 lg:hidden">Attendance Type</span>
-                        <div className="flex w-full rounded-md bg-muted/60 p-1 lg:w-auto">
-                            <button
-                                onClick={() => setApprovalType((prev) => ({ ...prev, [req.id]: 'full day' }))}
-                                disabled={saving}
-                                className={`flex-1 rounded px-3 py-1 text-xs font-medium transition-all ${
-                                    currentType === 'full day' 
-                                    ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5 dark:ring-white/10' 
-                                    : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            >
-                                Full Day
-                            </button>
-                            <button
-                                onClick={() => setApprovalType((prev) => ({ ...prev, [req.id]: 'half day' }))}
-                                disabled={saving}
-                                className={`flex-1 rounded px-3 py-1 text-xs font-medium transition-all ${
-                                    currentType === 'half day' 
-                                    ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5 dark:ring-white/10' 
-                                    : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            >
-                                Half Day
-                            </button>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex items-center">
-                         <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mr-2 lg:hidden">Type:</span>
-                        <Badge variant="secondary" className="capitalize px-3 py-1">
-                            {req.requestedStatus}
-                        </Badge>
-                    </div>
-                )}
+                <div className="w-full">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground lg:hidden">Requested type</span>
+                    <Badge variant={requestedType === 'LEAVE' ? 'outline' : 'secondary'} className={`max-w-full whitespace-normal px-3 py-1 text-center leading-4 ${requestedType === 'HALF_DAY' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300' : requestedType === 'FULL_DAY' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300' : ''}`}>
+                        {requestedTypeLabel}
+                    </Badge>
+                </div>
             </div>
 
             {/* 4. Actions */}

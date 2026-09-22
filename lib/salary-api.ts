@@ -267,12 +267,12 @@ const normalizeCalculation = (
   return {
     employeeId: numberOf(item.employeeId, responseEmployee?.id) ?? employee.id,
     employeeName: stringOf(
-      item.employeeName,
-      responseEmployee?.employeeName,
       [
-        stringOf(responseEmployee?.firstName, employee.firstName),
-        stringOf(responseEmployee?.lastName, employee.lastName),
+        stringOf(employee.firstName, responseEmployee?.firstName),
+        stringOf(employee.lastName, responseEmployee?.lastName),
       ].filter(Boolean).join(' '),
+      responseEmployee?.employeeName,
+      item.employeeName,
     ),
     employeeCode: stringOf(item.employeeCode, responseEmployee?.employeeCode, employee.employeeCode),
     startDate: stringOf(item.startDate, item.periodStart, startDate) || startDate,

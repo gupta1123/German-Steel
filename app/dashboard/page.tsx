@@ -78,6 +78,7 @@ type Employee = {
   location: string;
   houseLatitude?: number | null;
   houseLongitude?: number | null;
+  assignedRegion?: string;
 };
 type ExtendedEmployee = Employee & {
   listId: string;
@@ -163,8 +164,9 @@ export default function DashboardPage() {
   const [highlightedEmployee, setHighlightedEmployee] =
     useState<ExtendedEmployee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeeRecords, setEmployeeRecords] = useState<DashboardEmployee[]>([]);
   const [states, setStates] = useState<StateItem[]>([]);
+  const [dashboardStateCounts, setDashboardStateCounts] = useState<Map<string, number>>(new Map());
+  const [employeeIdsByState, setEmployeeIdsByState] = useState<Map<string, Set<number>>>(new Map());
   const [kpis, setKpis] = useState({ totalVisits: 0, activeEmployees: 0, liveLocations: 0 });
   const [countsByEmployee, setCountsByEmployee] = useState<Map<number, number>>(new Map());
   const [markers, setMarkers] = useState<MapMarker[]>([]);
@@ -354,11 +356,15 @@ export default function DashboardPage() {
       
       try {
         setIsLoading(true);
-        const data = await dashboardApi.getEmployees(token, isManager
-          ? userData?.employeeId
-            ? { managerId: userData.employeeId }
-            : { teamId }
-          : {});
+        const [data, regions] = await Promise.all([
+          dashboardApi.getEmployees(token, isManager
+            ? userData?.employeeId
+              ? { managerId: userData.employeeId }
+              : { teamId }
+            : {}),
+          dashboardApi.getRegions(token),
+        ]);
+        const regionNameById = new Map(regions.map((region) => [region.id, region.name]));
         const visible = data.filter((employee) => !isDashboardAdminEmployee(employee));
         const mapped: Employee[] = visible.map((employee) => ({
           id: employee.id,
@@ -370,12 +376,11 @@ export default function DashboardPage() {
           location: [normalizeCityName(employee.city), employee.state].filter(Boolean).join(', '),
           houseLatitude: employee.houseLatitude,
           houseLongitude: employee.houseLongitude,
+          assignedRegion: employee.regionIds.map((regionId) => regionNameById.get(regionId)).find(Boolean) || 'Unassigned',
         }));
-        setEmployeeRecords(visible);
         setEmployees(mapped);
       } catch (err) {
         console.error('Failed to load dashboard employees:', err);
-        setEmployeeRecords([]);
         setEmployees([]);
       } finally {
         setIsLoading(false);
@@ -441,33 +446,43 @@ export default function DashboardPage() {
         const start = format(dateRange.start, 'yyyy-MM-dd');
         const end = format(dateRange.end, 'yyyy-MM-dd');
 
-        const [summaryResult, visitsResult] = await Promise.allSettled([
-          dashboardApi.getSummary(token),
+        const [overviewResult, employeeActivityResult, visitsResult] = await Promise.allSettled([
+          dashboardApi.getOverview(token, start, end),
+          dashboardApi.getEmployeeActivity(token, start, end),
           dashboardApi.getVisits(token, start, end),
         ]);
 
-        if (summaryResult.status === 'rejected' && visitsResult.status === 'rejected') {
-          throw visitsResult.reason;
+        if (overviewResult.status === 'rejected' && employeeActivityResult.status === 'rejected') {
+          throw overviewResult.reason;
         }
 
-        const visits = visitsResult.status === 'fulfilled'
-          ? [...new Map(visitsResult.value.map((visit) => [visit.id, visit])).values()]
-          : [];
         const cMap = new Map<number, number>();
-        visits.forEach((visit) => {
-          if (visit.assignedEmployeeId == null) return;
-          cMap.set(visit.assignedEmployeeId, (cMap.get(visit.assignedEmployeeId) ?? 0) + 1);
-        });
-        const fallbackSummary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
+        if (employeeActivityResult.status === 'fulfilled') {
+          employeeActivityResult.value.forEach((row) => cMap.set(row.employeeId, row.totalVisitCount));
+        }
+        if (visitsResult.status === 'fulfilled') {
+          cMap.clear();
+          visitsResult.value.forEach((visit) => {
+            if (visit.assignedEmployeeId == null) return;
+            cMap.set(visit.assignedEmployeeId, (cMap.get(visit.assignedEmployeeId) || 0) + 1);
+          });
+          const idsByRegion = new Map<string, Set<number>>();
+          employees.forEach((employee) => {
+            if ((cMap.get(employee.id) || 0) === 0) return;
+            const region = employee.assignedRegion || 'Unassigned';
+            const ids = idsByRegion.get(region) || new Set<number>();
+            ids.add(employee.id);
+            idsByRegion.set(region, ids);
+          });
+          setEmployeeIdsByState(idsByRegion);
+          setDashboardStateCounts(new Map(Array.from(idsByRegion, ([region, ids]) => [region, ids.size])));
+        }
+        const overview = overviewResult.status === 'fulfilled' ? overviewResult.value : null;
         setCountsByEmployee(cMap);
         setKpis(prev => ({
           ...prev,
-          totalVisits: visitsResult.status === 'fulfilled'
-            ? visits.length
-            : fallbackSummary?.totalVisits ?? 0,
-          activeEmployees: visitsResult.status === 'fulfilled'
-            ? cMap.size
-            : fallbackSummary?.activeEmployees ?? 0,
+          totalVisits: overview?.totalVisits ?? Array.from(cMap.values()).reduce((sum, value) => sum + value, 0),
+          activeEmployees: cMap.size,
         }));
       } catch (error) {
         console.error('Error fetching KPIs:', error);
@@ -476,7 +491,7 @@ export default function DashboardPage() {
       }
     };
     void run();
-  }, [dateRange.start, dateRange.end, isRoleDetermined, hasHydratedDateFilter, token]);
+  }, [dateRange.start, dateRange.end, employees, isRoleDetermined, hasHydratedDateFilter, token]);
 
   // Last-known GPS is independent of the date filter, which applies to visits only.
   useEffect(() => {
@@ -485,9 +500,9 @@ export default function DashboardPage() {
     setLocationsLoading(true);
     const run = async () => {
       try {
-        const locations = employeeRecords.length
-          ? await dashboardApi.getCurrentLocations(token, employeeRecords)
-          : [];
+        const start = format(dateRange.start, 'yyyy-MM-dd');
+        const end = format(dateRange.end, 'yyyy-MM-dd');
+        const locations = (await dashboardApi.getOverview(token, start, end)).liveLocations;
         const rows = locations.map((location) => ({
           empId: location.employeeId,
           empName: location.employeeName,
@@ -510,7 +525,7 @@ export default function DashboardPage() {
     };
     void run();
     return () => { cancelled = true; };
-  }, [employeeRecords, isRoleDetermined, locationRefresh, token]);
+  }, [dateRange.start, dateRange.end, isRoleDetermined, locationRefresh, token]);
 
   useEffect(() => {
     const refresh = () => {
@@ -526,17 +541,15 @@ export default function DashboardPage() {
     setKpis(prev => ({ ...prev, liveLocations: markers.length }));
   }, [markers.length]);
 
-  // Derive states from active employees (same semantics as source: only those with visits/presence)
+  // Derive assigned-region cards from employees with activity in the selected period.
   // Use displayEmployees to respect role-based filtering (managers see only their team)
   useEffect(() => {
     // Build states once we have employees and countsByEmployee
-    const byState = new Map<string, number>();
-    displayEmployees.forEach((emp) => {
+    const byState = dashboardStateCounts.size > 0 ? dashboardStateCounts : new Map<string, number>();
+    if (byState.size === 0) displayEmployees.forEach((emp) => {
       const visits = countsByEmployee.get(emp.id) ?? 0;
-      const stateName = emp.location.split(', ')[1] || 'Unknown';
-      if (visits > 0) {
-        byState.set(stateName, (byState.get(stateName) || 0) + 1);
-      }
+      const regionName = emp.assignedRegion || 'Unassigned';
+      if (visits > 0) byState.set(regionName, (byState.get(regionName) || 0) + 1);
     });
     const stateItems: StateItem[] = Array.from(byState.entries()).map(([name, count], idx) => ({
       id: idx + 1,
@@ -545,7 +558,7 @@ export default function DashboardPage() {
       color: colorPalette[idx % colorPalette.length],
     }));
     setStates(stateItems);
-  }, [displayEmployees, countsByEmployee]);
+  }, [displayEmployees, countsByEmployee, dashboardStateCounts]);
 
   const employeeList = useMemo<ExtendedEmployee[]>(() => {
     const byId = new Map(markers.map(marker => [Number(marker.id), marker]));
@@ -562,11 +575,13 @@ export default function DashboardPage() {
 
   const stateEmployees = useMemo(() => {
     if (!selectedState) return [];
-    // Only employees active in selected range (same as upstream logic)
+    const assignedEmployeeIds = employeeIdsByState.get(selectedState.name);
     return displayEmployees.filter((employee) =>
-      employee.location.includes(selectedState.name) && (countsByEmployee.get(employee.id) ?? 0) > 0
+      assignedEmployeeIds
+        ? assignedEmployeeIds.has(employee.id)
+        : employee.assignedRegion === selectedState.name && (countsByEmployee.get(employee.id) ?? 0) > 0
     );
-  }, [selectedState, displayEmployees, countsByEmployee]);
+  }, [selectedState, displayEmployees, countsByEmployee, employeeIdsByState]);
 
   const handleBack = useCallback(() => {
     if (view === "employeeDetail") {
@@ -612,7 +627,7 @@ export default function DashboardPage() {
           ? "Team activity and performance overview"
           : "Sales and employee activity overview"
         : view === "state"
-          ? `${stateEmployees.length} active ${stateEmployees.length === 1 ? "employee" : "employees"} in ${selectedState?.name || "this state"}`
+          ? `${stateEmployees.length} active ${stateEmployees.length === 1 ? "employee" : "employees"} in ${selectedState?.name || "this region"}`
           : [selectedEmployee?.position, selectedState?.name].filter(Boolean).join(" · "),
     onBack: view === "dashboard" ? undefined : handleBack,
   });

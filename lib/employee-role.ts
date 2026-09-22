@@ -33,7 +33,7 @@ export const getEmployeeRoleLabel = (role: unknown): string => {
 
   if (category === 'admin') return 'Admin';
   if (category === 'field-officer') return 'Field Officer';
-  if (category === 'regional-manager') return 'Regional Manager';
+  if (category === 'regional-manager') return 'Supervisor';
 
   const fallback = String(role ?? '').trim();
   return fallback || 'Employee';

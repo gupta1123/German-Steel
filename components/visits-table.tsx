@@ -32,12 +32,13 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 // Removed dropdown menu imports as Actions now uses direct navigation
-import { API, type VisitDto, type VisitResponse, type EmployeeUserDto, type TeamDataDto } from "@/lib/api";
+import { type VisitDto, type EmployeeUserDto } from "@/lib/api";
+import { teamsApi, type TeamEmployee } from "@/lib/teams-api";
+import { resolveVisitCity, resolveVisitClient, visitsApi, type VisitClientKind, type VisitType } from "@/lib/visits-api";
 import { format as formatDate } from "date-fns";
 import { useAuth } from "@/components/auth-provider";
-import { hasManagerPrivileges, getCorrectedRoleFlags } from "@/lib/auth";
-import { getTeamIds, getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
-import { formatTimeTo12Hour, formatDateToUserFriendly, formatLastUpdated } from "@/lib/utils";
+import { getCorrectedRoleFlags } from "@/lib/auth";
+import { formatTimeTo12Hour, formatDateToUserFriendly } from "@/lib/utils";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
 import { DateRangeError, isDateRangeInvalid } from "@/components/date-range-error";
 import { isAdminEmployeeRole } from "@/lib/employee-role";
@@ -47,6 +48,7 @@ const VISITS_TABLE_STORAGE_KEY = "visits.table.state.v2";
 type Row = {
   id: number;
   customerName: string;
+  clientKind?: VisitClientKind;
   executive: string;
   employeeId?: number;
   date: string; // yyyy-MM-dd
@@ -73,6 +75,34 @@ function Ellipsis({ value }: { value: string | number | null | undefined }) {
     </span>
   );
 }
+
+const teamEmployeeToUserDto = (employee: TeamEmployee): EmployeeUserDto => ({
+  id: employee.id,
+  firstName: employee.firstName,
+  lastName: employee.lastName,
+  email: employee.email,
+  role: employee.role,
+  departmentName: employee.department,
+  userName: employee.userName,
+  password: '',
+  primaryContact: employee.mobile,
+  dateOfJoining: employee.dateOfJoining,
+  city: employee.city,
+  state: employee.state,
+  country: employee.country,
+  addressLine1: employee.addressLine1,
+  addressLine2: employee.addressLine2,
+  pincode: employee.pincode,
+  assignedCity: employee.assignedCity,
+  userDto: {
+    username: employee.userName,
+    password: null,
+    roles: null,
+    employeeId: employee.id,
+    firstName: employee.firstName,
+    lastName: employee.lastName,
+  },
+});
 
 const buildEmployeeFilterName = (employee: EmployeeUserDto): string => {
   const primary = [employee.firstName, employee.lastName].filter(Boolean).join(" ").trim();
@@ -110,7 +140,7 @@ const deriveVisitStatus = (visit: Pick<VisitDto, "checkinTime" | "checkoutTime">
 };
 
 export default function VisitsTable() {
-  const { userRole, userData, currentUser, teamId, correctedRoleFlags } = useAuth();
+  const { userRole, userData, currentUser, teamId, correctedRoleFlags, token } = useAuth();
   const router = useRouter();
   const [navigatingVisitId, setNavigatingVisitId] = useState<number | null>(null);
   const [isNavigating, startTransition] = useTransition();
@@ -127,6 +157,7 @@ export default function VisitsTable() {
   const [endDate, setEndDate] = useState<Date | undefined>(defaultEndDate);
   const dateRangeInvalid = isDateRangeInvalid(startDate, endDate);
   const [selectedPurpose, setSelectedPurpose] = useState<string>("all");
+  const [selectedVisitType, setSelectedVisitType] = useState<string>("all");
   const [selectedExecutive, setSelectedExecutive] = useState<string>("all");
   const [customerName, setCustomerName] = useState<string>("");
   const [rows, setRows] = useState<Row[]>([]);
@@ -135,6 +166,7 @@ export default function VisitsTable() {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [totalElements, setTotalElements] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [expandedCards, setExpandedCards] = useState<number[]>([]);
@@ -147,13 +179,15 @@ export default function VisitsTable() {
     let isMounted = true;
 
     const loadEmployees = async () => {
+      if (!token) return;
       try {
         setIsLoadingEmployees(true);
-        const employeeList = await API.getAllEmployees();
+        // Correct backend contract: GET /api/common/employees?active=true&page=0&size=500
+        const page = await teamsApi.getEmployeesPage(token, { active: true, page: 0, size: 500 });
         if (!isMounted) {
           return;
         }
-        setEmployees(employeeList.filter((employee) => !isAdminEmployeeRole(employee.role)));
+        setEmployees(page.content.map(teamEmployeeToUserDto).filter((employee) => !isAdminEmployeeRole(employee.role)));
       } catch (err) {
         console.error("Failed to load employees list:", err);
       } finally {
@@ -168,11 +202,12 @@ export default function VisitsTable() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [token]);
 
   // Role-based state
   const [isManager, setIsManager] = useState(false);
   const [teamMembers, setTeamMembers] = useState<EmployeeUserDto[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [managerTeamIds, setManagerTeamIds] = useState<number[]>([]);
   // Use teamId from auth context as primary source, with local state as fallback
   const authTeamId = teamId; // from useAuth hook
@@ -198,6 +233,7 @@ export default function VisitsTable() {
           startDate?: string;
           endDate?: string;
           selectedPurpose?: string;
+          selectedVisitType?: string;
           selectedExecutive?: string;
           customerName?: string;
           currentPage?: number;
@@ -221,6 +257,10 @@ export default function VisitsTable() {
 
         if (parsed.selectedPurpose) {
           setSelectedPurpose(parsed.selectedPurpose);
+        }
+
+        if (parsed.selectedVisitType) {
+          setSelectedVisitType(parsed.selectedVisitType);
         }
 
         if (parsed.selectedExecutive) {
@@ -259,6 +299,7 @@ export default function VisitsTable() {
       startDate: startDate ? startDate.toISOString() : undefined,
       endDate: endDate ? endDate.toISOString() : undefined,
       selectedPurpose,
+      selectedVisitType,
       selectedExecutive,
       customerName,
       currentPage,
@@ -276,6 +317,7 @@ export default function VisitsTable() {
     startDate,
     endDate,
     selectedPurpose,
+    selectedVisitType,
     selectedExecutive,
     customerName,
     currentPage,
@@ -283,6 +325,15 @@ export default function VisitsTable() {
     expandedCards,
   ]);
 
+  const VISIT_TYPE_OPTIONS: { value: string; label: string }[] = [
+    { value: 'all', label: 'All Visit Types' },
+    { value: 'DEALER_VISIT', label: 'Dealer Visit' },
+    { value: 'INSTITUTIONAL_VISIT', label: 'Institutional Visit' },
+    { value: 'PROJECT_SITE_VISIT', label: 'Project Site Visit' },
+  ];
+
+  // purposes derived from rows kept for potential module-specific filtering; not used for server visitType filter
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const purposes = useMemo(() => {
     const set = new Set<string>();
     rows.forEach(r => { if (r.purpose) set.add(r.purpose); });
@@ -296,12 +347,10 @@ export default function VisitsTable() {
     );
     
     const base = employeesToUse.map((employee) => {
-      const identifier = employee.userDto?.employeeId ?? null;
       const displayName = buildEmployeeFilterName(employee);
-      const label = identifier !== null ? `${displayName} (${identifier})` : displayName;
       return {
         value: String(employee.id),
-        label,
+        label: displayName,
       };
     });
 
@@ -378,27 +427,44 @@ export default function VisitsTable() {
   // Use all team data for managers. Do not widen manager filters to all employees.
   useEffect(() => {
     const loadTeamMembers = async () => {
-      if (!isManager || !userData?.employeeId) return;
+      if (!isManager || !userData?.employeeId || !token) return;
 
       try {
-        console.log('Loading team members for manager employee ID:', userData.employeeId);
-        const teamData: TeamDataDto[] = await API.getTeamByEmployee(userData.employeeId);
-        
-        if (teamData && teamData.length > 0) {
-          const accessibleTeamIds = getTeamIds(teamData);
-          setManagerTeamIds(accessibleTeamIds);
-          setLocalTeamId(accessibleTeamIds[0] ?? null);
-          setTeamMembers(getUniqueFieldOfficersFromTeams(teamData));
-          console.log('Team IDs set to:', accessibleTeamIds);
+        // Correct backend contract (1 call, server-scoped):
+        // GET /api/common/employees?active=true&managerId={myId}&page=0&size=500
+        const page = await teamsApi.getEmployeesPage(token, {
+          active: true,
+          managerId: userData.employeeId,
+          page: 0,
+          size: 500,
+        });
+        const members = page.content.map(teamEmployeeToUserDto);
+        if (members.length > 0) {
+          setLocalTeamId(members[0] ? (page.content[0]?.teamId ?? null) : null);
+          setManagerTeamIds(page.content[0]?.teamId != null ? [page.content[0].teamId as number] : []);
+          setTeamMembers(members);
         } else {
-          console.log('No team data found for manager');
-          setLocalTeamId(null);
-          setManagerTeamIds([]);
-          setTeamMembers([]);
+          // Fallback: teams managed by me → per-team members (correct /api/common/teams contract)
+          const teams = await teamsApi.getTeamsPage(token, { officeManagerId: userData.employeeId, page: 0, size: 50 });
+          const teamIds = teams.content.map((t) => t.id);
+          setManagerTeamIds(teamIds);
+          setLocalTeamId(teamIds[0] ?? null);
+          if (teamIds.length === 0) {
+            setTeamMembers([]);
+            return;
+          }
+          const membersPages = await Promise.all(
+            teamIds.map((id) => teamsApi.getTeamEmployeesPage(token, id, { page: 0, size: 500 })),
+          );
+          const seen = new Set<number>();
+          const unique = membersPages
+            .flatMap((p) => p.content)
+            .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
+            .map(teamEmployeeToUserDto);
+          setTeamMembers(unique);
         }
       } catch (err) {
         console.error('Failed to load team members:', err);
-        console.error('Error details:', (err as Error).message, (err as Error).stack);
         setError('Failed to load team members');
         setLocalTeamId(null);
         setManagerTeamIds([]);
@@ -406,60 +472,23 @@ export default function VisitsTable() {
       }
     };
 
-    if (isManager && userData?.employeeId) {
+    if (isManager && userData?.employeeId && token) {
       loadTeamMembers();
     } else if (isManager && authTeamId) {
       setLocalTeamId(authTeamId);
       setManagerTeamIds([authTeamId]);
     }
-  }, [isManager, userData?.employeeId, authTeamId]);
+  }, [isManager, userData?.employeeId, authTeamId, token]);
 
   // Fallback field-officer load only when employeeId-based team data is unavailable.
   useEffect(() => {
     const loadFieldOfficers = async () => {
-      if (!isManager || !effectiveTeamId || userData?.employeeId) return;
+      if (!isManager || !effectiveTeamId || userData?.employeeId || !token) return;
 
       try {
-        console.log('Loading field officers for team ID:', effectiveTeamId);
-        const teamData = await API.getTeamById(effectiveTeamId);
-        console.log('Team data received:', teamData);
-        
-        if (teamData && teamData.fieldOfficers) {
-          // Convert field officers to EmployeeUserDto format for compatibility
-          const fieldOfficersAsEmployees: EmployeeUserDto[] = teamData.fieldOfficers.map(fo => ({
-            id: fo.id,
-            firstName: fo.firstName,
-            lastName: fo.lastName,
-            role: fo.role || 'Field Officer',
-            email: fo.email || '',
-            userName: fo.userName || '',
-            password: fo.password || '',
-            primaryContact: fo.primaryContact || '',
-            secondaryContact: fo.secondaryContact || '',
-            departmentName: fo.departmentName || '',
-            addressLine1: fo.addressLine1 || '',
-            addressLine2: fo.addressLine2 || '',
-            city: fo.city || '',
-            state: fo.state || '',
-            country: fo.country || '',
-            pincode: fo.pincode || 0,
-            dateOfJoining: fo.dateOfJoining || '',
-            userDto: fo.userDto || {
-              username: fo.userName || '',
-              password: null,
-              roles: null,
-              employeeId: fo.id,
-              firstName: fo.firstName,
-              lastName: fo.lastName
-            }
-          }));
-          
-          console.log('Field officers loaded:', fieldOfficersAsEmployees);
-          setTeamMembers(fieldOfficersAsEmployees);
-        } else {
-          console.log('No field officers found in team data');
-          setTeamMembers([]);
-        }
+        // Correct backend contract: GET /api/common/teams/{id}/employees?active=true&page=0&size=500
+        const page = await teamsApi.getTeamEmployeesPage(token, effectiveTeamId, { page: 0, size: 500 });
+        setTeamMembers(page.content.map(teamEmployeeToUserDto));
       } catch (err) {
         console.error('Failed to load field officers:', err);
         setError('Failed to load field officers');
@@ -467,127 +496,92 @@ export default function VisitsTable() {
       }
     };
 
-    if (isManager && effectiveTeamId && !userData?.employeeId) {
+    if (isManager && effectiveTeamId && !userData?.employeeId && token) {
       loadFieldOfficers();
     }
-  }, [isManager, effectiveTeamId, userData?.employeeId]);
+  }, [isManager, effectiveTeamId, userData?.employeeId, token]);
 
   useEffect(() => {
     if (!isStateHydrated) return;
+    if (!token) return;
     if (!startDate || !endDate || dateRangeInvalid) return;
-    
-    // For managers, wait until we have teamId
-    if (isManager && managerTeamIds.length === 0) {
-      console.log('⏳ Manager detected but no teamId yet - waiting for team data');
-      return;
-    }
-    
+
     const startStr = formatDate(startDate, 'yyyy-MM-dd');
     const endStr = formatDate(endDate, 'yyyy-MM-dd');
-    // Match against the same scoped, non-admin directory used by the filter.
-    const employeesToSearch = isManager ? teamMembers : employees;
-    const selectedEmployee = selectedExecutive !== 'all'
-      ? employeesToSearch.find(emp => String(emp.id) === selectedExecutive)
-      : undefined;
-    const employeeNameFilter = selectedEmployee ? buildEmployeeFilterName(selectedEmployee) : undefined;
 
     const run = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const storeNameFilter = customerName.trim() !== '' ? customerName : undefined;
-        const purposeFilter = selectedPurpose && selectedPurpose !== 'all' && selectedPurpose !== 'All Purposes' ? selectedPurpose : undefined;
-        
-        console.log('Making API call with filters:', {
-          startDate: startStr,
-          endDate: endStr,
+        const visitType = selectedVisitType !== 'all' ? (selectedVisitType as VisitType) : undefined;
+        const assignedEmployeeId = selectedExecutive !== 'all' ? Number(selectedExecutive) : undefined;
+
+        const response = await visitsApi.getCommonVisits(token, {
           page: currentPage,
           size: pageSize,
-          sort: isManager ? 'visitDate,desc' : 'id,desc',
-          storeName: storeNameFilter,
-          purpose: purposeFilter,
-          isManager,
-          teamIds: managerTeamIds,
-          teamMemberCount: teamMembers.length,
-          userRole: userRole,
-          currentUserAuthorities: currentUser?.authorities,
-          employeeName: employeeNameFilter
-        });
-        
-        let response: VisitResponse;
-        
-        // Use team-specific API for managers, regular API for admins
-        console.log('🔍 API Selection Debug:', {
-          isManager,
-          teamIds: managerTeamIds,
-          userRole,
-          currentUserAuthorities: currentUser?.authorities,
-          userDataEmployeeId: userData?.employeeId,
-          teamMembersCount: teamMembers.length,
-          employeeName: employeeNameFilter
+          visitType,
+          from: startStr,
+          to: endStr,
+          assignedEmployeeId,
         });
 
-        if (isManager && managerTeamIds.length > 0) {
-          console.log('🔵 MANAGER DETECTED - Using optimized multi-team API');
-          console.log('Team IDs:', managerTeamIds);
-          console.log('API Endpoint: /visit/getForTeams');
-          response = await API.getVisitsForTeams(
-            managerTeamIds,
-            startStr,
-            endStr,
-            currentPage,
-            pageSize,
-            'visitDate,desc',
-            purposeFilter,
-            undefined,
-            undefined,
-            storeNameFilter,
-            employeeNameFilter
-          );
-        } else {
-          console.log('🟢 ADMIN DETECTED - Using regular API');
-          console.log('Reason:', !isManager ? 'Not a manager' : 'No teamId');
-          console.log('API Endpoint: /visit/getByDateSortedOld');
-          response = await API.getVisitsByDateSortedOld(
-            startStr,
-            endStr,
-            currentPage,
-            pageSize,
-            'id,desc',
-            employeeNameFilter
-          );
-        }
-        
-        console.log('API Response:', response);
-        console.log('Total elements:', response.totalElements);
-        console.log('Content length:', response.content?.length);
-        
-        // Extract visits from the content array
-        const visits: VisitDto[] = response.content || [];
-        
-        const mapped: Row[] = visits.map(v => ({
-          id: v.id,
-          customerName: v.storeName,
-          executive: v.employeeName,
-          employeeId: v.employeeId,
-          date: v.visit_date,
-          status: deriveVisitStatus(v),
-          purpose: v.purpose ?? undefined,
-          visitStart: v.checkinTime ?? undefined,
-          visitEnd: v.checkoutTime ?? undefined,
-          intent: v.intent ?? undefined,
-          lastUpdated: v.updatedAt ? `${v.updatedAt} ${v.updatedTime || ''}` : undefined,
-          priority: v.priority ?? undefined,
-          outcome: v.outcome ?? undefined,
-          feedback: v.feedback ?? undefined,
-          city: v.city ?? undefined,
-          state: v.state ?? undefined,
-          checkinTime: v.checkinTime ?? undefined,
-          checkoutTime: v.checkoutTime ?? undefined,
-        }));
-        
+        const mapped: Row[] = response.content.map((v: unknown) => {
+          const anyV = v as Record<string, unknown>;
+          const isNewShape = 'scheduledVisitDate' in anyV || 'visitType' in anyV;
+          if (isNewShape) {
+            const newV = v as import('@/lib/visits-api').CommonVisitRow;
+            const hasCheckin = hasVisitTime(newV.actualCheckinAt);
+            const hasCheckout = hasVisitTime(newV.actualCheckoutAt);
+            const status: VisitListStatus = hasCheckin && hasCheckout ? 'Completed' : hasCheckin ? 'Ongoing' : 'Assigned';
+            const client = resolveVisitClient(newV);
+            const cityValue = resolveVisitCity(newV);
+            return {
+              id: newV.id,
+              customerName: client.name,
+              clientKind: client.kind,
+              executive: newV.assignedEmployeeName || (newV as unknown as { employeeName?: string }).employeeName || '—',
+              employeeId: newV.assignedEmployeeId,
+              date: newV.scheduledVisitDate || (newV as unknown as { visit_date?: string }).visit_date || '',
+              status,
+              purpose: newV.purpose ?? undefined,
+              // Assigned → no times; Ongoing → start only; Completed → both
+              visitStart: status === 'Assigned' ? undefined : (newV.actualCheckinAt ?? newV.scheduledStartTime ?? undefined),
+              visitEnd: status === 'Completed' ? (newV.actualCheckoutAt ?? newV.scheduledEndTime ?? undefined) : undefined,
+              intent: (newV as unknown as { intent?: number }).intent ?? undefined,
+              lastUpdated: (newV as unknown as { updatedAt?: string; updatedTime?: string }).updatedAt ? `${(newV as unknown as { updatedAt?: string }).updatedAt} ${(newV as unknown as { updatedTime?: string }).updatedTime || ''}`.trim() : undefined,
+              priority: (newV as unknown as { priority?: string }).priority ?? undefined,
+              outcome: newV.outcome ?? undefined,
+              feedback: (newV as unknown as { feedback?: string }).feedback ?? undefined,
+              city: cityValue === '—' ? undefined : cityValue,
+              state: newV.locationState ?? (newV as unknown as { state?: string }).state ?? undefined,
+              checkinTime: newV.actualCheckinAt ?? (newV as unknown as { checkinTime?: string }).checkinTime ?? undefined,
+              checkoutTime: newV.actualCheckoutAt ?? (newV as unknown as { checkoutTime?: string }).checkoutTime ?? undefined,
+            };
+          }
+          const legacy = v as unknown as { id: number; storeName: string; employeeName: string; employeeId: number; visit_date: string; checkinTime?: string | null; checkoutTime?: string | null; intent?: number; updatedAt?: string; updatedTime?: string; priority?: string; outcome?: string; feedback?: string; city?: string; state?: string; purpose?: string };
+          return {
+            id: legacy.id,
+            customerName: legacy.storeName,
+            executive: legacy.employeeName,
+            employeeId: legacy.employeeId,
+            date: legacy.visit_date,
+            status: deriveVisitStatus(legacy as unknown as Pick<import('@/lib/api').VisitDto, 'checkinTime' | 'checkoutTime'>),
+            purpose: legacy.purpose ?? undefined,
+            visitStart: legacy.checkinTime ?? undefined,
+            visitEnd: legacy.checkoutTime ?? undefined,
+            intent: legacy.intent ?? undefined,
+            lastUpdated: legacy.updatedAt ? `${legacy.updatedAt} ${legacy.updatedTime || ''}` : undefined,
+            priority: legacy.priority ?? undefined,
+            outcome: legacy.outcome ?? undefined,
+            feedback: legacy.feedback ?? undefined,
+            city: legacy.city ?? undefined,
+            state: legacy.state ?? undefined,
+            checkinTime: legacy.checkinTime ?? undefined,
+            checkoutTime: legacy.checkoutTime ?? undefined,
+          };
+        });
+
         setRows(mapped);
-        // Use actual total pages and elements from API response
         const resolvedTotalPages = response.totalPages && response.totalPages > 0 ? response.totalPages : 1;
         setTotalPages(resolvedTotalPages);
         setTotalElements(response.totalElements || 0);
@@ -605,9 +599,9 @@ export default function VisitsTable() {
       }
     };
     run();
-  }, [isStateHydrated, startDate, endDate, dateRangeInvalid, selectedPurpose, customerName, currentPage, pageSize, isManager, managerTeamIds, selectedExecutive, employees, teamMembers]);
+  }, [isStateHydrated, token, startDate, endDate, dateRangeInvalid, selectedVisitType, selectedExecutive, currentPage, pageSize]);
 
-  // Reset to first page when filters change
+  // Reset to first page when filters change — server-side filters use new endpoint
   useEffect(() => {
     if (!isStateHydrated) return;
     if (!filterInitialisedRef.current) {
@@ -615,19 +609,12 @@ export default function VisitsTable() {
       return;
     }
     setCurrentPage(0);
-  }, [isStateHydrated, startDate, endDate, selectedPurpose, selectedExecutive, customerName]);
+  }, [isStateHydrated, startDate, endDate, selectedVisitType, selectedExecutive, customerName]);
 
   const filteredVisits = rows.filter(visit => {
     if (customerName.trim() !== '' && !visit.customerName.toLowerCase().includes(customerName.trim().toLowerCase())) {
       return false;
     }
-
-    // Purpose filter (client-side since API doesn't support it yet)
-    if (selectedPurpose !== "all" && visit.purpose !== selectedPurpose) return false;
-    
-    // Executive filter (client-side since API doesn't support it yet)
-    if (selectedExecutive !== "all" && String(visit.employeeId ?? '') !== selectedExecutive) return false;
-    
     return true;
   });
 
@@ -643,15 +630,14 @@ export default function VisitsTable() {
   const buildCsvAndDownload = (rowsForCsv: Row[]) => {
     const headers = [
       'Customer Name',
+      'Client Type',
+      'City',
       'Executive',
       'Date',
       'Status',
       'Purpose',
       'Visit Start',
       'Visit End',
-      'Intent',
-      'Last Updated',
-      'City',
       'State',
     ];
 
@@ -659,18 +645,16 @@ export default function VisitsTable() {
 
     for (const r of rowsForCsv) {
       const status = r.status ?? 'Assigned';
-      const lastUpdated = r.lastUpdated ?? '';
       const line = [
         r.customerName,
-        r.executive,
+        clientKindLabel(r.clientKind) ?? '',
+        r.city ?? '',
+        resolveExecutiveName(r.executive, r.employeeId),
         r.date,
         status,
         r.purpose ?? '',
         r.visitStart ?? '',
         r.visitEnd ?? '',
-        r.intent ?? '',
-        lastUpdated,
-        r.city ?? '',
         r.state ?? '',
       ].map(csvEscape).join(',');
       lines.push(line);
@@ -687,124 +671,171 @@ export default function VisitsTable() {
   };
 
   const handleExport = async () => {
-    if (!startDate || !endDate || dateRangeInvalid) return;
+    if (!startDate || !endDate || dateRangeInvalid || !token) return;
     try {
       setIsExporting(true);
       const startStr = formatDate(startDate, 'yyyy-MM-dd');
       const endStr = formatDate(endDate, 'yyyy-MM-dd');
+      const visitType = selectedVisitType !== 'all' ? (selectedVisitType as VisitType) : undefined;
+      const assignedEmployeeId = selectedExecutive !== 'all' ? Number(selectedExecutive) : undefined;
 
+      // Use new combined endpoint for export — paginated, not fetching every page for table render
       const size = 200;
-      let page = 0;
-      let all: VisitDto[] = [];
-      const employeesToSearch = isManager ? teamMembers : employees;
-      const selectedEmployee = selectedExecutive !== 'all'
-        ? employeesToSearch.find(emp => String(emp.id) === selectedExecutive)
-        : undefined;
-      const employeeNameFilter = selectedEmployee ? buildEmployeeFilterName(selectedEmployee) : undefined;
-
-      if (isManager) {
-        const first = await API.getVisitsForTeams(
-          managerTeamIds,
-          startStr,
-          endStr,
-          page,
-          size,
-          'visitDate,desc',
-          selectedPurpose !== 'all' ? selectedPurpose : undefined,
-          undefined,
-          undefined,
-          customerName.trim() !== '' ? customerName : undefined,
-          employeeNameFilter
-        );
-        all = all.concat(first.content || []);
-        const total = first.totalPages || 1;
-
-        for (page = 1; page < total; page++) {
-          const res = await API.getVisitsForTeams(
-            managerTeamIds,
-            startStr,
-            endStr,
-            page,
-            size,
-            'visitDate,desc',
-            selectedPurpose !== 'all' ? selectedPurpose : undefined,
-            undefined,
-            undefined,
-            customerName.trim() !== '' ? customerName : undefined,
-            employeeNameFilter
-          );
-          all = all.concat(res.content || []);
+      const first = await visitsApi.getCommonVisits(token, { page: 0, size, visitType, from: startStr, to: endStr, assignedEmployeeId });
+      let allRows: Row[] = first.content.map((v: unknown) => {
+        const anyV = v as Record<string, unknown>;
+        const isNew = 'scheduledVisitDate' in anyV;
+        if (isNew) {
+          const nv = v as import('@/lib/visits-api').CommonVisitRow;
+          const hasCheckin = hasVisitTime(nv.actualCheckinAt);
+          const hasCheckout = hasVisitTime(nv.actualCheckoutAt);
+          const status: VisitListStatus = hasCheckin && hasCheckout ? 'Completed' : hasCheckin ? 'Ongoing' : 'Assigned';
+          const client = resolveVisitClient(nv);
+          const exportCity = resolveVisitCity(nv);
+          return {
+            id: nv.id,
+            customerName: client.name,
+            clientKind: client.kind,
+            executive: nv.assignedEmployeeName || '—',
+            employeeId: nv.assignedEmployeeId,
+            date: nv.scheduledVisitDate,
+            status,
+            purpose: nv.purpose ?? undefined,
+            visitStart: status === 'Assigned' ? undefined : (nv.actualCheckinAt ?? nv.scheduledStartTime ?? undefined),
+            visitEnd: status === 'Completed' ? (nv.actualCheckoutAt ?? nv.scheduledEndTime ?? undefined) : undefined,
+            intent: (nv as unknown as { intent?: number }).intent,
+            lastUpdated: undefined,
+            priority: undefined,
+            outcome: nv.outcome ?? undefined,
+            feedback: undefined,
+            city: exportCity === '—' ? undefined : exportCity,
+            state: nv.locationState ?? undefined,
+            checkinTime: nv.actualCheckinAt ?? undefined,
+            checkoutTime: nv.actualCheckoutAt ?? undefined,
+          };
         }
-      } else {
-        const first = await API.getVisitsByDateSortedOld(
-          startStr,
-          endStr,
-          page,
-          size,
-          'id,desc',
-          employeeNameFilter
-        );
-        all = all.concat(first.content || []);
-        const total = first.totalPages || 1;
+        const legacy = v as unknown as { id: number; storeName: string; employeeName: string; employeeId: number; visit_date: string; checkinTime?: string | null; checkoutTime?: string | null; intent?: number; updatedAt?: string; updatedTime?: string; purpose?: string; priority?: string; outcome?: string; feedback?: string; city?: string; state?: string };
+        return {
+          id: legacy.id,
+          customerName: legacy.storeName,
+          executive: legacy.employeeName,
+          employeeId: legacy.employeeId,
+          date: legacy.visit_date,
+          status: deriveVisitStatus(legacy as unknown as Pick<import('@/lib/api').VisitDto, 'checkinTime' | 'checkoutTime'>),
+          purpose: legacy.purpose ?? undefined,
+          visitStart: legacy.checkinTime ?? undefined,
+          visitEnd: legacy.checkoutTime ?? undefined,
+          intent: legacy.intent ?? undefined,
+          lastUpdated: legacy.updatedAt ? `${legacy.updatedAt} ${legacy.updatedTime || ''}` : undefined,
+          priority: legacy.priority ?? undefined,
+          outcome: legacy.outcome ?? undefined,
+          feedback: legacy.feedback ?? undefined,
+          city: legacy.city ?? undefined,
+          state: legacy.state ?? undefined,
+          checkinTime: legacy.checkinTime ?? undefined,
+          checkoutTime: legacy.checkoutTime ?? undefined,
+        };
+      });
 
-        for (page = 1; page < total; page++) {
-          const res = await API.getVisitsByDateSortedOld(
-            startStr,
-            endStr,
-            page,
-            size,
-            'id,desc',
-            employeeNameFilter
-          );
-          all = all.concat(res.content || []);
-        }
+      for (let page = 1; page < first.totalPages; page++) {
+        const res = await visitsApi.getCommonVisits(token, { page, size, visitType, from: startStr, to: endStr, assignedEmployeeId });
+        const mapped = res.content.map((v: unknown) => {
+          const anyV = v as Record<string, unknown>;
+          const isNew = 'scheduledVisitDate' in anyV;
+          if (isNew) {
+            const nv = v as import('@/lib/visits-api').CommonVisitRow;
+            const hasCheckin = hasVisitTime(nv.actualCheckinAt);
+            const hasCheckout = hasVisitTime(nv.actualCheckoutAt);
+            const status: VisitListStatus = hasCheckin && hasCheckout ? 'Completed' : hasCheckin ? 'Ongoing' : 'Assigned';
+            const client = resolveVisitClient(nv);
+            const exportCity2 = resolveVisitCity(nv);
+            return {
+              id: nv.id,
+              customerName: client.name,
+              clientKind: client.kind,
+              executive: nv.assignedEmployeeName || '—',
+              employeeId: nv.assignedEmployeeId,
+              date: nv.scheduledVisitDate,
+              status,
+              purpose: nv.purpose ?? undefined,
+              visitStart: nv.actualCheckinAt ?? undefined,
+              visitEnd: nv.actualCheckoutAt ?? undefined,
+              intent: undefined,
+              lastUpdated: undefined,
+              priority: undefined,
+              outcome: nv.outcome ?? undefined,
+              feedback: undefined,
+              city: exportCity2 === '—' ? undefined : exportCity2,
+              state: nv.locationState ?? undefined,
+              checkinTime: nv.actualCheckinAt ?? undefined,
+              checkoutTime: nv.actualCheckoutAt ?? undefined,
+            };
+          }
+          const legacy = v as unknown as { id: number; storeName: string; employeeName: string; employeeId: number; visit_date: string; checkinTime?: string | null; checkoutTime?: string | null; intent?: number; updatedAt?: string; updatedTime?: string; purpose?: string };
+          return {
+            id: legacy.id,
+            customerName: legacy.storeName,
+            executive: legacy.employeeName,
+            employeeId: legacy.employeeId,
+            date: legacy.visit_date,
+            status: deriveVisitStatus(legacy as unknown as Pick<import('@/lib/api').VisitDto, 'checkinTime' | 'checkoutTime'>),
+            purpose: legacy.purpose ?? undefined,
+            visitStart: legacy.checkinTime ?? undefined,
+            visitEnd: legacy.checkoutTime ?? undefined,
+            intent: legacy.intent,
+            lastUpdated: undefined,
+            priority: undefined,
+            outcome: undefined,
+            feedback: undefined,
+            city: undefined,
+            state: undefined,
+            checkinTime: legacy.checkinTime ?? undefined,
+            checkoutTime: legacy.checkoutTime ?? undefined,
+          };
+        });
+        allRows = allRows.concat(mapped);
       }
 
-      all = Array.from(new Map(all.map((visit) => [visit.id, visit])).values());
-
-      // Filter visits based on role
-      if (isManager && teamMembers.length > 0) {
-        const teamMemberIds = teamMembers.map(member => member.id);
-        all = all.filter(visit => teamMemberIds.includes(visit.employeeId));
-      }
-
-      // Map to table Row type
-      const mapped: Row[] = all.map((v) => ({
-        id: v.id,
-        customerName: v.storeName,
-        executive: v.employeeName,
-        employeeId: v.employeeId,
-        date: v.visit_date,
-        status: deriveVisitStatus(v),
-        purpose: v.purpose ?? undefined,
-        visitStart: v.checkinTime ?? undefined,
-        visitEnd: v.checkoutTime ?? undefined,
-        intent: v.intent ?? undefined,
-        lastUpdated: v.updatedAt ? `${v.updatedAt} ${v.updatedTime || ''}` : undefined,
-        priority: v.priority ?? undefined,
-        outcome: v.outcome ?? undefined,
-        feedback: v.feedback ?? undefined,
-        city: v.city ?? undefined,
-        state: v.state ?? undefined,
-        checkinTime: v.checkinTime ?? undefined,
-        checkoutTime: v.checkoutTime ?? undefined,
-      }));
-
-      // Apply same client-side Purpose/Executive filters
-      const rowsForCsv = mapped.filter(visit => {
+      // Client-side search filter for customer name (server does not support storeName)
+      const rowsForCsv = allRows.filter((visit) => {
         if (customerName.trim() !== '' && !visit.customerName.toLowerCase().includes(customerName.trim().toLowerCase())) return false;
-        if (selectedPurpose !== 'all' && visit.purpose !== selectedPurpose) return false;
-        if (selectedExecutive !== 'all' && String(visit.employeeId ?? '') !== selectedExecutive) return false;
         return true;
       });
 
       buildCsvAndDownload(rowsForCsv);
-    } catch (e) {
-      console.error('Export failed', e);
+    } catch {
       alert('Failed to export CSV');
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const employeeNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const employee of [...employees, ...teamMembers]) {
+      if (!map.has(employee.id)) {
+        map.set(employee.id, buildEmployeeFilterName(employee));
+      }
+    }
+    return map;
+  }, [employees, teamMembers]);
+
+  const resolveExecutiveName = (executive: string, employeeId?: number) => {
+    if (executive && executive !== '—') return executive;
+    if (employeeId != null && employeeNameById.has(employeeId)) {
+      return employeeNameById.get(employeeId) as string;
+    }
+    return executive;
+  };
+
+  const executiveLabel = (visit: Pick<Row, 'executive' | 'employeeId'>) =>
+    resolveExecutiveName(visit.executive, visit.employeeId);
+
+  const clientKindLabel = (kind?: VisitClientKind) => {
+    if (kind === 'RETAIL') return 'Retail';
+    if (kind === 'INSTITUTION') return 'Institution';
+    if (kind === 'PROJECT') return 'Project';
+    return null;
   };
 
   const statusClassName = (status?: string) => {
@@ -815,36 +846,10 @@ export default function VisitsTable() {
 
   return (
     <div className="mx-auto w-full max-w-none py-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAreFiltersVisible((visible) => !visible)}>
-            <Filter className="mr-2 h-4 w-4" />
-            {areFiltersVisible ? "Hide Filters" : "Show Filters"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            disabled={isExporting || dateRangeInvalid || !startDate || !endDate}
-          >
-            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DownloadIcon className="mr-2 h-4 w-4" />}
-            {isExporting ? "Exporting…" : "Export"}
-          </Button>
-        </div>
-        {userRole && (
-          <Badge variant={isManager ? "secondary" : "default"} className="text-xs">
-            {isManager ? "Manager View" : "Admin View"}
-          </Badge>
-        )}
-      </div>
-
-      {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2.5 text-sm text-red-700">{error}</div>}
-      <DateRangeError fromDate={startDate} toDate={endDate} className="mb-3" />
-
-      {areFiltersVisible && (
-        <div className="mb-4 rounded-xl border border-border/70 bg-muted/20 p-3">
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="min-w-0">
+      {areFiltersVisible ? (
+        <>
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="min-w-0 flex-1">
               <Label className="sr-only">Start Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
@@ -859,7 +864,7 @@ export default function VisitsTable() {
               </Popover>
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <Label className="sr-only">End Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
@@ -874,18 +879,17 @@ export default function VisitsTable() {
               </Popover>
             </div>
 
-            <div className="min-w-0">
-              <Label className="sr-only">Purpose</Label>
-              <Select value={selectedPurpose} onValueChange={setSelectedPurpose}>
-                <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Purpose" /></SelectTrigger>
+            <div className="min-w-0 flex-1">
+              <Label className="sr-only">Visit Type</Label>
+              <Select value={selectedVisitType} onValueChange={setSelectedVisitType}>
+                <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Visit Type" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Purposes</SelectItem>
-                  {purposes.map((purpose) => <SelectItem key={purpose} value={purpose}>{purpose}</SelectItem>)}
+                  {VISIT_TYPE_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <Label htmlFor="visit-customer-filter" className="sr-only">Customer Name</Label>
               <Input
                 id="visit-customer-filter"
@@ -898,7 +902,7 @@ export default function VisitsTable() {
               />
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <Label className="sr-only">Employee</Label>
               <SearchableSelect
                 options={employeeOptions}
@@ -911,20 +915,72 @@ export default function VisitsTable() {
                 searchPlaceholder="Search employees..."
               />
             </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shadow-none"
+                onClick={() => setAreFiltersVisible((visible) => !visible)}
+                aria-label="Hide filters"
+                title="Hide filters"
+              >
+                <Filter className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shadow-none"
+                onClick={handleExport}
+                disabled={isExporting || dateRangeInvalid || !startDate || !endDate}
+                aria-label="Export visits"
+                title="Export visits"
+              >
+                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadIcon className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
+          <hr className="mb-4 border-border" />
+        </>
+      ) : (
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shadow-none"
+            onClick={() => setAreFiltersVisible(true)}
+            aria-label="Show filters"
+            title="Show filters"
+          >
+            <Filter className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shadow-none"
+            onClick={handleExport}
+            disabled={isExporting || dateRangeInvalid || !startDate || !endDate}
+            aria-label="Export visits"
+            title="Export visits"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadIcon className="h-4 w-4" />}
+          </Button>
         </div>
       )}
+
+      {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2.5 text-sm text-red-700">{error}</div>}
+      <DateRangeError fromDate={startDate} toDate={endDate} className="mb-3" />
 
       <div className="hidden min-w-0 md:block">
         <Table className="table-fixed text-xs font-poppins">
           <colgroup>
-            <col className="w-[16%]" /><col className="w-[15%]" /><col className="w-[10%]" />
-            <col className="w-[10%]" /><col className="w-[10%]" /><col className="w-[8%]" />
-            <col className="w-[8%]" /><col className="w-[5%]" /><col className="w-[13%]" /><col className="w-[5%]" />
+            <col className="w-[15%]" /><col className="w-[9%]" /><col className="w-[12%]" />
+            <col className="w-[12%]" /><col className="w-[9%]" /><col className="w-[8%]" />
+            <col className="w-[11%]" /><col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[10%]" />
           </colgroup>
           <TableHeader>
             <TableRow>
-              {['Customer Name', 'Executive', 'Date', 'Status', 'Purpose', 'Visit Start', 'Visit End', 'Intent', 'Last Updated', 'Actions'].map((heading) => (
+              {['Customer Name', 'Type', 'City', 'Executive', 'Date', 'Status', 'Purpose', 'Visit Start', 'Visit End', 'Actions'].map((heading) => (
                 <TableHead key={heading} className="overflow-hidden text-ellipsis whitespace-nowrap" title={heading}>{heading}</TableHead>
               ))}
             </TableRow>
@@ -940,7 +996,17 @@ export default function VisitsTable() {
               filteredVisits.map((visit) => (
                 <TableRow key={visit.id}>
                   <TableCell className="font-medium"><Ellipsis value={visit.customerName} /></TableCell>
-                  <TableCell><Ellipsis value={visit.executive} /></TableCell>
+                  <TableCell>
+                    {clientKindLabel(visit.clientKind) ? (
+                      <Badge variant="outline" className="h-5 whitespace-nowrap px-1.5 text-[10px] font-normal">
+                        {clientKindLabel(visit.clientKind)}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell><Ellipsis value={visit.city ?? '—'} /></TableCell>
+                  <TableCell><Ellipsis value={executiveLabel(visit)} /></TableCell>
                   <TableCell><Ellipsis value={formatDateToUserFriendly(visit.date)} /></TableCell>
                   <TableCell>
                     <span className={`inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${statusClassName(visit.status)}`}>
@@ -950,8 +1016,6 @@ export default function VisitsTable() {
                   <TableCell><Ellipsis value={visit.purpose} /></TableCell>
                   <TableCell><Ellipsis value={visit.visitStart ? formatTimeTo12Hour(visit.visitStart) : '—'} /></TableCell>
                   <TableCell><Ellipsis value={visit.visitEnd ? formatTimeTo12Hour(visit.visitEnd) : '—'} /></TableCell>
-                  <TableCell><Ellipsis value={visit.intent} /></TableCell>
-                  <TableCell><Ellipsis value={visit.lastUpdated ? formatLastUpdated(visit.lastUpdated) : '—'} /></TableCell>
                   <TableCell>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleViewDetails(visit.id)} disabled={navigatingVisitId !== null}>
                       {navigatingVisitId === visit.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "View"}
@@ -978,12 +1042,15 @@ export default function VisitsTable() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold" title={visit.customerName}>{visit.customerName}</p>
+                    {clientKindLabel(visit.clientKind) && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{clientKindLabel(visit.clientKind)}</p>
+                    )}
                     <p className="mt-0.5 text-xs text-muted-foreground">{formatDateToUserFriendly(visit.date)}</p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${statusClassName(visit.status)}`}>{visit.status ?? '—'}</span>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 text-xs">
-                  <div className="flex min-w-0 items-center gap-1.5"><User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><Ellipsis value={visit.executive} /></div>
+                  <div className="flex min-w-0 items-center gap-1.5"><User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><Ellipsis value={executiveLabel(visit)} /></div>
                   <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => toggleCardExpansion(visit.id)} aria-label="Toggle visit details">
                     {expandedCards.includes(visit.id) ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                   </Button>
@@ -991,7 +1058,7 @@ export default function VisitsTable() {
                 {expandedCards.includes(visit.id) && (
                   <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs">
                     <div><span className="text-muted-foreground">Purpose</span><p className="truncate font-medium">{visit.purpose ?? '—'}</p></div>
-                    <div><span className="text-muted-foreground">Intent</span><p className="font-medium">{visit.intent ?? '—'}</p></div>
+                    <div><span className="text-muted-foreground">City</span><p className="truncate font-medium">{visit.city ?? '—'}</p></div>
                     <div><span className="text-muted-foreground">Start</span><p className="font-medium">{visit.visitStart ? formatTimeTo12Hour(visit.visitStart) : '—'}</p></div>
                     <div><span className="text-muted-foreground">End</span><p className="font-medium">{visit.visitEnd ? formatTimeTo12Hour(visit.visitEnd) : '—'}</p></div>
                   </div>

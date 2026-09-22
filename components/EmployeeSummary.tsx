@@ -377,8 +377,8 @@ const EmployeeSummary: React.FC = () => {
 
     return (
         <div className="space-y-4">
-            <Card className="gap-0 border-border/70 py-0 shadow-sm">
-                <CardContent className="space-y-4 p-4">
+            <div className="space-y-4">
+                <div className="space-y-4">
                     {/* Filters Section */}
                     <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
                         <div className="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-2">
@@ -860,8 +860,8 @@ const EmployeeSummary: React.FC = () => {
                             </div>
                         </>
                     )}
-                </CardContent>
-            </Card>
+                </div>
+            </div>
 
         </div>
     );

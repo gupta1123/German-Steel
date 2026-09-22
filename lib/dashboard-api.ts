@@ -1,7 +1,8 @@
 import { getApiErrorMessage } from '@/lib/api-error';
 
 const DASHBOARD_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
-const PAGE_SIZE = 500;
+// Dashboard and common paginated endpoints enforce a maximum page size of 100.
+const PAGE_SIZE = 100;
 
 export interface DashboardEmployee {
   id: number;
@@ -14,7 +15,10 @@ export interface DashboardEmployee {
   active: boolean;
   houseLatitude: number | null;
   houseLongitude: number | null;
+  regionIds: number[];
 }
+
+export interface DashboardRegion { id: number; name: string }
 
 export interface DashboardVisit {
   id: number;
@@ -38,6 +42,27 @@ export interface DashboardAttendanceLog {
 export interface DashboardSummary {
   totalVisits: number | null;
   activeEmployees: number | null;
+}
+
+export interface DashboardOverview extends DashboardSummary {
+  completedVisits: number;
+  newRetailAccounts: number;
+  newInstitutions: number;
+  visitCountByType: Record<string, number>;
+  visitCountByState: Record<string, number>;
+  liveLocations: DashboardCurrentLocation[];
+}
+
+export interface DashboardEmployeeActivity {
+  employeeId: number;
+  totalVisitCount: number;
+}
+
+export interface DashboardCityActivity {
+  areaName: string;
+  state: string;
+  employeeCount: number;
+  totalVisits: number;
 }
 
 export interface DashboardCurrentLocation {
@@ -101,6 +126,10 @@ const numberOf = (...values: unknown[]): number | null => {
   return null;
 };
 
+const numberArrayOf = (value: unknown): number[] => Array.isArray(value)
+  ? value.map((entry) => numberOf(recordOf(entry)?.id, entry)).filter((entry): entry is number => entry != null)
+  : [];
+
 const booleanOf = (fallback: boolean, ...values: unknown[]): boolean => {
   for (const value of values) {
     if (typeof value === 'boolean') return value;
@@ -145,7 +174,13 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
   const text = (await response.text()).trim();
   if (!text) return undefined;
   try {
-    return JSON.parse(text) as unknown;
+    const parsed = JSON.parse(text) as unknown;
+    // Some deployed dashboard endpoints currently return JSON as a quoted JSON string.
+    // Decode that second layer so callers receive the documented object shape.
+    if (typeof parsed === 'string') {
+      try { return JSON.parse(parsed) as unknown; } catch { return parsed; }
+    }
+    return parsed;
   } catch {
     return text;
   }
@@ -220,6 +255,7 @@ const normalizeEmployee = (value: unknown): DashboardEmployee | null => {
       item.longitude,
       address?.longitude,
     ),
+    regionIds: numberArrayOf(item.regionIds ?? item.regions),
   };
 };
 
@@ -244,6 +280,7 @@ const normalizeVisit = (value: unknown): DashboardVisit | null => {
     purpose: stringOf(item.purpose, item.visitPurpose),
     status: stringOf(item.status, item.visitStatus).toUpperCase(),
     customerName: stringOf(
+      item.retailAccountName,
       item.clientAccountName,
       item.accountName,
       item.institutionName,
@@ -259,6 +296,8 @@ const normalizeVisit = (value: unknown): DashboardVisit | null => {
     actualCheckinAt: stringOf(item.actualCheckinAt, item.checkinAt, item.checkInAt),
     actualCheckoutAt: stringOf(item.actualCheckoutAt, item.checkoutAt, item.checkOutAt),
     state: stringOf(
+      item.locationState,
+      item.locationRegionName,
       item.addressState,
       item.state,
       client?.addressState,
@@ -297,6 +336,27 @@ const normalizeSummary = (value: unknown): DashboardSummary => {
       source.activeEmployees,
       employees?.length,
     ),
+  };
+};
+
+const normalizeOverview = (value: unknown): DashboardOverview => {
+  const source = sourceRecord(value) ?? {};
+  const live = Array.isArray(source.liveLocations) ? source.liveLocations : [];
+  return {
+    totalVisits: numberOf(source.totalVisits) ?? 0,
+    activeEmployees: numberOf(source.activeEmployees) ?? 0,
+    completedVisits: numberOf(source.completedVisits) ?? 0,
+    newRetailAccounts: numberOf(source.newRetailAccounts) ?? 0,
+    newInstitutions: numberOf(source.newInstitutions) ?? 0,
+    visitCountByType: (recordOf(source.visitCountByType) ?? {}) as Record<string, number>,
+    visitCountByState: (recordOf(source.visitCountByState) ?? {}) as Record<string, number>,
+    liveLocations: live.flatMap((row) => {
+      const item = recordOf(row);
+      const id = numberOf(item?.employeeId);
+      if (id == null) return [];
+      const normalized = normalizeCurrentLocation(row, { id, employeeCode: '', firstName: '', lastName: '', role: '', city: '', state: '', active: true, houseLatitude: null, houseLongitude: null, regionIds: [] });
+      return normalized ? [normalized] : [];
+    }),
   };
 };
 
@@ -361,6 +421,35 @@ const normalizeHistoryPoint = (
 };
 
 export const dashboardApi = {
+  async getOverview(token: string, from: string, to: string): Promise<DashboardOverview> {
+    return normalizeOverview(await request(`/api/dashboard/overview${queryString({ from, to, recordType: 'ALL' })}`, token));
+  },
+
+  async getEmployeeActivity(token: string, from: string, to: string): Promise<DashboardEmployeeActivity[]> {
+    const rows = await fetchAllPages(
+      (page) => `/api/dashboard/employees${queryString({ from, to, recordType: 'ALL', active: true, page, size: PAGE_SIZE })}`,
+      token,
+    );
+    return rows.flatMap((value) => {
+      const item = recordOf(value);
+      const employeeId = numberOf(item?.employeeId);
+      return employeeId == null ? [] : [{ employeeId, totalVisitCount: numberOf(item?.totalVisitCount) ?? 0 }];
+    });
+  },
+
+  async getCityActivity(token: string, from: string, to: string): Promise<DashboardCityActivity[]> {
+    const rows = pageItems(await request(`/api/dashboard/cities${queryString({ from, to, recordType: 'ALL' })}`, token));
+    return rows.flatMap((value) => {
+      const item = recordOf(value);
+      if (!item) return [];
+      return [{
+        areaName: stringOf(item.areaName),
+        state: stringOf(item.state) || 'Unknown',
+        employeeCount: numberOf(item.employeeCount) ?? 0,
+        totalVisits: numberOf(item.totalVisits) ?? 0,
+      }];
+    });
+  },
   async getSummary(token: string): Promise<DashboardSummary> {
     return normalizeSummary(await request('/api/dashboard/summary', token));
   },
@@ -385,6 +474,19 @@ export const dashboardApi = {
         const employee = normalizeEmployee(value);
         return employee ? [employee] : [];
       });
+  },
+
+  async getRegions(token: string): Promise<DashboardRegion[]> {
+    const rows = await fetchAllPages(
+      (page) => `/api/common/regions${queryString({ active: true, page, size: PAGE_SIZE })}`,
+      token,
+    );
+    return rows.flatMap((value) => {
+      const item = recordOf(value);
+      const id = numberOf(item?.id, item?.regionId);
+      const name = stringOf(item?.name, item?.regionName);
+      return id == null || !name ? [] : [{ id, name }];
+    });
   },
 
   async getVisits(
@@ -458,17 +560,12 @@ export const dashboardApi = {
     from: string,
     to: string,
   ): Promise<DashboardLocationHistoryPoint[]> {
-    const rows = await fetchAllPages(
-      (page) => `/api/hr/tracking/location-history/${employeeId}${queryString({
-        from: `${from}T00:00:00`,
-        to: `${to}T23:59:59`,
-        page,
-        size: PAGE_SIZE,
-      })}`,
-      token,
-    );
+    const response = await request(`/api/dashboard/employees/${employeeId}/visit-trail${queryString({ from, to, recordType: 'ALL' })}`, token);
+    const source = sourceRecord(response);
+    const rows = Array.isArray(source?.points) ? source.points : pageItems(response);
     return rows.flatMap((value, index) => {
-      const point = normalizeHistoryPoint(value, employeeId, index);
+      const item = recordOf(value);
+      const point = normalizeHistoryPoint(item ? { ...item, capturedAt: item.timestamp, provider: item.type } : value, employeeId, index);
       return point ? [point] : [];
     });
   },
