@@ -405,7 +405,7 @@ export default function AttendancePage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All roles</SelectItem>
-                <SelectItem value="regional-manager">Regional Manager</SelectItem>
+                <SelectItem value="regional-manager">Supervisor</SelectItem>
                 <SelectItem value="field-officer">Field Officer</SelectItem>
               </SelectContent>
             </Select>

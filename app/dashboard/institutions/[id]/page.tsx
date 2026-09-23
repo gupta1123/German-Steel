@@ -2,20 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft, CalendarPlus, CheckCircle2, Edit3, Loader2, NotebookPen, Plus, RefreshCw, Trash2, UserPlus, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, Building2, CalendarClock, CalendarDays, CalendarPlus, CheckCircle2, Circle, Download, Edit3, Eye, FileText, FileUser, Hash, History, Landmark, ListChecks, Loader2, Mail, MapPin, MapPinned, MoreHorizontal, NotebookPen, Phone, Plus, RefreshCw, ShieldAlert, ShieldCheck, StickyNote, Trash2, Upload, User, UserPlus, Workflow } from 'lucide-react';
 import { toast } from 'sonner';
-import { ContactSummaryCard } from '@/components/contact-summary-card';
-import { NcSummaryCard } from '@/components/nc-summary-card';
 
-const VISIT_PURPOSES = [
-  { value: 'ROUTINE_VISIT', label: 'Routine Visit' },
-  { value: 'TECHNICAL_DISCUSSION', label: 'Technical Discussion' },
-  { value: 'NC_FOLLOW_UP', label: 'NC Follow-up' },
-  { value: 'RELATIONSHIP_MEETING', label: 'Relationship Meeting' },
-  { value: 'ORDER_FOLLOW_UP', label: 'Order Follow-up' },
-  { value: 'PAYMENT_FOLLOW_UP', label: 'Payment Follow-up' },
-  { value: 'OTHER', label: 'Other' },
-] as const;
 
 import { useAuth } from '@/components/auth-provider';
 import { getErrorMessage } from '@/lib/api-error';
@@ -34,27 +23,41 @@ import {
   VALID_STAGE_TRANSITIONS,
 } from '@/lib/institutions-api';
 import { RetailAPI, type RetailEmployee } from '@/lib/retail-api';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { DetailShell } from '@/components/detail-shell';
+import { ActivityTimeline, NotesFeed, NcRow, StageHistoryRow, StageStepper, TaskList, VisitList, pickFile, taskSummary, FilePicker, FormCheck, FormContext, FormField, FormGroup, FormSheet, DetailHero, DetailSkeleton, EmptyState, Info, Initials, KpiCell, Pill, Section, VISIT_PURPOSES, WarningBanner, dayKey, formatDay, isOpenTask, isOverdue, purposeLabel, today, visitStatus, type ActivityItem, type HeroNextStep, type Tone } from '@/components/detail-ui';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { visitsApi, type CommonVisitRow } from '@/lib/visits-api';
 
 const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
 const showDate = (value: string | null | undefined) => value ? new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—';
 
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  APPROVED: 'default', RENEWAL_DUE: 'default',
-  CREDENTIALS_SUBMITTED: 'secondary', DOCUMENTS_SUBMITTED: 'secondary', UNDER_REVIEW: 'secondary', TECHNICAL_VISIT_SCHEDULED: 'secondary', NC_CLOSURE_SUBMITTED: 'secondary',
-  NOT_STARTED: 'outline',
-  REJECTED: 'destructive', EXPIRED: 'destructive', SUSPENDED: 'destructive', NC_RAISED: 'destructive',
+const STATUS_TONE: Record<string, Tone> = {
+  APPROVED: 'success', RENEWAL_DUE: 'warning',
+  CREDENTIALS_SUBMITTED: 'info', DOCUMENTS_SUBMITTED: 'info', UNDER_REVIEW: 'info', TECHNICAL_VISIT_SCHEDULED: 'info', NC_CLOSURE_SUBMITTED: 'info',
+  NOT_STARTED: 'neutral',
+  REJECTED: 'danger', EXPIRED: 'danger', SUSPENDED: 'danger', NC_RAISED: 'danger',
+};
+
+// Main empanelment path shown as a stepper on the Process tab.
+const STAGE_STEPS = [
+  { key: 'NOT_STARTED', label: 'Not started' },
+  { key: 'CREDENTIALS_SUBMITTED', label: 'Credentials' },
+  { key: 'UNDER_REVIEW', label: 'Under review' },
+  { key: 'TECHNICAL_VISIT_SCHEDULED', label: 'Technical visit' },
+  { key: 'NC', label: 'NC closure' },
+  { key: 'APPROVED', label: 'Approved' },
+] as const;
+const STAGE_INDEX: Record<string, number> = {
+  NOT_STARTED: 0, CREDENTIALS_SUBMITTED: 1, DOCUMENTS_SUBMITTED: 1, UNDER_REVIEW: 2, TECHNICAL_VISIT_SCHEDULED: 3,
+  NC_RAISED: 4, NC_CLOSURE_SUBMITTED: 4, APPROVED: 5, RENEWAL_DUE: 5,
 };
 
 
@@ -75,17 +78,6 @@ type InstitutionEditDraft = {
   active: boolean;
 };
 
-function Info({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div><p className="text-xs text-muted-foreground">{label}</p><div className="mt-0.5 text-xs font-medium leading-5">{value || '—'}</div></div>;
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">{text}</div>;
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}{required && <span className="ml-1 text-destructive">*</span>}</Label>{children}</div>;
-}
 
 export default function InstitutionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -108,6 +100,7 @@ export default function InstitutionDetailPage() {
   const [docOpen, setDocOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
+  const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -177,11 +170,10 @@ export default function InstitutionDetailPage() {
   const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
 
   const [visitOpen, setVisitOpen] = useState(false);
-  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', selfGenerated: true });
+  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const today = () => new Date().toISOString().slice(0, 10);
   const assignedByEmployeeId = userData?.employeeId || institution?.assignedEmployeeId || 0;
   const employeeName = (employeeId: number | null | undefined) => {
     const employee = employees.find((item) => item.id === employeeId);
@@ -211,7 +203,7 @@ export default function InstitutionDetailPage() {
       await InstitutionsAPI.planVisit({
         institutionId, assignedEmployeeId: assigned, assignedByEmployeeId,
         scheduledVisitDate: visitForm.date, scheduledStartTime: `${visitForm.startTime}:00`, scheduledEndTime: `${visitForm.endTime}:00`,
-        purpose: visitForm.purpose.trim(), selfGenerated: visitForm.selfGenerated,
+        purpose: visitForm.purpose.trim(), description: visitForm.description.trim() || null, selfGenerated: visitForm.selfGenerated,
       }, token);
       toast.success('Visit planned.');
       setVisitOpen(false);
@@ -751,66 +743,158 @@ export default function InstitutionDetailPage() {
     try { await InstitutionsAPI.deleteTask(task.id, token); toast.success('Task deleted.'); await reloadTasks(); } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')); } finally { setBusy(false); }
   };
 
-  if (isLoading) return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <DetailSkeleton />;
   if (!Number.isFinite(institutionId) || !institution) return <Card><CardHeader><CardTitle>Institution not found</CardTitle></CardHeader><CardContent><Button variant="outline" onClick={() => router.push('/dashboard/institutions')}><ArrowLeft className="mr-2 h-4 w-4" />Back to institutions</Button></CardContent></Card>;
 
+  const status = institution.empanelmentStatus;
+  const statusTone: Tone = STATUS_TONE[status] ?? 'neutral';
+  const ownerName = institution.assignedEmployeeName || employeeName(institution.assignedEmployeeId);
+  const fileHolder = (() => { const c = contacts.find((x) => (x.contactInfluenceRegisterId || x.id) === institution.currentStageOwnerContactId); return c ? ([c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`) : null; })();
+  const contactName = (contact: InstitutionContact) => {
+    const master = masterContacts.find((m) => m.id === contact.contactInfluenceRegisterId);
+    return [contact.firstName || master?.firstName, contact.lastName || master?.lastName].filter(Boolean).join(' ').trim() || `Contact #${contact.contactInfluenceRegisterId || contact.id}`;
+  };
+  const noteAuthor = (note: InstitutionNote) => {
+    if (note.authorName && note.authorName !== '—' && note.authorName.trim()) return note.authorName;
+    const match = note.authorEmployeeId ? employees.find((e) => e.id === note.authorEmployeeId) : null;
+    return (match && [match.firstName, match.lastName].filter(Boolean).join(' ')) || (note.authorEmployeeId ? `Employee #${note.authorEmployeeId}` : 'System');
+  };
+  const pipelineOwner = (entry: PipelineEntry) => {
+    if (entry.decisionByEmployeeName && entry.decisionByEmployeeName !== '—') return entry.decisionByEmployeeName;
+    const m = employees.find((e) => e.id === entry.decisionByEmployeeId);
+    return (m && [m.firstName, m.lastName].filter(Boolean).join(' ')) || (entry.decisionByEmployeeId ? `Employee #${entry.decisionByEmployeeId}` : 'System');
+  };
+
+  const openEdit = () => { setEditDraft({ institutionName: institution.institutionName, institutionType: institution.institutionType, parentInstitutionId: institution.parentInstitutionId == null ? '' : String(institution.parentInstitutionId), jurisdiction: institution.jurisdiction, state: institution.state, regionId: institution.regionId == null ? '' : String(institution.regionId), empanelmentStatus: institution.empanelmentStatus, assignedEmployeeId: institution.assignedEmployeeId == null ? '' : String(institution.assignedEmployeeId), currentStageOwnerContactId: institution.currentStageOwnerContactId == null ? '' : String(institution.currentStageOwnerContactId), applicationDate: institution.applicationDate ?? '', approvalDate: institution.approvalDate ?? '', expiryDate: institution.expiryDate ?? '', renewalLeadDays: institution.renewalLeadDays == null ? '' : String(institution.renewalLeadDays), active: institution.active }); setEditErrors([]); setEditOpen(true); };
+  const openVisitForm = () => { setVisitForm({ employeeId: String(institution.assignedEmployeeId || ''), date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true }); setVisitOpen(true); };
+  const openNewTask = () => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(institution.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
+  const openEditTask = async (task: InstitutionTask) => {
+    try {
+      const details = await InstitutionsAPI.getTaskById(task.id, token!);
+      setEditingTask(details);
+      setTaskForm({ title: details.title, description: details.description, employeeId: String(details.assignedEmployeeId || institution.assignedEmployeeId || ''), dueDate: details.dueDate, priority: details.priority, status: details.status });
+      setTaskOpen(true);
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to load task details.')); }
+  };
+  const openContactForm = (contact?: InstitutionContact) => {
+    if (!contact) { setEditingContact(null); setContactForm({ firstName: '', lastName: '', mobile: '', email: '', designation: '', roleDescription: '', primaryContact: false }); setContactOpen(true); return; }
+    const master = masterContacts.find((m) => m.id === contact.contactInfluenceRegisterId);
+    setEditingContact(contact);
+    setContactForm({ firstName: contact.firstName || master?.firstName || '', lastName: contact.lastName || master?.lastName || '', mobile: (contact.mobile && contact.mobile !== '—' ? contact.mobile : null) || master?.mobile || '', email: (contact.email && contact.email !== '—' ? contact.email : null) || master?.email || '', designation: contact.designation || '', roleDescription: contact.roleDescription || '', primaryContact: contact.primaryContact });
+    setContactOpen(true);
+  };
+  const canRaiseNc = !hasClosedNc && ['TECHNICAL_VISIT_SCHEDULED', 'NC_RAISED', 'NC_CLOSURE_SUBMITTED', 'UNDER_REVIEW'].includes(status);
+  const openRaiseNc = () => { setNcForm({ description: '', raisedDate: today(), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' }); setNcOpen(true); };
+  const pickNcEvidence = (nc: NcRegister) => pickFile(async (file) => {
+    setNcBusyId(nc.id);
+    try { await InstitutionsAPI.uploadNcEvidence(nc.id, file, token!); toast.success('Evidence uploaded'); await reloadNc(); }
+    catch (e) { toast.error(getErrorMessage(e, 'Upload failed')) } finally { setNcBusyId(null); }
+  });
+  const openDocumentFile = async (doc: InstitutionDocument, mode: 'view' | 'download') => {
+    const failMessage = mode === 'view' ? 'File not ready' : 'Download failed';
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+    const list = await fetch(`${base}/api/hr/files?parentType=DOCUMENT_DEPOSITORY&parentId=${doc.id}&page=0&size=5`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.ok ? r.json() : { content: [] }).catch(() => ({ content: [] }));
+    const fileId = list.content?.[0]?.id;
+    if (!fileId) { toast.error(failMessage); return; }
+    const res = await fetch(`${base}/api/hr/files/${fileId}/download`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { toast.error(failMessage); return; }
+    const url = URL.createObjectURL(await res.blob());
+    if (mode === 'view') { window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); return; }
+    const a = document.createElement('a'); a.href = url; a.download = doc.fileName || `doc-${doc.id}`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
+  const nextAdvance = manualNextStatuses[0];
+  const advanceButton = nextAdvance ? <Button size="sm" onClick={() => openAdvance(nextAdvance)}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Advance to {humanize(nextAdvance)}</Button> : undefined;
+  const nearRenewal = renewalDaysLeft != null && renewalDaysLeft <= (institution.renewalLeadDays ?? 30);
+  const nextStep: HeroNextStep = status === 'APPROVED' && !nearRenewal
+    ? { done: true, text: institution.expiryDate ? `Approved and valid till ${showDate(institution.expiryDate)}. You can supply to this institution.` : 'Approved. You can supply to this institution.', action: advanceButton }
+    : {
+      done: false,
+      tone: ['REJECTED', 'EXPIRED', 'SUSPENDED', 'NC_RAISED'].includes(status) || (renewalDaysLeft != null && renewalDaysLeft < 0) ? 'danger' : 'warning',
+      text: status === 'NOT_STARTED' ? 'Submit credentials to start empanelment.'
+        : status === 'CREDENTIALS_SUBMITTED' || status === 'DOCUMENTS_SUBMITTED' ? 'Under review. Await the department’s response.'
+        : status === 'UNDER_REVIEW' ? 'Schedule a technical visit or await the decision.'
+        : status === 'TECHNICAL_VISIT_SCHEDULED' ? 'Complete the technical visit and raise NCs if any.'
+        : status === 'NC_RAISED' ? `Submit closure for ${openNcCount} open NC${openNcCount === 1 ? '' : 's'}. They block approval.`
+        : status === 'NC_CLOSURE_SUBMITTED' ? 'NC closure submitted. Await re-review and approval.'
+        : status === 'APPROVED' ? (renewalDaysLeft != null && renewalDaysLeft < 0 ? `Expired on ${showDate(institution.expiryDate)}. Please renew.` : `Valid till ${showDate(institution.expiryDate)}. Renewal due in ${renewalDaysLeft} day${renewalDaysLeft === 1 ? '' : 's'}.`)
+        : status === 'RENEWAL_DUE' ? 'File the renewal application.'
+        : status === 'EXPIRED' ? 'Expired. Restart credentials.'
+        : status === 'SUSPENDED' ? 'Suspended until reactivated.'
+        : 'Rejected. Restart credentials.',
+      action: advanceButton,
+    };
+
+  const currentEntry = pipeline.find((entry) => entry.toStatus === status && !entry.exitDate) ?? pipeline.find((entry) => entry.toStatus === status);
+  const sortedPipeline = [...pipeline].sort((left, right) => String(right.entryDate).localeCompare(String(left.entryDate)));
+  const sortedVisits = [...visits].sort((left, right) => `${right.scheduledVisitDate}${right.scheduledStartTime ?? ''}`.localeCompare(`${left.scheduledVisitDate}${left.scheduledStartTime ?? ''}`));
+  const latestVisit = sortedVisits.find((visit) => dayKey(visit.scheduledVisitDate) <= today()) ?? null;
+  const openTasks = tasks.filter(isOpenTask).sort((left, right) => String(left.dueDate).localeCompare(String(right.dueDate)));
+  const sortedNotes = [...notes].sort((left, right) => String(right.updatedAt || right.createdAt).localeCompare(String(left.updatedAt || left.createdAt)));
+  const closedNcCount = ncRegisters.filter((nc) => nc.status === 'CLOSED').length;
+  const stageIndex = STAGE_INDEX[status] ?? -1;
+  const validity = institution.approvalDate && institution.expiryDate ? (() => {
+    const start = new Date(institution.approvalDate).getTime();
+    const end = new Date(institution.expiryDate).getTime();
+    return end > start ? Math.min(100, Math.max(0, ((Date.now() - start) / (end - start)) * 100)) : null;
+  })() : null;
+
+  const recentActivity: ActivityItem[] = [
+    ...visits.map((visit) => ({ key: `visit-${visit.id}`, date: visit.actualCheckinAt || visit.scheduledVisitDate, icon: CalendarDays, title: `Visit · ${purposeLabel(visit.purpose)}`, meta: `${visitStatus(visit).label} · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
+    ...pipeline.map((entry) => ({ key: `stage-${entry.id}`, date: entry.entryDate, icon: Workflow, title: `Stage · ${humanize(entry.toStatus)}`, meta: `${entry.remarks || 'No remarks'} · ${pipelineOwner(entry)}` })),
+    ...ncRegisters.map((nc) => ({ key: `nc-${nc.id}`, date: nc.raisedDate, icon: ShieldAlert, title: `NC #${nc.id} raised`, meta: nc.description })),
+    ...notes.map((note) => ({ key: `note-${note.id}`, date: note.createdAt, icon: StickyNote, title: `Note · ${noteAuthor(note)}`, meta: note.noteText })),
+  ].filter((item) => item.date && dayKey(item.date) <= today()).sort((left, right) => String(right.date).localeCompare(String(left.date))).slice(0, 8);
+  const upNext: ActivityItem[] = [
+    ...openTasks.map((task) => ({ key: `task-${task.id}`, date: task.dueDate, icon: ListChecks, title: task.title || `Task #${task.id}`, meta: `Task · ${humanize(task.priority)} · ${task.assignedEmployeeName || employeeName(task.assignedEmployeeId)}`, alert: isOverdue(task), onClick: () => void openEditTask(task) })),
+    ...ncRegisters.filter((nc) => nc.status !== 'CLOSED' && nc.targetClosureDate).map((nc) => ({ key: `nc-due-${nc.id}`, date: nc.targetClosureDate as string, icon: ShieldAlert, title: `Close NC #${nc.id}`, meta: nc.description, alert: dayKey(nc.targetClosureDate) < today() })),
+    ...visits.filter((visit) => !visit.actualCheckinAt && !visit.outcome && dayKey(visit.scheduledVisitDate) >= today()).map((visit) => ({ key: `planned-${visit.id}`, date: visit.scheduledVisitDate, icon: CalendarDays, title: purposeLabel(visit.purpose), meta: `Planned visit · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
+  ].filter((item) => item.date).sort((left, right) => String(left.date).localeCompare(String(right.date)));
+
   return (
-    <div className="space-y-4 font-poppins text-xs">
-      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
-        <div className="flex gap-3">
-          <Button size="icon" variant="outline" onClick={() => router.push('/dashboard/institutions')} aria-label="Back to institutions"><ArrowLeft className="h-4 w-4" /></Button>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-semibold">{institution.institutionName}</h1>
-              <Badge variant={STATUS_VARIANT[institution.empanelmentStatus] ?? 'outline'}>{humanize(institution.empanelmentStatus)}</Badge>
-              {!institution.active && <Badge variant="destructive">Inactive</Badge>}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">#{institution.id} · {humanize(institution.institutionType)} · {institution.regionName || (institution.regionId ? `Region #${institution.regionId}` : '—')}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => { setEditDraft({ institutionName: institution.institutionName, institutionType: institution.institutionType, parentInstitutionId: institution.parentInstitutionId == null ? '' : String(institution.parentInstitutionId), jurisdiction: institution.jurisdiction, state: institution.state, regionId: institution.regionId == null ? '' : String(institution.regionId), empanelmentStatus: institution.empanelmentStatus, assignedEmployeeId: institution.assignedEmployeeId == null ? '' : String(institution.assignedEmployeeId), currentStageOwnerContactId: institution.currentStageOwnerContactId == null ? '' : String(institution.currentStageOwnerContactId), applicationDate: institution.applicationDate ?? '', approvalDate: institution.approvalDate ?? '', expiryDate: institution.expiryDate ?? '', renewalLeadDays: institution.renewalLeadDays == null ? '' : String(institution.renewalLeadDays), active: institution.active }); setEditErrors([]); setEditOpen(true); }}><Edit3 className="mr-2 h-3.5 w-3.5" />Edit</Button>
-          {manualNextStatuses.length > 0 && (
-            <Button size="sm" onClick={() => openAdvance(manualNextStatuses[0])}><ShieldCheck className="mr-2 h-3.5 w-3.5" />Advance</Button>
-          )}
-          <Button variant="ghost" size="sm" onClick={() => void load()}><RefreshCw className="mr-2 h-3.5 w-3.5" />Refresh</Button>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={!institution.active} onClick={() => setDeleteOpen(true)}>Deactivate</Button>
-        </div>
-      </div>
+    <div className="detail-page space-y-4 font-poppins text-xs">
+      <DetailHero
+        name={institution.institutionName}
+        onBack={() => router.push('/dashboard/institutions')}
+        backLabel="Back to institutions"
+        badges={<>
+          <Pill tone={statusTone}>{humanize(status)}</Pill>
+          {!institution.active && <Pill tone="danger">Inactive record</Pill>}
+        </>}
+        meta={[
+          { icon: Building2, label: humanize(institution.institutionType) },
+          { icon: Hash, label: institution.id },
+          ...(institution.state ? [{ icon: MapPin, label: institution.state }] : []),
+          { icon: MapPinned, label: institution.regionName || (institution.regionId ? `Region #${institution.regionId}` : 'No region'), title: 'Region' },
+          ...(institution.jurisdiction ? [{ icon: Landmark, label: institution.jurisdiction, title: 'Jurisdiction' }] : []),
+          { icon: User, label: ownerName, title: 'Assigned employee' },
+          ...(fileHolder ? [{ icon: FileUser, label: fileHolder, title: 'File holder (stage owner)' }] : []),
+        ]}
+        actions={<>
+          <Button variant="outline" size="sm" className="h-8" onClick={openEdit}><Edit3 className="mr-1.5 h-3.5 w-3.5" />Edit</Button>
+          {nextAdvance && <Button size="sm" className="h-8" onClick={() => openAdvance(nextAdvance)}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Advance</Button>}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => void load()}><RefreshCw />Refresh data</DropdownMenuItem>
+              <DropdownMenuItem onSelect={openVisitForm}><CalendarPlus />Plan visit</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setDocOpen(true)}><Upload />Upload document</DropdownMenuItem>
+              {canRaiseNc && <DropdownMenuItem onSelect={openRaiseNc}><ShieldAlert />Raise NC</DropdownMenuItem>}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" disabled={!institution.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate institution</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>}
+        kpis={<>
+          <KpiCell icon={Workflow} label="Current stage" value={humanize(status)} hint={currentEntry ? `since ${formatDay(currentEntry.entryDate)}` : undefined} />
+          <KpiCell icon={ShieldAlert} label="Open NCs" value={openNcCount} tone={hasOpenNc ? 'danger' : undefined} hint={hasOpenNc ? 'Blocks approval' : ncRegisters.length ? `${closedNcCount} closed` : 'None raised'} />
+          <KpiCell icon={CalendarClock} label="Validity" value={renewalDaysLeft == null ? '—' : renewalDaysLeft < 0 ? 'Expired' : `${renewalDaysLeft} days`} tone={renewalDaysLeft != null && renewalDaysLeft < 0 ? 'danger' : nearRenewal ? 'warning' : undefined} hint={institution.expiryDate ? `till ${formatDay(institution.expiryDate)}` : 'Not approved yet'} />
+          <KpiCell icon={CalendarDays} label="Last visit" value={latestVisit ? formatDay(latestVisit.scheduledVisitDate) : 'No visits'} hint={latestVisit ? (latestVisit.assignedEmployeeName || employeeName(latestVisit.assignedEmployeeId)) : 'Plan one from Visits'} />
+        </>}
+        nextStep={nextStep}
+      />
 
-      {warnings.length > 0 && <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>Institution loaded, but {warnings.join(', ')}. Retry with Refresh.</p></div>}
-
-      {hasOpenNc && (
-        <div className="flex gap-2 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{openNcCount} open NC(s) block approval. Close all NCs before advancing to APPROVED.</span>
-        </div>
-      )}
-
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="min-w-0 space-y-4">
-      {(institution.empanelmentStatus !== 'APPROVED' || (renewalDaysLeft != null && renewalDaysLeft <= (institution.renewalLeadDays ?? 30))) && (
-      <Card className="border-l-4 border-l-primary py-0">
-        <CardContent className="flex flex-col gap-2 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-            <p className="truncate text-[13px] font-medium">
-              {institution.empanelmentStatus === 'NOT_STARTED' ? 'Next required: Submit credentials' : institution.empanelmentStatus === 'CREDENTIALS_SUBMITTED' ? 'Next: Under review — await department response' : institution.empanelmentStatus === 'UNDER_REVIEW' ? 'Next: Schedule technical visit or await decision' : institution.empanelmentStatus === 'TECHNICAL_VISIT_SCHEDULED' ? 'Next: Complete visit, raise NCs if any' : institution.empanelmentStatus === 'NC_RAISED' ? 'Next required: Submit NC closure' : institution.empanelmentStatus === 'NC_CLOSURE_SUBMITTED' ? 'Next: Await re-review / approval' : institution.empanelmentStatus === 'APPROVED' ? (()=>{ const d=showDate(institution.expiryDate); if(renewalDaysLeft==null||institution.expiryDate==null) return 'Approved — you can now supply to this institution'; if(renewalDaysLeft<0) return `Approved — expired on ${d} — please renew`; if(renewalDaysLeft<=30) return `Approved — valid till ${d} — renewal due in ${renewalDaysLeft} day${renewalDaysLeft===1?'':'s'}`; return `Approved — valid till ${d}`; })() : institution.empanelmentStatus === 'RENEWAL_DUE' ? 'Next required: File renewal application' : institution.empanelmentStatus === 'EXPIRED' ? 'Expired — restart credentials' : 'Rejected — restart credentials'}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-1.5">
-            {manualNextStatuses.length > 0 && <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openAdvance(manualNextStatuses[0])}>Advance to {humanize(manualNextStatuses[0])}</Button>}
-          </div>
-        </CardContent>
-      </Card>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Current stage</CardDescription><CardTitle className="truncate text-sm" title={humanize(institution.empanelmentStatus)}>{humanize(institution.empanelmentStatus)}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Open NCs</CardDescription><CardTitle className="text-base">{openNcCount}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Renewal</CardDescription><CardTitle className="text-sm">{renewalDaysLeft == null ? 'Not scheduled' : renewalDaysLeft < 0 ? 'Expired' : `${renewalDaysLeft} days left`}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Next milestone</CardDescription><CardTitle className="truncate text-sm" title={manualNextStatuses[0] ? humanize(manualNextStatuses[0]) : 'No next stage'}>{manualNextStatuses[0] ? humanize(manualNextStatuses[0]) : 'No next stage'}</CardTitle></CardHeader></Card>
-      </div>
+      {warnings.length > 0 && <WarningBanner>Institution loaded, but {warnings.join(', ')}. Retry with Refresh.</WarningBanner>}
 
       <DetailShell
         defaultValue="overview"
@@ -819,465 +903,459 @@ export default function InstitutionDetailPage() {
             value: 'overview',
             label: 'Overview',
             content: (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Card><CardHeader><CardTitle className="text-sm">Institution profile</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
-                  <Info label="Institution type" value={humanize(institution.institutionType)} />
-                  <Info label="State" value={institution.state} />
-                  <Info label="Region" value={institution.regionName} />
-                  <Info label="Parent institution ID" value={institution.parentInstitutionId} />
-                  <Info label="Active" value={institution.active ? 'Yes' : 'No'} />
-                  <Info label="Current owner contact ID" value={institution.currentStageOwnerContactId} />
-                </CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm">Lifecycle dates</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
-                  <Info label="Application date" value={showDate(institution.applicationDate)} />
-                  <Info label="Approval date" value={showDate(institution.approvalDate)} />
-                  <Info label="Expiry date" value={showDate(institution.expiryDate)} />
-                  <Info label="Renewal lead days" value={institution.renewalLeadDays} />
-                  <Info label="Created" value={showDate(institution.createdAt)} />
-                  <Info label="Updated" value={showDate(institution.updatedAt)} />
-                </CardContent></Card>
+              <div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                <Section icon={Activity} title="Activity" className="lg:row-span-2" bodyClassName="p-0" action={<Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={openNewTask}><Plus className="mr-1 h-3.5 w-3.5" />Task</Button>}>
+                  <ActivityTimeline upcoming={upNext} recent={recentActivity} viewAllHref="#tasks" />
+                </Section>
+                <Section icon={Building2} title="Institution profile">
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Institution type" value={humanize(institution.institutionType)} />
+                    <Info label="Jurisdiction" value={institution.jurisdiction} />
+                    <Info label="State" value={institution.state} />
+                    <Info label="Region" value={institution.regionName} />
+                    <Info label="Assigned employee" value={ownerName} />
+                    <Info label="File holder" value={fileHolder} />
+                    <Info label="Parent institution" value={institution.parentInstitutionId ? `Institution #${institution.parentInstitutionId}` : 'None'} />
+                    <Info label="Record state" value={institution.active ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Inactive</Pill>} />
+                  </dl>
+                </Section>
+                <Section icon={CalendarClock} title="Lifecycle dates">
+                  {validity != null && (
+                    <div className="mb-4">
+                      <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground"><span>Approved {formatDay(institution.approvalDate)}</span><span>Expires {formatDay(institution.expiryDate)}</span></div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn('h-full rounded-full', renewalDaysLeft != null && renewalDaysLeft < 0 ? 'bg-red-500' : nearRenewal ? 'bg-amber-500' : 'bg-emerald-500')} style={{ width: `${validity}%` }} /></div>
+                    </div>
+                  )}
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Application date" value={formatDay(institution.applicationDate)} />
+                    <Info label="Approval date" value={formatDay(institution.approvalDate)} />
+                    <Info label="Expiry date" value={formatDay(institution.expiryDate)} />
+                    <Info label="Renewal lead days" value={institution.renewalLeadDays} />
+                    <Info label="Created" value={formatDay(institution.createdAt)} />
+                    <Info label="Updated" value={formatDay(institution.updatedAt)} />
+                  </dl>
+                </Section>
+                </div>
               </div>
             ),
           },
           {
             value: 'process',
-            label: `Process (${pipeline.length + ncRegisters.length})`,
+            label: 'Process',
+            count: pipeline.length + ncRegisters.length,
             content: (
               <div className="space-y-4">
-                <Card><CardHeader><CardTitle className="text-sm">Stage pipeline</CardTitle></CardHeader><CardContent>{pipeline.length === 0 ? <EmptyState text="No pipeline entries recorded yet." /> : <ol className="relative ml-1.5 space-y-3 border-l pl-4">{pipeline.map((entry) => {
-                    const isCurrent = entry.toStatus === institution.empanelmentStatus;
-                    const ownerName = entry.decisionByEmployeeName && entry.decisionByEmployeeName !== '—'
-                      ? entry.decisionByEmployeeName
-                      : (() => { const m = employees.find((e) => e.id === entry.decisionByEmployeeId); const n = m ? [m.firstName, m.lastName].filter(Boolean).join(' ') : ''; return n || (entry.decisionByEmployeeId ? `Employee #${entry.decisionByEmployeeId}` : 'System'); })();
-                    return (
-                    <li key={entry.id} className="relative">
-                      <span className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background ${isCurrent ? 'bg-primary' : 'bg-muted-foreground/60'}`} />
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <p className="text-sm font-medium leading-none">{entry.fromStatus ? `${humanize(entry.fromStatus)} → ` : ''}{humanize(entry.toStatus)}</p>
-                            {isCurrent && <Badge variant="default" className="h-4 px-1 text-[10px]">Current</Badge>}
-                          </div>
-                          {entry.remarks && <p className="mt-1 truncate text-xs text-muted-foreground" title={entry.remarks}>{entry.remarks}</p>}
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-xs font-medium leading-none">{showDate(entry.entryDate)}{entry.exitDate ? ` → ${showDate(entry.exitDate)}` : ''}</p>
-                          <p className="mt-1 text-[11px] text-muted-foreground">{ownerName}</p>
-                        </div>
-                      </div>
-                    </li>
-                    );
-                  })}</ol>}</CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm">NC Register</CardTitle><CardAction>{hasClosedNc ? <span className="text-xs text-muted-foreground">NC lifecycle completed</span> : ['TECHNICAL_VISIT_SCHEDULED', 'NC_RAISED', 'NC_CLOSURE_SUBMITTED', 'UNDER_REVIEW'].includes(institution.empanelmentStatus) ? <Button size="sm" onClick={() => { setNcForm({ description: '', raisedDate: today(), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' }); setNcOpen(true); }}><Plus className="mr-2 h-3.5 w-3.5" />Raise NC</Button> : <span className="text-xs text-muted-foreground">Available after technical visit</span>}</CardAction></CardHeader><CardContent className="space-y-3">
-                  {ncRegisters.length === 0 ? <EmptyState text="No NC records found." /> : ncRegisters.map((nc) => {
-                    const docs = ncDocsMap[nc.id] || [];
-                    const closureLine = (nc.status === 'SUBMITTED' || nc.status === 'CLOSED') && (nc.closureMethod || (nc as any).acceptingOfficialText || (nc as any).acceptanceDate || (nc as any).closureDate) ? [nc.closureMethod ? humanize(nc.closureMethod) : null, (nc as any).acceptingOfficialText, (nc as any).acceptanceDate || (nc as any).closureDate].filter(Boolean).join(' · ') : null;
-                    return (
-                    <NcSummaryCard key={nc.id} id={nc.id} status={nc.status} description={nc.description} raisedDate={showDate(nc.raisedDate)} raisedBy={nc.raisedByOfficialText || 'Not recorded'} targetDate={showDate(nc.targetClosureDate)} responsible={nc.responsibleEmployeeName} closureSummary={closureLine} evidence={docs} overdue={Boolean(nc.targetClosureDate && nc.status !== 'CLOSED' && nc.targetClosureDate < today())} actions={
-                      <>
-                        {nc.status === 'OPEN' && <><Button variant="outline" size="sm" onClick={() => void openSubmitNc(nc)} disabled={ncBusyId === nc.id}>{ncBusyId === nc.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Submit closure</Button><Button variant="outline" size="sm" onClick={async()=>{ const fd=document.createElement('input'); fd.type='file'; fd.onchange=async()=>{ const f=fd.files?.[0]; if(!f) return; setNcBusyId(nc.id); try{ await InstitutionsAPI.uploadNcEvidence(nc.id, f, token!); toast.success('Evidence uploaded'); await reloadNc(); }catch(e){ toast.error(getErrorMessage(e,'Upload failed'))} finally{ setNcBusyId(null);}}; fd.click();}}>Add evidence</Button></>}
-                        {nc.status === 'SUBMITTED' && <Button variant="outline" size="sm" onClick={() => void openAcceptNc(nc)} disabled={ncBusyId === nc.id}>{ncBusyId === nc.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Accept & close</Button>}
-                      </>
-                    } />
-                  )})}
-                </CardContent></Card>
+                <Section bodyClassName="px-4 py-3">
+                  <StageStepper steps={STAGE_STEPS} index={stageIndex} offPath={<Pill tone={statusTone}>{humanize(status)}</Pill>} />
+                </Section>
+                <div className="grid items-start gap-4 xl:grid-cols-2">
+                  <Section icon={History} title={`Stage history · ${pipeline.length}`} bodyClassName="p-0">
+                    {sortedPipeline.length === 0 ? <EmptyState compact title="No stage changes recorded yet." /> : (
+                      <ul className="max-h-[420px] divide-y overflow-y-auto">
+                        {sortedPipeline.map((entry) => <StageHistoryRow key={entry.id} from={entry.fromStatus} to={String(entry.toStatus)} remarks={entry.remarks} date={entry.entryDate} by={pipelineOwner(entry)} current={entry === currentEntry} />)}
+                      </ul>
+                    )}
+                  </Section>
+                  <Section
+                    icon={ShieldAlert}
+                    title={`NC register · ${ncRegisters.length}`}
+                    description={hasClosedNc ? 'NC lifecycle completed' : !canRaiseNc ? 'NCs can be raised after the technical visit' : undefined}
+                    bodyClassName="p-0"
+                    action={canRaiseNc ? <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={openRaiseNc}><Plus className="mr-1 h-3.5 w-3.5" />Raise NC</Button> : undefined}
+                  >
+                    {ncRegisters.length === 0 ? <EmptyState compact title="No NCs raised." /> : (
+                      <ul className="max-h-[420px] divide-y overflow-y-auto">
+                        {ncRegisters.map((nc) => <NcRow key={nc.id} nc={nc} evidence={ncDocsMap[nc.id] || []} busy={ncBusyId === nc.id} onSubmitClosure={() => void openSubmitNc(nc)} onAddEvidence={() => pickNcEvidence(nc)} onAccept={() => void openAcceptNc(nc)} />)}
+                      </ul>
+                    )}
+                  </Section>
+                </div>
               </div>
             ),
           },
           {
             value: 'contacts',
-            label: `Contacts (${contacts.length})`,
+            label: 'Contacts',
+            count: contacts.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Institution contacts</CardTitle><CardAction><Button size="sm" onClick={() => { setEditingContact(null); setContactForm({ firstName: '', lastName: '', mobile: '', email: '', designation: '', roleDescription: '', primaryContact: false }); setContactOpen(true); }}><UserPlus className="mr-2 h-3.5 w-3.5" />Add contact</Button></CardAction></CardHeader><CardContent className="space-y-3">
-                {contacts.length === 0 ? <EmptyState text="No contacts linked yet." /> : contacts.map((contact) => {
-                  const master = masterContacts.find((m) => m.id === contact.contactInfluenceRegisterId);
-                  const displayName = [contact.firstName || master?.firstName, contact.lastName || master?.lastName].filter(Boolean).join(' ').trim();
-                  const resolvedName = displayName || `Contact #${contact.contactInfluenceRegisterId || contact.id}`;
-                  const resolvedMobile = (contact.mobile && contact.mobile !== '—' ? contact.mobile : null) || master?.mobile || null;
-                  const resolvedEmail = (contact.email && contact.email !== '—' ? contact.email : null) || master?.email || null;
-                  return (
-                  <ContactSummaryCard key={contact.id} name={resolvedName} designation={[contact.designation, contact.roleDescription].filter(Boolean).join(' · ')} mobile={resolvedMobile} email={resolvedEmail} primary={contact.primaryContact} active={contact.active} onEdit={() => { setEditingContact(contact); setContactForm({ firstName: contact.firstName || master?.firstName || '', lastName: contact.lastName || master?.lastName || '', mobile: resolvedMobile || '', email: resolvedEmail || '', designation: contact.designation || '', roleDescription: contact.roleDescription || '', primaryContact: contact.primaryContact }); setContactOpen(true); }} />
-                )})}
-              </CardContent></Card>
+              <Section description={`${contacts.length} ${contacts.length === 1 ? 'person' : 'people'} linked`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openContactForm()}><UserPlus className="mr-1.5 h-3.5 w-3.5" />Add contact</Button>}>
+                {contacts.length === 0 ? <EmptyState compact title="No contacts linked yet. Add the officer who receives the file." /> : (
+                  <div>
+                    <div className="hidden grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_40px] gap-x-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-medium text-muted-foreground md:grid">
+                      <span>Name</span><span>Mobile</span><span>Email</span><span />
+                    </div>
+                    <ul className="divide-y">
+                      {contacts.map((contact) => {
+                        const master = masterContacts.find((m) => m.id === contact.contactInfluenceRegisterId);
+                        const name = contactName(contact);
+                        const mobile = (contact.mobile && contact.mobile !== '—' ? contact.mobile : null) || master?.mobile || null;
+                        const email = (contact.email && contact.email !== '—' ? contact.email : null) || master?.email || null;
+                        const role = [contact.designation, contact.roleDescription].filter(Boolean).join(' · ') || 'No designation';
+                        const isHolder = (contact.contactInfluenceRegisterId || contact.id) === institution.currentStageOwnerContactId;
+                        return (
+                          <li key={contact.id} className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_40px] md:gap-x-4', !contact.active && 'opacity-70')}>
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <Initials name={name} className="h-7 w-7 text-[10px]" />
+                              <div className="min-w-0 leading-tight">
+                                <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium">{name}</p>{contact.primaryContact && <Pill tone="info">Primary</Pill>}{isHolder && <Pill tone="warning">File holder</Pill>}{!contact.active && <Pill tone="danger">Inactive</Pill>}</div>
+                                <p className="truncate text-[11px] text-muted-foreground" title={role}>{role}<span className="md:hidden">{mobile ? <> · <a href={`tel:${mobile}`} className="text-foreground hover:underline">{mobile}</a></> : ''}</span></p>
+                              </div>
+                            </div>
+                            <span className="hidden text-xs tabular-nums md:block">{mobile ? <a href={`tel:${mobile}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3 w-3 text-muted-foreground" />{mobile}</a> : <span className="text-muted-foreground">—</span>}</span>
+                            <span className="hidden min-w-0 text-xs md:block">{email ? <a href={`mailto:${email}`} className="flex min-w-0 items-center gap-1.5 hover:underline" title={email}><Mail className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{email}</span></a> : <span className="text-muted-foreground">—</span>}</span>
+                            <div className="flex items-center justify-end"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button></div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </Section>
             ),
           },
           {
             value: 'visits',
-            label: `Visits (${visits.length})`,
+            label: 'Visits',
+            count: visits.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Visits</CardTitle><CardAction><Button size="sm" onClick={() => { setVisitForm({ employeeId: String(institution.assignedEmployeeId || ''), date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', selfGenerated: true }); setVisitOpen(true); }}><CalendarPlus className="mr-2 h-3.5 w-3.5" />Plan visit</Button></CardAction></CardHeader><CardContent className="space-y-3">
-                {visits.length === 0 ? <EmptyState text="No visits yet." /> : visits.map((v) => (
-                  <button key={v.id} type="button" onClick={() => router.push(`/dashboard/visits/${v.id}`)} className="w-full rounded-xl border bg-card p-5 text-left transition-colors hover:border-primary/30 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <div className="flex items-start justify-between gap-4">
-                      <div><p className="font-medium">{v.purpose || 'Institution visit'}</p><p className="mt-1 text-xs text-muted-foreground">{showDate(v.scheduledVisitDate)}{v.scheduledStartTime ? ` · ${v.scheduledStartTime}` : ''}{v.scheduledEndTime ? `–${v.scheduledEndTime}` : ''} · {v.assignedEmployeeName || employeeName(v.assignedEmployeeId)}</p></div>
-                      <Badge variant="outline">{v.outcome ? humanize(v.outcome) : v.actualCheckinAt ? 'Checked in' : 'Planned'}</Badge>
-                    </div>
-                    {v.discussionSummary && <p className="mt-4 border-t pt-3 text-sm text-muted-foreground">{v.discussionSummary}</p>}{v.nextActionText && <p className="mt-2 text-sm"><span className="font-medium">Next:</span> {v.nextActionText}{v.nextActionDate ? ` · ${showDate(v.nextActionDate)}` : ''}</p>}
-                  </button>
-                ))}
-              </CardContent></Card>
+              <Section description={`${visits.length} ${visits.length === 1 ? 'visit' : 'visits'} · newest first`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openVisitForm}><CalendarPlus className="mr-1.5 h-3.5 w-3.5" />Plan visit</Button>}>
+                {visits.length === 0 ? <EmptyState compact title="No visits yet. Plan a technical or relationship visit." /> : <VisitList visits={visits} assignee={(visit) => visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)} onOpen={(visit) => router.push(`/dashboard/visits/${visit.id}`)} />}
+              </Section>
             ),
           },
           {
             value: 'documents',
             label: 'Documents',
+            count: documents.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Documents</CardTitle><CardAction><Button size="sm" onClick={() => setDocOpen(true)}><Plus className="mr-2 h-3.5 w-3.5" />Upload</Button></CardAction></CardHeader><CardContent>
-                {documents.length === 0 ? <EmptyState text="No documents yet." /> : <ol className="relative ml-1.5 space-y-3 border-l pl-4">{documents.map((d) => <li key={d.id} className="relative"><span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/60" /><div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><p className="truncate text-sm font-medium leading-none">{d.fileName}</p>{d.versionNumber != null && <Badge variant="outline" className="h-4 px-1 text-[10px]">v{d.versionNumber}</Badge>}{!d.fileAttached && <Badge variant="destructive" className="h-4 px-1 text-[10px]">No file</Badge>}</div><p className="mt-1 text-[11px] text-muted-foreground">{humanize(d.documentType)}{d.expiryDate ? ` · exp ${showDate(d.expiryDate)}` : ''}</p></div><div className="flex shrink-0 gap-1"><Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={!d.fileAttached} onClick={async()=>{ const base=process.env.NEXT_PUBLIC_API_BASE_URL||'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'; const list=await fetch(`${base}/api/hr/files?parentType=DOCUMENT_DEPOSITORY&parentId=${d.id}&page=0&size=5`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.ok?r.json():{content:[]}).catch(()=>({content:[]})); const fid=list.content?.[0]?.id; if(!fid){ toast.error('File not ready'); return; } const res=await fetch(`${base}/api/hr/files/${fid}/download`,{headers:{Authorization:`Bearer ${token}`}}); if(!res.ok){ toast.error('File not ready'); return; } const blob=await res.blob(); const url=URL.createObjectURL(blob); window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),60000);}}>View</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!d.fileAttached} onClick={async()=>{ const base=process.env.NEXT_PUBLIC_API_BASE_URL||'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'; const list=await fetch(`${base}/api/hr/files?parentType=DOCUMENT_DEPOSITORY&parentId=${d.id}&page=0&size=5`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.ok?r.json():{content:[]}).catch(()=>({content:[]})); const fid=list.content?.[0]?.id; if(!fid){ toast.error('Download failed'); return; } const res=await fetch(`${base}/api/hr/files/${fid}/download`,{headers:{Authorization:`Bearer ${token}`}}); if(!res.ok){ toast.error('Download failed'); return; } const blob=await res.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=d.fileName||`doc-${d.id}`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);}}>Download</Button></div></div></li>)}</ol>}
-              </CardContent></Card>
+              <Section description={`${documents.length} ${documents.length === 1 ? 'document' : 'documents'}${documents.some((doc) => !doc.fileAttached) ? ` · ${documents.filter((doc) => !doc.fileAttached).length} missing file` : ''}`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => setDocOpen(true)}><Upload className="mr-1.5 h-3.5 w-3.5" />Upload</Button>}>
+                {documents.length === 0 ? <EmptyState compact title="No documents yet. Upload the credentials profile to get started." /> : (
+                  <ul className="divide-y">
+                    {documents.map((doc) => (
+                      <li key={doc.id} className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/30">
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1 leading-tight">
+                          <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium" title={doc.fileName}>{doc.fileName}</p>{doc.versionNumber != null && <Pill>v{doc.versionNumber}</Pill>}{!doc.fileAttached && <Pill tone="danger">No file</Pill>}</div>
+                          <p className="truncate text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.expiryDate ? ` · expires ${formatDay(doc.expiryDate)}` : ''}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
             ),
           },
           {
             value: 'tasks',
-            label: `Tasks (${tasks.length})`,
+            label: 'Tasks',
+            count: tasks.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Follow-up tasks</CardTitle><CardAction><Button size="sm" onClick={() => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(institution.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); }}><Plus className="mr-2 h-3.5 w-3.5" />Add task</Button></CardAction></CardHeader><CardContent className="space-y-3">
-                {tasks.length === 0 ? <EmptyState text="No tasks found." /> : tasks.map((task) => (
-                  <div key={task.id} className="flex justify-between gap-3 rounded-lg border p-4">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">{task.title || `Task #${task.id}`}</p>
-                        <Badge variant="outline">{humanize(task.status)}</Badge>
-                        <Badge variant="secondary">{humanize(task.priority)}</Badge>
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">Due {showDate(task.dueDate)} · {task.assignedEmployeeName || employeeName(task.assignedEmployeeId)}</p>
-                    </div>
-                    <div className="flex shrink-0 gap-1"><Button variant="ghost" size="sm" onClick={async () => { try { const details = await InstitutionsAPI.getTaskById(task.id, token!); setEditingTask(details); setTaskForm({ title: details.title, description: details.description, employeeId: String(details.assignedEmployeeId || institution.assignedEmployeeId || ''), dueDate: details.dueDate, priority: details.priority, status: details.status }); setTaskOpen(true); } catch (error) { toast.error(getErrorMessage(error, 'Unable to load task details.')); } }}>Edit</Button><Button variant="ghost" size="icon" onClick={() => void removeTask(task)} disabled={busy}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>
-                  </div>
-                ))}
-              </CardContent></Card>
+              <Section description={taskSummary(tasks)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openNewTask}><Plus className="mr-1.5 h-3.5 w-3.5" />Add task</Button>}>
+                {tasks.length === 0 ? <EmptyState compact title="No tasks yet. Create a follow-up so nothing slips through." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openEditTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
+              </Section>
             ),
           },
           {
             value: 'notes',
-            label: `Notes (${notes.length})`,
+            label: 'Notes',
+            count: notes.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Notes</CardTitle><CardAction><Button size="sm" onClick={() => { setNoteText(''); setNoteOpen(true); }}><NotebookPen className="mr-2 h-3.5 w-3.5" />Add note</Button></CardAction></CardHeader><CardContent className="space-y-3">
-                {notes.length === 0 ? <EmptyState text="No notes added." /> : notes.map((note) => {
-                  const employeeMatch = note.authorEmployeeId ? employees.find((e) => e.id === note.authorEmployeeId) : null;
-                  const resolvedAuthor = employeeMatch ? [employeeMatch.firstName, employeeMatch.lastName].filter(Boolean).join(' ') : null;
-                  const displayAuthor = (note.authorName && note.authorName !== '—' && note.authorName.trim()) ? note.authorName : resolvedAuthor || (note.authorEmployeeId ? `Employee #${note.authorEmployeeId}` : 'System');
-                  return (
-                  <div key={note.id} className="rounded-xl border bg-card p-5">
-                    <p className="whitespace-pre-wrap text-sm">{note.noteText}</p>
-                    <p className="mt-3 text-xs text-muted-foreground">{displayAuthor} · {showDate(note.createdAt)}{note.updatedAt && note.updatedAt !== note.createdAt ? ` · updated ${showDate(note.updatedAt)}` : ''}</p>
-                  </div>
-                  );
-                })}
-              </CardContent></Card>
+              <NotesFeed
+                notes={sortedNotes.map((note) => ({ id: note.id, text: note.noteText, author: noteAuthor(note), date: note.createdAt, edited: Boolean(note.updatedAt && note.updatedAt !== note.createdAt) }))}
+                onAdd={async (text) => { if (!token) return false; try { await InstitutionsAPI.createNote(institutionId, text, token); toast.success('Note added.'); await reloadNotes(); return true; } catch (error) { toast.error(getErrorMessage(error, 'Unable to add note.')); return false; } }}
+                placeholder="Write a note for the team… e.g. outcome of the meeting with the department"
+              />
             ),
           },
         ]}
       />
-      </div>
-      <aside className="xl:sticky xl:top-4">
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">About this institution</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Status</span><Badge variant={STATUS_VARIANT[institution.empanelmentStatus] ?? 'outline'}>{humanize(institution.empanelmentStatus)}</Badge></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Type</span><span className="font-medium">{humanize(institution.institutionType)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Owner</span><span className="max-w-[150px] truncate font-medium">{institution.assignedEmployeeName || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">File holder</span><span className="max-w-[150px] truncate font-medium" title={(() => { const c = contacts.find((x) => (x.contactInfluenceRegisterId || x.id) === institution.currentStageOwnerContactId); return c ? ([c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`) : '—'; })()}>{(() => { const c = contacts.find((x) => (x.contactInfluenceRegisterId || x.id) === institution.currentStageOwnerContactId); return c ? ([c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`) : '—'; })()}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Region</span><span className="font-medium">{institution.regionName || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">State</span><span className="font-medium">{institution.state || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Jurisdiction</span><span className="max-w-[150px] truncate font-medium" title={institution.jurisdiction}>{institution.jurisdiction || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Parent</span><span className="font-medium">{institution.parentInstitutionId ? `Institution #${institution.parentInstitutionId}` : 'None'}</span></div>
-            <div className="h-px bg-border" />
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Applied</span><span className="font-medium">{showDate(institution.applicationDate)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Approved</span><span className="font-medium">{showDate(institution.approvalDate)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Expiry</span><span className="font-medium">{showDate(institution.expiryDate)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Lead days</span><span className="font-medium">{institution.renewalLeadDays ?? '—'}</span></div>
-          </CardContent>
-        </Card>
-      </aside>
-      </div>
 
-      {/* Edit Sheet */}
-      <Sheet open={editOpen} onOpenChange={(open) => !busy && setEditOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-2xl">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Edit institution</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          {editDraft && <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Institution name" required><Input value={editDraft.institutionName} onChange={(e) => setEditDraft({ ...editDraft, institutionName: e.target.value })} /></Field>
-            <Field label="Jurisdiction"><Input value={editDraft.jurisdiction} onChange={(e) => setEditDraft({ ...editDraft, jurisdiction: e.target.value })} /></Field>
-            <Field label="State" required><Input value={editDraft.state} onChange={(e) => setEditDraft({ ...editDraft, state: e.target.value })} /></Field>
-            <Field label="Region ID"><Input type="number" value={editDraft.regionId} onChange={(e) => setEditDraft({ ...editDraft, regionId: e.target.value })} /></Field>
-            <Field label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="File holder (stage owner)"><Select value={editDraft.currentStageOwnerContactId} onValueChange={(v) => setEditDraft({ ...editDraft, currentStageOwnerContactId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder="Choose linked contact" /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Application date"><Input type="date" value={editDraft.applicationDate} onChange={(e) => setEditDraft({ ...editDraft, applicationDate: e.target.value })} /></Field>
-            <Field label="Approval date"><Input type="date" value={editDraft.approvalDate} onChange={(e) => setEditDraft({ ...editDraft, approvalDate: e.target.value })} /></Field>
-            <Field label="Expiry date"><Input type="date" value={editDraft.expiryDate} onChange={(e) => setEditDraft({ ...editDraft, expiryDate: e.target.value })} /></Field>
-            <Field label="Renewal lead days"><Input type="number" min="0" value={editDraft.renewalLeadDays} onChange={(e) => setEditDraft({ ...editDraft, renewalLeadDays: e.target.value })} /></Field>
-          </div>}
-          {editErrors.length > 0 && <ul className="mt-4 list-disc rounded-lg border border-destructive/40 bg-destructive/5 p-4 pl-8 text-sm text-destructive">{editErrors.map((e) => <li key={e}>{e}</li>)}</ul>}
-          <p className="mt-3 text-xs text-muted-foreground">Status changes only via Advance Stage, not edit.</p>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveEdit()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={editOpen}
+        onOpenChange={(open) => !busy && setEditOpen(open)}
+        icon={Building2}
+        title="Edit institution"
+        description={institution.institutionName}
+        wide
+        errors={editErrors}
+        footerNote="Status changes only via Advance stage, not edit."
+        onSubmit={() => void saveEdit()}
+        submitLabel="Save changes"
+        submitting={busy}
+      >
+        {editDraft && <>
+          <FormGroup title="Institution">
+            <FormField label="Institution name" required className="sm:col-span-2"><Input value={editDraft.institutionName} onChange={(e) => setEditDraft({ ...editDraft, institutionName: e.target.value })} /></FormField>
+            <FormField label="Jurisdiction"><Input value={editDraft.jurisdiction} onChange={(e) => setEditDraft({ ...editDraft, jurisdiction: e.target.value })} /></FormField>
+            <FormField label="State" required><Input value={editDraft.state} onChange={(e) => setEditDraft({ ...editDraft, state: e.target.value })} /></FormField>
+            <FormField label="Region ID"><Input type="number" value={editDraft.regionId} onChange={(e) => setEditDraft({ ...editDraft, regionId: e.target.value })} /></FormField>
+          </FormGroup>
+          <FormGroup title="Ownership">
+            <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="File holder (stage owner)" hint="The linked contact who currently holds the file."><Select value={editDraft.currentStageOwnerContactId} onValueChange={(v) => setEditDraft({ ...editDraft, currentStageOwnerContactId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder="Choose linked contact" /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></FormField>
+          </FormGroup>
+          <FormGroup title="Lifecycle dates">
+            <FormField label="Application date"><Input type="date" value={editDraft.applicationDate} onChange={(e) => setEditDraft({ ...editDraft, applicationDate: e.target.value })} /></FormField>
+            <FormField label="Approval date"><Input type="date" value={editDraft.approvalDate} onChange={(e) => setEditDraft({ ...editDraft, approvalDate: e.target.value })} /></FormField>
+            <FormField label="Expiry date"><Input type="date" value={editDraft.expiryDate} onChange={(e) => setEditDraft({ ...editDraft, expiryDate: e.target.value })} /></FormField>
+            <FormField label="Renewal lead days" hint="Days before expiry to flag renewal."><Input type="number" min="0" value={editDraft.renewalLeadDays} onChange={(e) => setEditDraft({ ...editDraft, renewalLeadDays: e.target.value })} /></FormField>
+          </FormGroup>
+        </>}
+      </FormSheet>
 
-      {/* Advance Stage Sheet */}
-      <Sheet open={advanceOpen} onOpenChange={(open) => !busy && setAdvanceOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Advance to {humanize(advanceForm.toStatus)}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-          {advanceForm.toStatus === 'CREDENTIALS_SUBMITTED' && (
-            <div className="space-y-4 rounded-lg border border-[#E7E9F0] bg-[#F8F7FF] p-3">
-              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Submit the package here</p>
-              {contacts.length === 0 ? (
-                <div className="grid gap-3">
-                  <Field label="Receiving contact first name" required><Input value={advContactName} onChange={(e) => setAdvContactName(e.target.value)} placeholder="e.g. Suresh" /></Field>
-                  <Field label="Receiving contact last name" required><Input value={advContactLastName} onChange={(e) => setAdvContactLastName(e.target.value)} placeholder="e.g. Patil" /></Field>
-                  <Field label="Contact mobile" required><Input value={advContactMobile} onChange={(e) => setAdvContactMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" /></Field>
-                  <Field label="Designation" required><Input value={advContactDesignation} onChange={(e) => setAdvContactDesignation(e.target.value)} placeholder="e.g. Executive Engineer" /></Field>
-                </div>
-              ) : (
-                <Field label="File holder (stage owner)"><Select value={advOwnerId} onValueChange={setAdvOwnerId}><SelectTrigger><SelectValue placeholder="Choose contact" /></SelectTrigger><SelectContent>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></Field>
-              )}
-              {!hasCredDoc && (
-                <Field label="Credentials file" required><Input type="file" onChange={(e) => setAdvCredFile(e.target.files?.[0] ?? null)} /></Field>
-              )}
-              <Field label="Application date" required><Input type="date" value={advAppDate} onChange={(e) => setAdvAppDate(e.target.value)} /></Field>
+      <FormSheet
+        open={advanceOpen}
+        onOpenChange={(open) => !busy && setAdvanceOpen(open)}
+        icon={ShieldCheck}
+        title={`Advance to ${humanize(advanceForm.toStatus)}`}
+        description={<>Currently <span className="font-medium text-foreground">{humanize(status)}</span>. Every stage change is recorded in the stage history.</>}
+        errors={advanceErrors}
+        footerNote={checklistBlocked ? 'Complete the checklist to continue.' : undefined}
+        onSubmit={() => void advanceStage()}
+        submitLabel="Advance stage"
+        submitting={busy}
+        submitDisabled={checklistBlocked}
+        submitTitle={checklistBlocked ? 'Complete all checklist items first' : undefined}
+      >
+        {checklist.length > 0 && (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Required before advancing</h4>
+              <span className="text-[11px] text-muted-foreground">{checklist.filter((c) => c.done).length} of {checklist.length} done</span>
             </div>
-          )}
-          {advanceForm.toStatus === 'NC_RAISED' && ncRegisters.length === 0 && (
-            <div className="space-y-4 rounded-lg border p-3">
-              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Log the first NC here</p>
-              <Field label="NC description" required><Textarea value={advNcDesc} onChange={(e) => setAdvNcDesc(e.target.value)} placeholder="As observed during the visit" /></Field>
-              <Field label="Raised by (official)" required><Input value={advNcRaisedBy} onChange={(e) => setAdvNcRaisedBy(e.target.value)} placeholder="e.g. Inspecting officer name" /></Field>
-              <Field label="Target closure date" required><Input type="date" value={advNcTargetDate} onChange={(e) => setAdvNcTargetDate(e.target.value)} /></Field>
-            </div>
-          )}
-          {advanceForm.toStatus === 'TECHNICAL_VISIT_SCHEDULED' && (
-            <div className="space-y-3 rounded-lg border p-3">
-              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Technical visit</p>
-              <div className={`rounded-md border p-2 text-xs ${visits.some((v)=> v.actualCheckoutAt) ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>{visits.some((v)=> v.actualCheckoutAt) ? 'Visit completed (checked out)' : 'No completed visit yet — plan + check out in Visits tab'}</div>
-              <Field label="Visit report (optional)"><Input type="file" onChange={(e)=> (window as any).__advVisitReportFile = e.target.files?.[0] ?? null} /></Field>
-            </div>
-          )}
-          {advanceForm.toStatus === 'APPROVED' && (
-            <div className="space-y-4 rounded-lg border p-3">
-              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Approval details</p>
-              {!hasApprovalDoc && (
-                <>
-                  <Field label="Letter type"><Select value={advLetterType} onValueChange={(v) => setAdvLetterType(v as InstitutionDocumentType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EMPANELMENT_APPROVAL_LETTER_SCAN">Approval letter scan</SelectItem><SelectItem value="APPROVED_VENDOR_LISTING_PROOF">Vendor listing proof</SelectItem></SelectContent></Select></Field>
-                  <Field label="Approval file" required><Input type="file" onChange={(e) => setAdvLetterFile(e.target.files?.[0] ?? null)} /></Field>
-                </>
-              )}
-              <Field label="Approval date" required><Input type="date" value={advApprovalDate} onChange={(e) => setAdvApprovalDate(e.target.value)} /></Field>
-              <Field label="Expiry date (empty = perpetual)"><Input type="date" value={advExpiryDate} onChange={(e) => setAdvExpiryDate(e.target.value)} /></Field>
-            </div>
-          )}
-          <div className="grid gap-4">
-            <Field label="Target status" required>
-              <Select value={advanceForm.toStatus} onValueChange={(v) => setAdvanceForm({ ...advanceForm, toStatus: v as EmpanelmentStatus })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{manualNextStatuses.map((s) => <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>)}</SelectContent>
-              </Select>
-            </Field>
-            <Field label="Responsible employee" required><Select value={advanceForm.decisionByEmployeeId} onValueChange={(v) => setAdvanceForm({ ...advanceForm, decisionByEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Required" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Remarks" required><Textarea value={advanceForm.remarks} onChange={(e) => setAdvanceForm({ ...advanceForm, remarks: e.target.value })} placeholder="Required for all stage transitions" /></Field>
-          </div>
-          {checklist.length > 0 && (
-            <div className="rounded-lg border p-3">
-              <p className="text-xs font-medium capitalize tracking-wide text-muted-foreground">Required before advance</p>
-              <ul className="mt-2 space-y-2">
-                {checklist.map((c) => (
-                  <li key={c.key} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="flex items-center gap-2">
-                      {c.done
-                        ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        : <XCircle className="h-4 w-4 text-muted-foreground" />}
-                      <span className={c.done ? '' : 'text-muted-foreground'}>{c.label}</span>
-                    </span>
-                    {!c.done && <span className="text-xs text-muted-foreground">{c.action}</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {advanceErrors.length > 0 && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><ul className="list-disc pl-5">{advanceErrors.map((e) => <li key={e}>{e}</li>)}</ul></div>}
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setAdvanceOpen(false)} disabled={busy}>Cancel</Button>
-            <span title={checklistBlocked ? 'Complete all checklist items first (see above)' : undefined}>
-              <Button onClick={() => void advanceStage()} disabled={busy || checklistBlocked}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Advance</Button>
-            </span>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* NC Sheet */}
-      <Sheet open={ncOpen} onOpenChange={(open) => !busy && setNcOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Raise NC</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4">
-            <Field label="Description" required><Textarea value={ncForm.description} onChange={(e) => setNcForm({ ...ncForm, description: e.target.value })} placeholder="Describe the non-conformity" /></Field>
-            <Field label="Raised date" required><Input type="date" value={ncForm.raisedDate} onChange={(e) => setNcForm({ ...ncForm, raisedDate: e.target.value })} /></Field>
-            <Field label="Raised by (official)"><Input value={ncForm.raisedByOfficialText} onChange={(e) => setNcForm({ ...ncForm, raisedByOfficialText: e.target.value })} placeholder="e.g. Consultant QA" /></Field>
-            <Field label="Target closure date"><Input type="date" value={ncForm.targetClosureDate} onChange={(e) => setNcForm({ ...ncForm, targetClosureDate: e.target.value })} /></Field>
-            <Field label="Responsible employee"><Select value={ncForm.responsibleEmployeeId} onValueChange={(v) => setNcForm({ ...ncForm, responsibleEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setNcOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void createNc()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create NC</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Contact Sheet */}
-      <Sheet open={contactOpen} onOpenChange={(open) => { if (!busy) { setContactOpen(open); if (!open) setEditingContact(null); } }}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>{editingContact ? 'Edit contact' : 'Add contact'}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="First name" required><Input value={contactForm.firstName} onChange={(e) => setContactForm({ ...contactForm, firstName: e.target.value })} /></Field>
-            <Field label="Last name"><Input value={contactForm.lastName} onChange={(e) => setContactForm({ ...contactForm, lastName: e.target.value })} /></Field>
-            <Field label="Mobile" required><Input value={contactForm.mobile} onChange={(e) => setContactForm({ ...contactForm, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) })} inputMode="numeric" /></Field>
-            <Field label="Email"><Input type="email" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} /></Field>
-            <Field label="Designation" required><Input value={contactForm.designation} onChange={(e) => setContactForm({ ...contactForm, designation: e.target.value })} /></Field>
-            <Field label="Role description"><Input value={contactForm.roleDescription} onChange={(e) => setContactForm({ ...contactForm, roleDescription: e.target.value })} /></Field>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setContactOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveContact()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingContact ? 'Save changes' : 'Add contact'}</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Note Sheet */}
-      <Sheet open={noteOpen} onOpenChange={(open) => !busy && setNoteOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Add note</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4"><Field label="Note" required><Textarea rows={6} value={noteText} onChange={(e) => setNoteText(e.target.value)} /></Field></div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setNoteOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void addNote()} disabled={busy || !noteText.trim()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save note</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Task Sheet */}
-      <Sheet open={taskOpen} onOpenChange={(open) => !busy && setTaskOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>{editingTask ? 'Edit task' : 'New task'}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Task title" required><Input value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></Field>
-            <Field label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(v) => setTaskForm({ ...taskForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></Field>
-            <Field label="Priority"><Select value={taskForm.priority} onValueChange={(v) => setTaskForm({ ...taskForm, priority: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></Field>
-            {editingTask && <Field label="Status"><Select value={taskForm.status} onValueChange={(v) => setTaskForm({ ...taskForm, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></Field>}
-            <div className="sm:col-span-2"><Field label="Description"><Textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} /></Field></div>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setTaskOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void addTask()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingTask ? 'Save changes' : 'Create task'}</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Visit Sheet */}
-      <Sheet open={visitOpen} onOpenChange={(open) => !busy && setVisitOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Plan visit</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Assigned employee" required><Select value={visitForm.employeeId} onValueChange={(v) => setVisitForm({ ...visitForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Visit date" required><Input type="date" value={visitForm.date} onChange={(e) => setVisitForm({ ...visitForm, date: e.target.value })} /></Field>
-            <Field label="Start time"><Input type="time" value={visitForm.startTime} onChange={(e) => setVisitForm({ ...visitForm, startTime: e.target.value })} /></Field>
-            <Field label="End time"><Input type="time" value={visitForm.endTime} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></Field>
-            <div className="sm:col-span-2"><Field label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></Field></div>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={visitForm.selfGenerated} onCheckedChange={(c) => setVisitForm({ ...visitForm, selfGenerated: c === true })} />Self-generated visit</label>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setVisitOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void planVisit()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Plan visit</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Upload Document Sheet */}
-      <Sheet open={docOpen} onOpenChange={(open) => !isUploading && setDocOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Upload document</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-            <Field label="Document type" required><Select value={docType} onValueChange={(v) => setDocType(v as InstitutionDocumentType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CREDENTIALS_PROFILE">Credentials profile</SelectItem><SelectItem value="TECHNICAL_VISIT_REPORT">Technical visit report</SelectItem><SelectItem value="EMPANELMENT_APPROVAL_LETTER_SCAN">Approval letter scan</SelectItem><SelectItem value="APPROVED_VENDOR_LISTING_PROOF">Vendor listing proof</SelectItem><SelectItem value="RENEWAL_APPLICATION">Renewal application</SelectItem></SelectContent></Select></Field>
-            <Field label="File" required><Input type="file" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} /></Field>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setDocOpen(false)} disabled={isUploading}>Cancel</Button>
-            <Button onClick={() => void uploadDoc()} disabled={isUploading || !docFile}>{isUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Upload</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Submit NC Closure Sheet */}
-      <Sheet open={submitNc != null} onOpenChange={(open) => !open && setSubmitNc(null)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Submit NC #{submitNc?.id} closure</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-          {submitNc && (
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">NC #{submitNc.id}</p>
-                <Badge variant="destructive">{humanize(submitNc.status)}</Badge>
-              </div>
-              <p className="mt-1 text-sm">{submitNc.description || '—'}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Raised {showDate(submitNc.raisedDate)} by {submitNc.raisedByOfficialText || '—'} · Target {showDate(submitNc.targetClosureDate)}</p>
-            </div>
-          )}
-            <Field label="Corrective action" required><Textarea value={submitText} onChange={(e) => setSubmitText(e.target.value)} placeholder="What was fixed and how" /></Field>
-            {submitDocs.length > 0 && (
-              <Field label="Existing evidence"><Select value={submitEvidenceId} onValueChange={setSubmitEvidenceId}><SelectTrigger><SelectValue placeholder="Choose uploaded evidence" /></SelectTrigger><SelectContent>{submitDocs.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.fileName}</SelectItem>)}</SelectContent></Select></Field>
+            <ul className="divide-y rounded-lg border">
+              {checklist.map((c) => (
+                <li key={c.key} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <span className="flex items-center gap-2">
+                    {c.done ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
+                    <span className={c.done ? 'text-muted-foreground line-through' : ''}>{c.label}</span>
+                  </span>
+                  {!c.done && <span className="shrink-0 text-[11px] text-muted-foreground">{c.action}</span>}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        <FormGroup title="Stage change" columns={1}>
+          <FormField label="Target status" required><Select value={advanceForm.toStatus} onValueChange={(v) => setAdvanceForm({ ...advanceForm, toStatus: v as EmpanelmentStatus })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{manualNextStatuses.map((s) => <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Responsible employee" required><Select value={advanceForm.decisionByEmployeeId} onValueChange={(v) => setAdvanceForm({ ...advanceForm, decisionByEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Required" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Remarks" required><Textarea rows={3} value={advanceForm.remarks} onChange={(e) => setAdvanceForm({ ...advanceForm, remarks: e.target.value })} placeholder="Why is the stage changing?" /></FormField>
+        </FormGroup>
+        {advanceForm.toStatus === 'CREDENTIALS_SUBMITTED' && (
+          <FormGroup title="Credentials package" description="Everything submitted to the department in one go.">
+            {contacts.length === 0 ? <>
+              <FormField label="Receiving contact first name" required><Input value={advContactName} onChange={(e) => setAdvContactName(e.target.value)} placeholder="e.g. Suresh" /></FormField>
+              <FormField label="Last name" required><Input value={advContactLastName} onChange={(e) => setAdvContactLastName(e.target.value)} placeholder="e.g. Patil" /></FormField>
+              <FormField label="Contact mobile" required><Input value={advContactMobile} onChange={(e) => setAdvContactMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" /></FormField>
+              <FormField label="Designation" required><Input value={advContactDesignation} onChange={(e) => setAdvContactDesignation(e.target.value)} placeholder="e.g. Executive Engineer" /></FormField>
+            </> : (
+              <FormField label="File holder (stage owner)" className="sm:col-span-2"><Select value={advOwnerId} onValueChange={setAdvOwnerId}><SelectTrigger><SelectValue placeholder="Choose contact" /></SelectTrigger><SelectContent>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></FormField>
             )}
-            <Field label={submitDocs.length ? 'Or attach new evidence' : 'Closure evidence file'} required={!submitEvidenceId}><Input type="file" onChange={(e) => setSubmitFile(e.target.files?.[0] ?? null)} /></Field>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setSubmitNc(null)}>Cancel</Button>
-            <Button onClick={() => void doSubmitNc()} disabled={ncBusyId === submitNc?.id}>{ncBusyId === submitNc?.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Submit closure</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Accept NC Closure Sheet */}
-      <Sheet open={acceptNc != null} onOpenChange={(open) => !open && setAcceptNc(null)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Accept NC #{acceptNc?.id} closure</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-          {acceptNc && (
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">NC #{acceptNc.id}</p>
-                <Badge variant="secondary">{humanize(acceptNc.status)}</Badge>
-              </div>
-              <p className="mt-1 text-sm">{acceptNc.description || '—'}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Raised {showDate(acceptNc.raisedDate)} by {acceptNc.raisedByOfficialText || '—'} · Target {showDate(acceptNc.targetClosureDate)}</p>
+            {!hasCredDoc && <FormField label="Credentials file" required className="sm:col-span-2"><FilePicker file={advCredFile} onChange={setAdvCredFile} /></FormField>}
+            <FormField label="Application date" required className="sm:col-span-2"><Input type="date" value={advAppDate} onChange={(e) => setAdvAppDate(e.target.value)} /></FormField>
+          </FormGroup>
+        )}
+        {advanceForm.toStatus === 'NC_RAISED' && ncRegisters.length === 0 && (
+          <FormGroup title="First NC" description="Log the first non-conformity found during the visit." columns={1}>
+            <FormField label="NC description" required><Textarea value={advNcDesc} onChange={(e) => setAdvNcDesc(e.target.value)} placeholder="As observed during the visit" /></FormField>
+            <FormField label="Raised by (official)" required><Input value={advNcRaisedBy} onChange={(e) => setAdvNcRaisedBy(e.target.value)} placeholder="e.g. Inspecting officer name" /></FormField>
+            <FormField label="Target closure date" required><Input type="date" value={advNcTargetDate} onChange={(e) => setAdvNcTargetDate(e.target.value)} /></FormField>
+          </FormGroup>
+        )}
+        {advanceForm.toStatus === 'TECHNICAL_VISIT_SCHEDULED' && (
+          <FormGroup title="Technical visit" columns={1}>
+            <div className={cn('flex items-center gap-2 rounded-lg px-3 py-2 text-xs', visits.some((v) => v.actualCheckoutAt) ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300')}>
+              {visits.some((v) => v.actualCheckoutAt) ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <CalendarClock className="h-4 w-4 shrink-0" />}
+              {visits.some((v) => v.actualCheckoutAt) ? 'Visit completed (checked out).' : 'No completed visit yet. Plan and check out one from the Visits tab.'}
             </div>
+            <FormField label="Visit report (optional)"><FilePicker onChange={(file) => { (window as unknown as { __advVisitReportFile?: File | null }).__advVisitReportFile = file; }} /></FormField>
+          </FormGroup>
+        )}
+        {advanceForm.toStatus === 'APPROVED' && (
+          <FormGroup title="Approval details">
+            {!hasApprovalDoc && <>
+              <FormField label="Letter type" className="sm:col-span-2"><Select value={advLetterType} onValueChange={(v) => setAdvLetterType(v as InstitutionDocumentType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EMPANELMENT_APPROVAL_LETTER_SCAN">Approval letter scan</SelectItem><SelectItem value="APPROVED_VENDOR_LISTING_PROOF">Vendor listing proof</SelectItem></SelectContent></Select></FormField>
+              <FormField label="Approval file" required className="sm:col-span-2"><FilePicker file={advLetterFile} onChange={setAdvLetterFile} /></FormField>
+            </>}
+            <FormField label="Approval date" required><Input type="date" value={advApprovalDate} onChange={(e) => setAdvApprovalDate(e.target.value)} /></FormField>
+            <FormField label="Expiry date" hint="Leave empty for perpetual approval."><Input type="date" value={advExpiryDate} onChange={(e) => setAdvExpiryDate(e.target.value)} /></FormField>
+          </FormGroup>
+        )}
+      </FormSheet>
+
+      <FormSheet
+        open={ncOpen}
+        onOpenChange={(open) => !busy && setNcOpen(open)}
+        icon={ShieldAlert}
+        title="Raise NC"
+        description="Record a non-conformity raised by the institution. Open NCs block approval."
+        onSubmit={() => void createNc()}
+        submitLabel="Raise NC"
+        submitting={busy}
+      >
+        <FormGroup columns={1}>
+          <FormField label="Description" required><Textarea rows={4} value={ncForm.description} onChange={(e) => setNcForm({ ...ncForm, description: e.target.value })} placeholder="Describe the non-conformity" /></FormField>
+        </FormGroup>
+        <FormGroup title="Details">
+          <FormField label="Raised date" required><Input type="date" value={ncForm.raisedDate} onChange={(e) => setNcForm({ ...ncForm, raisedDate: e.target.value })} /></FormField>
+          <FormField label="Target closure date"><Input type="date" value={ncForm.targetClosureDate} onChange={(e) => setNcForm({ ...ncForm, targetClosureDate: e.target.value })} /></FormField>
+          <FormField label="Raised by (official)"><Input value={ncForm.raisedByOfficialText} onChange={(e) => setNcForm({ ...ncForm, raisedByOfficialText: e.target.value })} placeholder="e.g. Consultant QA" /></FormField>
+          <FormField label="Responsible employee"><Select value={ncForm.responsibleEmployeeId} onValueChange={(v) => setNcForm({ ...ncForm, responsibleEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+        </FormGroup>
+      </FormSheet>
+
+      <FormSheet
+        open={contactOpen}
+        onOpenChange={(open) => { if (!busy) { setContactOpen(open); if (!open) setEditingContact(null); } }}
+        icon={UserPlus}
+        title={editingContact ? 'Edit contact' : 'Add contact'}
+        description={`Officer or official at ${institution.institutionName}.`}
+        onSubmit={() => void saveContact()}
+        submitLabel={editingContact ? 'Save changes' : 'Add contact'}
+        submitting={busy}
+      >
+        <FormGroup title="Person">
+          <FormField label="First name" required><Input value={contactForm.firstName} onChange={(e) => setContactForm({ ...contactForm, firstName: e.target.value })} /></FormField>
+          <FormField label="Last name"><Input value={contactForm.lastName} onChange={(e) => setContactForm({ ...contactForm, lastName: e.target.value })} /></FormField>
+          <FormField label="Mobile" required hint="10-digit number"><Input value={contactForm.mobile} onChange={(e) => setContactForm({ ...contactForm, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) })} inputMode="numeric" /></FormField>
+          <FormField label="Email"><Input type="email" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} /></FormField>
+        </FormGroup>
+        <FormGroup title="Role at this institution">
+          <FormField label="Designation" required><Input placeholder="e.g. Executive Engineer" value={contactForm.designation} onChange={(e) => setContactForm({ ...contactForm, designation: e.target.value })} /></FormField>
+          <FormField label="Role description"><Input placeholder="e.g. Reviews vendor files" value={contactForm.roleDescription} onChange={(e) => setContactForm({ ...contactForm, roleDescription: e.target.value })} /></FormField>
+        </FormGroup>
+      </FormSheet>
+
+      <FormSheet
+        open={noteOpen}
+        onOpenChange={(open) => !busy && setNoteOpen(open)}
+        icon={NotebookPen}
+        title="Add note"
+        description="Visible to everyone who works on this institution."
+        onSubmit={() => void addNote()}
+        submitLabel="Save note"
+        submitting={busy}
+        submitDisabled={!noteText.trim()}
+      >
+        <FormField label="Note" required><Textarea rows={8} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="What was discussed, agreed, or needs follow-up…" /></FormField>
+      </FormSheet>
+
+      <FormSheet
+        open={taskOpen}
+        onOpenChange={(open) => !busy && setTaskOpen(open)}
+        icon={ListChecks}
+        title={editingTask ? 'Edit task' : 'New follow-up task'}
+        description={editingTask ? editingTask.title : `Follow-up for ${institution.institutionName}.`}
+        onSubmit={() => void addTask()}
+        submitLabel={editingTask ? 'Save changes' : 'Create task'}
+        submitting={busy}
+      >
+        <FormGroup>
+          <FormField label="Task title" required className="sm:col-span-2"><Input placeholder="e.g. Collect NC closure letter" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></FormField>
+          <FormField label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(v) => setTaskForm({ ...taskForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></FormField>
+          <FormField label="Priority"><Select value={taskForm.priority} onValueChange={(v) => setTaskForm({ ...taskForm, priority: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></FormField>
+          {editingTask && <FormField label="Status"><Select value={taskForm.status} onValueChange={(v) => setTaskForm({ ...taskForm, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></FormField>}
+          <FormField label="Description" className="sm:col-span-2"><Textarea rows={4} value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} placeholder="Optional details" /></FormField>
+        </FormGroup>
+      </FormSheet>
+
+      <FormSheet
+        open={visitOpen}
+        onOpenChange={(open) => !busy && setVisitOpen(open)}
+        icon={CalendarPlus}
+        title="Plan visit"
+        description={`Institutional visit to ${institution.institutionName}.`}
+        onSubmit={() => void planVisit()}
+        submitLabel="Plan visit"
+        submitting={busy}
+      >
+        <FormGroup title="When and who">
+          <FormField label="Assigned employee" required className="sm:col-span-2"><SearchableSelect options={employeeOptions} value={visitForm.employeeId || undefined} onSelect={(option) => setVisitForm({ ...visitForm, employeeId: option?.value || '' })} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full overflow-hidden text-xs" /></FormField>
+          <FormField label="Visit date" required className="sm:col-span-2"><Input type="date" value={visitForm.date} onChange={(e) => setVisitForm({ ...visitForm, date: e.target.value })} /></FormField>
+          <FormField label="Start time"><Input type="time" value={visitForm.startTime} onChange={(e) => setVisitForm({ ...visitForm, startTime: e.target.value })} /></FormField>
+          <FormField label="End time"><Input type="time" value={visitForm.endTime} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></FormField>
+        </FormGroup>
+        <FormGroup title="Purpose" columns={1}>
+          <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Description"><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="Optional agenda or context" /></FormField>
+          <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
+        </FormGroup>
+      </FormSheet>
+
+      <FormSheet
+        open={docOpen}
+        onOpenChange={(open) => !isUploading && setDocOpen(open)}
+        icon={Upload}
+        title="Upload document"
+        description="The document type is pre-selected for the current stage."
+        onSubmit={() => void uploadDoc()}
+        submitLabel="Upload"
+        submitting={isUploading}
+        submitDisabled={!docFile}
+      >
+        <FormGroup columns={1}>
+          <FormField label="Document type" required><Select value={docType} onValueChange={(v) => setDocType(v as InstitutionDocumentType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CREDENTIALS_PROFILE">Credentials profile</SelectItem><SelectItem value="TECHNICAL_VISIT_REPORT">Technical visit report</SelectItem><SelectItem value="EMPANELMENT_APPROVAL_LETTER_SCAN">Approval letter scan</SelectItem><SelectItem value="APPROVED_VENDOR_LISTING_PROOF">Vendor listing proof</SelectItem><SelectItem value="RENEWAL_APPLICATION">Renewal application</SelectItem></SelectContent></Select></FormField>
+          <FormField label="File" required><FilePicker file={docFile} onChange={setDocFile} /></FormField>
+        </FormGroup>
+      </FormSheet>
+
+      <FormSheet
+        open={submitNc != null}
+        onOpenChange={(open) => !open && setSubmitNc(null)}
+        icon={ShieldCheck}
+        title={`Submit closure for NC #${submitNc?.id ?? ''}`}
+        description="Describe the fix and attach evidence for the institution to review."
+        onSubmit={() => void doSubmitNc()}
+        submitLabel="Submit closure"
+        submitting={ncBusyId != null && ncBusyId === submitNc?.id}
+      >
+        {submitNc && (
+          <FormContext>
+            <div className="flex items-center gap-2"><span className="font-semibold">NC #{submitNc.id}</span><Pill tone="danger">{humanize(submitNc.status)}</Pill></div>
+            <p className="mt-1 text-sm">{submitNc.description || '—'}</p>
+            <p className="mt-1 text-muted-foreground">Raised {showDate(submitNc.raisedDate)} by {submitNc.raisedByOfficialText || '—'} · Target {showDate(submitNc.targetClosureDate)}</p>
+          </FormContext>
+        )}
+        <FormGroup columns={1}>
+          <FormField label="Corrective action" required><Textarea rows={4} value={submitText} onChange={(e) => setSubmitText(e.target.value)} placeholder="What was fixed and how" /></FormField>
+          {submitDocs.length > 0 && <FormField label="Existing evidence"><Select value={submitEvidenceId} onValueChange={setSubmitEvidenceId}><SelectTrigger><SelectValue placeholder="Choose uploaded evidence" /></SelectTrigger><SelectContent>{submitDocs.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.fileName}</SelectItem>)}</SelectContent></Select></FormField>}
+          <FormField label={submitDocs.length ? 'Or attach new evidence' : 'Closure evidence file'} required={!submitEvidenceId}><FilePicker file={submitFile} onChange={setSubmitFile} /></FormField>
+        </FormGroup>
+      </FormSheet>
+
+      <FormSheet
+        open={acceptNc != null}
+        onOpenChange={(open) => !open && setAcceptNc(null)}
+        icon={CheckCircle2}
+        title={`Accept closure for NC #${acceptNc?.id ?? ''}`}
+        description="Record the institution's acceptance to close this NC."
+        onSubmit={() => void doAcceptNc()}
+        submitLabel="Close NC"
+        submitting={ncBusyId != null && ncBusyId === acceptNc?.id}
+      >
+        {acceptNc && (
+          <FormContext>
+            <div className="flex items-center gap-2"><span className="font-semibold">NC #{acceptNc.id}</span><Pill tone="warning">{humanize(acceptNc.status)}</Pill></div>
+            <p className="mt-1 text-sm">{acceptNc.description || '—'}</p>
+            <p className="mt-1 text-muted-foreground">Raised {showDate(acceptNc.raisedDate)} by {acceptNc.raisedByOfficialText || '—'} · Target {showDate(acceptNc.targetClosureDate)}</p>
+          </FormContext>
+        )}
+        <FormGroup>
+          <FormField label="Closure method" required className="sm:col-span-2"><Select value={acceptForm.closureMethod} onValueChange={(v) => setAcceptForm({ ...acceptForm, closureMethod: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DOCUMENTARY_EVIDENCE_ONLY">Documentary evidence only</SelectItem><SelectItem value="RE_VISIT_WITNESSED">Re-visit witnessed</SelectItem></SelectContent></Select></FormField>
+          <FormField label="Acceptance date" required><Input type="date" value={acceptForm.acceptanceDate} onChange={(e) => setAcceptForm({ ...acceptForm, acceptanceDate: e.target.value })} /></FormField>
+          <FormField label="Accepting official" required><Input value={acceptForm.acceptingOfficialText} onChange={(e) => setAcceptForm({ ...acceptForm, acceptingOfficialText: e.target.value })} placeholder="Inspecting official name" /></FormField>
+          <FormField label="Evidence document" required={acceptForm.closureMethod === 'DOCUMENTARY_EVIDENCE_ONLY'} className="sm:col-span-2" hint={acceptForm.closureMethod === 'DOCUMENTARY_EVIDENCE_ONLY' && !submitDocs.length ? <span className="text-destructive">Upload evidence for this NC before accepting.</span> : undefined}><Select value={acceptForm.evidenceDocumentId} onValueChange={(v) => setAcceptForm({ ...acceptForm, evidenceDocumentId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder={submitDocs.length ? 'Choose evidence' : 'No evidence files — upload via Evidence first'} /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{submitDocs.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.fileName}{d.fileAttached === false ? ' (no file)' : ''}</SelectItem>)}</SelectContent></Select></FormField>
+          {acceptForm.closureMethod === 'RE_VISIT_WITNESSED' && (
+            <FormField label="Witnessing re-visit" required className="sm:col-span-2"><Select value={acceptForm.witnessedVisitId} onValueChange={(v) => setAcceptForm({ ...acceptForm, witnessedVisitId: v })}><SelectTrigger><SelectValue placeholder={visits.some((v) => v.actualCheckoutAt) ? 'Choose completed visit' : 'No completed visits — plan + check out one first'} /></SelectTrigger><SelectContent>{visits.filter((v) => v.actualCheckoutAt).map((v) => <SelectItem key={v.id} value={String(v.id)}>Visit #{v.id} · {showDate(v.scheduledVisitDate)} · {v.outcome ? humanize(v.outcome) : 'Completed'}</SelectItem>)}</SelectContent></Select></FormField>
           )}
-            <Field label="Closure method" required><Select value={acceptForm.closureMethod} onValueChange={(v) => setAcceptForm({ ...acceptForm, closureMethod: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DOCUMENTARY_EVIDENCE_ONLY">Documentary evidence only</SelectItem><SelectItem value="RE_VISIT_WITNESSED">Re-visit witnessed</SelectItem></SelectContent></Select></Field>
-            <Field label="Acceptance date" required><Input type="date" value={acceptForm.acceptanceDate} onChange={(e) => setAcceptForm({ ...acceptForm, acceptanceDate: e.target.value })} /></Field>
-            <Field label="Accepting official" required><Input value={acceptForm.acceptingOfficialText} onChange={(e) => setAcceptForm({ ...acceptForm, acceptingOfficialText: e.target.value })} placeholder="Inspecting official name" /></Field>
-            <Field label="Evidence document" required={acceptForm.closureMethod === 'DOCUMENTARY_EVIDENCE_ONLY'}><Select value={acceptForm.evidenceDocumentId} onValueChange={(v) => setAcceptForm({ ...acceptForm, evidenceDocumentId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder={submitDocs.length ? 'Choose evidence' : 'No evidence files — upload via Evidence first'} /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{submitDocs.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.fileName}{(d as any).fileAttached === false ? ' (no file)' : ''}</SelectItem>)}</SelectContent></Select>{acceptForm.closureMethod === 'DOCUMENTARY_EVIDENCE_ONLY' && !submitDocs.length && <p className="text-xs text-destructive">Upload evidence for this NC before accepting.</p>}</Field>
-            {acceptForm.closureMethod === 'RE_VISIT_WITNESSED' && (
-              <Field label="Witnessing re-visit" required><Select value={acceptForm.witnessedVisitId} onValueChange={(v) => setAcceptForm({ ...acceptForm, witnessedVisitId: v })}><SelectTrigger><SelectValue placeholder={visits.some((v) => v.actualCheckoutAt) ? 'Choose completed visit' : 'No completed visits — plan + check out one first'} /></SelectTrigger><SelectContent>{visits.filter((v) => v.actualCheckoutAt).map((v) => <SelectItem key={v.id} value={String(v.id)}>Visit #{v.id} · {showDate(v.scheduledVisitDate)} · {v.outcome ? humanize(v.outcome) : 'Completed'}</SelectItem>)}</SelectContent></Select></Field>
-            )}
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setAcceptNc(null)}>Cancel</Button>
-            <Button onClick={() => void doAcceptNc()} disabled={ncBusyId === acceptNc?.id}>{ncBusyId === acceptNc?.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Close NC</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+        </FormGroup>
+      </FormSheet>
 
       {/* Delete Dialog */}
       <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}>

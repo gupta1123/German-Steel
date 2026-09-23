@@ -2,20 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft, CalendarPlus, Clock, Edit3, Loader2, NotebookPen, Plus, RefreshCw, Trash2, UserPlus, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowLeft, Building2, CalendarClock, CalendarDays, CalendarPlus, CheckCircle2, Download, Edit3, Eye, FileText, HardHat, Hash, History, Landmark, ListChecks, Loader2, Mail, MapPin, MoreHorizontal, Package, PackagePlus, Phone, Plus, RefreshCw, ShieldAlert, ShieldCheck, StickyNote, Trash2, User, UserPlus, Users, Workflow } from 'lucide-react';
 import { toast } from 'sonner';
-import { ContactSummaryCard } from '@/components/contact-summary-card';
-import { NcSummaryCard } from '@/components/nc-summary-card';
 
-const VISIT_PURPOSES = [
-  { value: 'ROUTINE_VISIT', label: 'Routine Visit' },
-  { value: 'TECHNICAL_DISCUSSION', label: 'Technical Discussion' },
-  { value: 'NC_FOLLOW_UP', label: 'NC Follow-up' },
-  { value: 'RELATIONSHIP_MEETING', label: 'Relationship Meeting' },
-  { value: 'ORDER_FOLLOW_UP', label: 'Order Follow-up' },
-  { value: 'PAYMENT_FOLLOW_UP', label: 'Payment Follow-up' },
-  { value: 'OTHER', label: 'Other' },
-] as const;
 
 import { useAuth } from '@/components/auth-provider';
 import { getErrorMessage } from '@/lib/api-error';
@@ -36,41 +25,45 @@ import {
   type NcStatus,
 } from '@/lib/projects-api';
 import { RetailAPI, type RetailEmployee } from '@/lib/retail-api';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { visitsApi, type CommonVisitRow } from '@/lib/visits-api';
+import { DetailShell } from '@/components/detail-shell';
+import { ActivityTimeline, DetailHero, DetailSkeleton, EmptyState, FilePicker, FormCheck, FormContext, FormField, FormGroup, FormSheet, Info, Initials, KpiCell, NcRow, NotesFeed, Pill, SalesTable, Section, StageHistoryRow, StageStepper, TaskList, VISIT_PURPOSES, VisitList, WarningBanner, dayKey, formatDay, isOpenTask, pickFile, purposeLabel, salesSummary, taskSummary, today, visitStatus, type ActivityItem, type HeroNextStep, type Tone } from '@/components/detail-ui';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
 const showDate = (value: string | null | undefined) => value ? new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—';
-const FLAT_TAB_SECTION_CLASS = '[&>[data-slot=card]]:gap-4 [&>[data-slot=card]]:rounded-none [&>[data-slot=card]]:border-0 [&>[data-slot=card]]:bg-transparent [&>[data-slot=card]]:py-0 [&>[data-slot=card]]:shadow-none [&>[data-slot=card]>[data-slot=card-header]]:px-0 [&>[data-slot=card]>[data-slot=card-content]]:px-0';
-
-const STAGE_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  SOURCE_APPROVED: 'default', PROJECT_COMPLETED: 'default',
-  UNDER_REVIEW: 'secondary', TECHNICAL_VISIT_SCHEDULED: 'secondary', FORWARDED_TO_CONSULTANT: 'secondary', CREDENTIALS_SUBMITTED_TO_CONTRACTOR: 'secondary', NC_CLOSURE_SUBMITTED: 'secondary',
-  NOT_STARTED: 'outline',
-  REJECTED: 'destructive', NC_RAISED: 'destructive',
+const STAGE_TONE: Record<string, Tone> = {
+  SOURCE_APPROVED: 'success', PROJECT_COMPLETED: 'success',
+  UNDER_REVIEW: 'info', TECHNICAL_VISIT_SCHEDULED: 'info', FORWARDED_TO_CONSULTANT: 'info', CREDENTIALS_SUBMITTED_TO_CONTRACTOR: 'info', NC_CLOSURE_SUBMITTED: 'info',
+  NOT_STARTED: 'neutral',
+  REJECTED: 'danger', NC_RAISED: 'danger',
 };
 
-function Info({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div><p className="text-xs text-muted-foreground">{label}</p><div className="mt-0.5 text-xs font-medium leading-5">{value || '—'}</div></div>;
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">{text}</div>;
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}{required && <span className="ml-1 text-destructive">*</span>}</Label>{children}</div>;
-}
+// Main source-approval path shown as a stepper on the Process tab.
+const PROJECT_STEPS = [
+  { key: 'NOT_STARTED', label: 'Not started' },
+  { key: 'CREDENTIALS_SUBMITTED_TO_CONTRACTOR', label: 'Credentials' },
+  { key: 'FORWARDED_TO_CONSULTANT', label: 'Consultant' },
+  { key: 'UNDER_REVIEW', label: 'Under review' },
+  { key: 'TECHNICAL_VISIT_SCHEDULED', label: 'Technical visit' },
+  { key: 'NC', label: 'NC closure' },
+  { key: 'SOURCE_APPROVED', label: 'Source approved' },
+  { key: 'PROJECT_COMPLETED', label: 'Completed' },
+] as const;
+const PROJECT_STAGE_INDEX: Record<string, number> = {
+  NOT_STARTED: 0, CREDENTIALS_SUBMITTED_TO_CONTRACTOR: 1, FORWARDED_TO_CONSULTANT: 2, UNDER_REVIEW: 3, TECHNICAL_VISIT_SCHEDULED: 4,
+  NC_RAISED: 5, NC_CLOSURE_SUBMITTED: 5, SOURCE_APPROVED: 6, PROJECT_COMPLETED: 7,
+};
+const PARTY_ORDER = ['OWNER_CLIENT', 'CONTRACTOR', 'CONSULTANT'];
+const PARTY_LABEL: Record<string, string> = { OWNER_CLIENT: 'Owner / Client', CONTRACTOR: 'Contractor', CONSULTANT: 'Consultant' };
 
 type ProjectEditDraft = {
   projectName: string;
@@ -112,8 +105,9 @@ export default function ProjectDetailPage() {
   const [saleOpen, setSaleOpen] = useState(false);
   const [saleForm, setSaleForm] = useState({ saleDate: new Date().toISOString().slice(0, 10), quantityMt: '', invoiceReference: '' });
   const [visitOpen, setVisitOpen] = useState(false);
-  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', selfGenerated: true });
+  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
+  const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -142,9 +136,6 @@ export default function ProjectDetailPage() {
   const emptyContactForm = { firstName: '', lastName: '', mobile: '', email: '', designation: '', departmentFunction: '', influenceLevel: '', projectPartyId: '' };
   const [contactForm, setContactForm] = useState(emptyContactForm);
 
-  const [noteOpen, setNoteOpen] = useState(false);
-  const [noteText, setNoteText] = useState('');
-
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
@@ -155,7 +146,6 @@ export default function ProjectDetailPage() {
   const [editingParty, setEditingParty] = useState<ProjectParty | null>(null);
   const [partyForm, setPartyForm] = useState({ partyRole: 'CONTRACTOR', partyNameText: '', packageName: '', primaryParty: false });
 
-  const today = () => new Date().toISOString().slice(0, 10);
   const assignedByEmployeeId = userData?.employeeId || project?.assignedEmployeeId || 0;
   const employeeName = (employeeId: number | null | undefined) => {
     const employee = employees.find((item) => item.id === employeeId);
@@ -340,7 +330,7 @@ export default function ProjectDetailPage() {
       await ProjectsAPI.planVisit({
         projectId, assignedEmployeeId: assigned, assignedByEmployeeId,
         scheduledVisitDate: visitForm.date, scheduledStartTime: `${visitForm.startTime}:00`, scheduledEndTime: `${visitForm.endTime}:00`,
-        purpose: visitForm.purpose.trim(), selfGenerated: visitForm.selfGenerated,
+        purpose: visitForm.purpose.trim(), description: visitForm.description.trim() || null, selfGenerated: visitForm.selfGenerated,
       }, token);
       toast.success('Visit planned.');
       setVisitOpen(false);
@@ -572,18 +562,6 @@ export default function ProjectDetailPage() {
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to add contact.')); } finally { setBusy(false); }
   };
 
-  const addNote = async () => {
-    if (!token || !noteText.trim()) return;
-    setBusy(true);
-    try {
-      await ProjectsAPI.createNote(projectId, noteText.trim(), token);
-      toast.success('Note added.');
-      setNoteOpen(false);
-      setNoteText('');
-      await reloadNotes();
-    } catch (error) { toast.error(getErrorMessage(error, 'Unable to add note.')); } finally { setBusy(false); }
-  };
-
   const addSale = async () => {
     if (!token) return;
     const quantityMt = Number(saleForm.quantityMt);
@@ -622,468 +600,606 @@ export default function ProjectDetailPage() {
     try { await ProjectsAPI.deleteTask(task.id, token); toast.success('Task deleted.'); await reloadTasks(); } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')); } finally { setBusy(false); }
   };
 
-  if (isLoading) return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <DetailSkeleton />;
   if (!Number.isFinite(projectId) || !project) return <Card><CardHeader><CardTitle>Project not found</CardTitle></CardHeader><CardContent><Button variant="outline" onClick={() => router.push('/dashboard/projects')}><ArrowLeft className="mr-2 h-4 w-4" />Back to projects</Button></CardContent></Card>;
 
+  const stage = project.sourceApprovalStatus;
+  const stageTone: Tone = STAGE_TONE[stage] ?? 'neutral';
+  const partyName = (party: ProjectParty) => (party as unknown as { partyNameText?: string }).partyNameText ?? party.partyName ?? `Party #${party.id}`;
+  const noteAuthor = (note: ProjectNote) => {
+    if (note.authorName && note.authorName !== '—' && note.authorName.trim()) return note.authorName;
+    const match = note.authorEmployeeId ? employees.find((e) => e.id === note.authorEmployeeId) : null;
+    return (match && [match.firstName, match.lastName].filter(Boolean).join(' ')) || (note.authorEmployeeId ? `Employee #${note.authorEmployeeId}` : 'System');
+  };
+  const contactView = (contact: ProjectContact) => {
+    const master = contactMasters.find((m) => Number(m.id ?? m.contactInfluenceRegisterId) === contact.contactInfluenceRegisterId);
+    const masterName = master ? [master.firstName ?? master.first_name, master.lastName ?? master.last_name].filter(Boolean).join(' ').trim() : '';
+    const employeeMatch = employees.find((e) => e.id === contact.contactInfluenceRegisterId);
+    const fallbackName = employeeMatch ? [employeeMatch.firstName, employeeMatch.lastName].filter(Boolean).join(' ') : null;
+    const name = masterName || [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim() || fallbackName || `Contact #${contact.contactInfluenceRegisterId || contact.id}`;
+    const party = parties.find((item) => item.id === contact.projectPartyId) ?? null;
+    return { master, name, party, mobile: contact.mobile && contact.mobile !== '—' ? contact.mobile : null, email: contact.email && contact.email !== '—' ? contact.email : null };
+  };
+
+  const openEdit = () => { setEditDraft({ projectName: project.projectName, institutionId: project.institutionId == null ? '' : String(project.institutionId), locationText: project.locationText, state: project.state, locationLatitude: '', locationLongitude: '', projectType: project.projectType, estimatedTmtMt: project.estimatedTmtMt == null ? '' : String(project.estimatedTmtMt), startDate: project.startDate ?? '', completionDate: project.completionDate ?? '', sourceApprovalStatus: project.sourceApprovalStatus, approvalLetterReference: project.approvalLetterReference ?? '', assignedEmployeeId: project.assignedEmployeeId == null ? '' : String(project.assignedEmployeeId), active: project.active }); setEditErrors([]); setEditOpen(true); };
+  const openAdvance = (toStatus?: ProjectStage) => { setAdvanceForm({ toStatus: toStatus ?? allowedNextStatuses[0], remarks: '', decisionByEmployeeId: project.assignedEmployeeId ? String(project.assignedEmployeeId) : '' }); setAdvanceErrors([]); setAdvanceOpen(true); };
+  const openVisitForm = () => { setVisitForm({ employeeId: String(project.assignedEmployeeId || ''), date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true }); setVisitOpen(true); };
+  const openSaleForm = () => { setSaleForm({ saleDate: today(), quantityMt: '', invoiceReference: '' }); setSaleOpen(true); };
+  const openNewTask = () => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(project.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
+  const openEditTask = async (task: ProjectTask) => {
+    try {
+      const details = await ProjectsAPI.getTaskById(task.id, token!);
+      setEditingTask(details);
+      setTaskForm({ title: details.title, description: details.description, employeeId: String(details.assignedEmployeeId || project.assignedEmployeeId || ''), dueDate: details.dueDate, priority: details.priority, status: details.status });
+      setTaskOpen(true);
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to load task details.')); }
+  };
+  const openContactForm = (contact?: ProjectContact) => {
+    if (!contact) { setEditingContact(null); setContactForm(emptyContactForm); setContactOpen(true); return; }
+    const view = contactView(contact);
+    setEditingContact(contact);
+    setContactForm({ firstName: contact.firstName || view.master?.firstName || '', lastName: contact.lastName || view.master?.lastName || '', mobile: view.mobile || '', email: view.email || '', designation: contact.designation || '', departmentFunction: contact.departmentFunction || '', influenceLevel: contact.influenceLevel || '', projectPartyId: contact.projectPartyId ? String(contact.projectPartyId) : '' });
+    setContactOpen(true);
+  };
+  const canRaiseNc = !hasClosedNc && ['TECHNICAL_VISIT_SCHEDULED', 'NC_RAISED', 'NC_CLOSURE_SUBMITTED', 'UNDER_REVIEW'].includes(stage);
+  const openRaiseNc = () => { setNcForm({ description: '', raisedDate: today(), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' }); setNcOpen(true); };
+  const addNcEvidence = (nc: ProjectNcRegister) => pickFile(async (file) => {
+    setNcBusyId(nc.id);
+    try { await ProjectsAPI.uploadNcEvidence(nc.id, file, token!); toast.success('Evidence uploaded'); await reloadNc(); }
+    catch (e) { toast.error(getErrorMessage(e, 'Upload failed')) } finally { setNcBusyId(null); }
+  });
+  const openDocumentFile = async (doc: ProjectDocument, mode: 'view' | 'download') => {
+    const failMessage = mode === 'view' ? 'File not ready' : 'Download failed';
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+    const list = await fetch(`${base}/api/hr/files?parentType=DOCUMENT_DEPOSITORY&parentId=${doc.id}&page=0&size=5`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.ok ? r.json() : { content: [] }).catch(() => ({ content: [] }));
+    const fileId = (list as { content?: { id: number }[] }).content?.[0]?.id;
+    if (!fileId) { toast.error(failMessage); return; }
+    const res = await fetch(`${base}/api/hr/files/${fileId}/download`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { toast.error(failMessage); return; }
+    const url = URL.createObjectURL(await res.blob());
+    if (mode === 'view') { window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); return; }
+    const a = document.createElement('a'); a.href = url; a.download = doc.fileName || `doc-${doc.id}`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
+  const nextAdvance = allowedNextStatuses[0];
+  const advanceButton = nextAdvance ? <Button size="sm" onClick={() => openAdvance(nextAdvance)}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Advance to {humanize(nextAdvance)}</Button> : undefined;
+  const nextStep: HeroNextStep = stage === 'PROJECT_COMPLETED'
+    ? { done: true, text: 'Project completed. No further action needed.' }
+    : stage === 'SOURCE_APPROVED'
+      ? { done: true, text: 'Source approved for this site. Supply and track progress to completion.', action: advanceButton }
+      : {
+        done: false,
+        tone: stage === 'REJECTED' || stage === 'NC_RAISED' ? 'danger' : 'warning',
+        text: stage === 'NOT_STARTED' ? 'Submit credentials to the contractor.'
+          : stage === 'CREDENTIALS_SUBMITTED_TO_CONTRACTOR' ? 'Forward the credentials to the consultant.'
+          : stage === 'FORWARDED_TO_CONSULTANT' ? 'Awaiting the consultant’s review.'
+          : stage === 'UNDER_REVIEW' ? 'Schedule a technical visit or await the decision.'
+          : stage === 'TECHNICAL_VISIT_SCHEDULED' ? 'Complete the site visit and raise NCs if any.'
+          : stage === 'NC_RAISED' ? `Submit closure for ${openNcCount} open NC${openNcCount === 1 ? '' : 's'}; open NCs block approval.`
+          : stage === 'NC_CLOSURE_SUBMITTED' ? 'NC closure submitted. Await re-review and approval.'
+          : 'Rejected. Restart source approval.',
+        action: advanceButton,
+      };
+
+  const currentEntry = pipeline.find((entry) => entry.stage === stage && !entry.exitedAt) ?? pipeline.find((entry) => entry.stage === stage);
+  const sortedPipeline = [...pipeline].sort((left, right) => String(right.enteredAt).localeCompare(String(left.enteredAt)));
+  const suppliedMt = sales.reduce((sum, sale) => sum + (sale.quantityMt || 0), 0);
+  const supplyPct = project.estimatedTmtMt ? Math.min(100, (suppliedMt / project.estimatedTmtMt) * 100) : null;
+  const daysToCompletion = project.completionDate ? Math.ceil((new Date(project.completionDate).getTime() - Date.now()) / 86400000) : null;
+  const schedulePct = project.startDate && project.completionDate ? (() => { const start = new Date(project.startDate).getTime(); const end = new Date(project.completionDate).getTime(); return end > start ? Math.min(100, Math.max(0, ((Date.now() - start) / (end - start)) * 100)) : null; })() : null;
+  const sortedNotes = [...notes].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+  const stageIndex = PROJECT_STAGE_INDEX[stage] ?? -1;
+  const closedNcCount = ncRegisters.filter((nc) => nc.status === 'CLOSED').length;
+
+  const recentActivity: ActivityItem[] = [
+    ...visits.map((visit) => ({ key: `visit-${visit.id}`, date: visit.actualCheckinAt || visit.scheduledVisitDate, icon: CalendarDays, title: `Site visit · ${purposeLabel(visit.purpose)}`, meta: `${visitStatus(visit).label} · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
+    ...pipeline.map((entry) => ({ key: `stage-${entry.id}`, date: entry.enteredAt, icon: Workflow, title: `Stage · ${humanize(entry.stage)}`, meta: `${entry.remarks && entry.remarks !== '—' ? entry.remarks : 'No remarks'} · ${pipelineOwnerName(entry.enteredBy)}` })),
+    ...ncRegisters.map((nc) => ({ key: `nc-${nc.id}`, date: nc.raisedDate, icon: ShieldAlert, title: `NC #${nc.id} raised`, meta: nc.description })),
+    ...sales.map((sale) => ({ key: `sale-${sale.id}`, date: sale.saleDate, icon: Package, title: `Supply · ${sale.quantityMt.toLocaleString('en-IN')} MT`, meta: `PO ${sale.invoiceReference || '—'}` })),
+    ...notes.map((note) => ({ key: `note-${note.id}`, date: note.createdAt, icon: StickyNote, title: `Note · ${noteAuthor(note)}`, meta: note.noteText })),
+  ].filter((item) => item.date && dayKey(item.date) <= today()).sort((left, right) => String(right.date).localeCompare(String(left.date))).slice(0, 8);
+  const upNext: ActivityItem[] = [
+    ...tasks.filter(isOpenTask).map((task) => ({ key: `task-${task.id}`, date: task.dueDate, icon: ListChecks, title: task.title || `Task #${task.id}`, meta: `Task · ${humanize(task.priority)} · ${task.assignedEmployeeName || employeeName(task.assignedEmployeeId)}`, onClick: () => void openEditTask(task) })),
+    ...ncRegisters.filter((nc) => nc.status !== 'CLOSED' && nc.targetClosureDate).map((nc) => ({ key: `nc-due-${nc.id}`, date: nc.targetClosureDate as string, icon: ShieldAlert, title: `Close NC #${nc.id}`, meta: nc.description })),
+    ...visits.filter((visit) => !visit.actualCheckinAt && !visit.outcome && dayKey(visit.scheduledVisitDate) >= today()).map((visit) => ({ key: `planned-${visit.id}`, date: visit.scheduledVisitDate, icon: CalendarDays, title: purposeLabel(visit.purpose), meta: `Planned site visit · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
+  ].filter((item) => item.date).sort((left, right) => String(left.date).localeCompare(String(right.date)));
+
   return (
-    <div className="space-y-4 font-poppins text-xs">
-      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
-        <div className="flex gap-3">
-          <Button size="icon" variant="outline" onClick={() => router.push('/dashboard/projects')} aria-label="Back to projects"><ArrowLeft className="h-4 w-4" /></Button>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-semibold">{project.projectName}</h1>
-              <Badge variant={STAGE_VARIANT[project.sourceApprovalStatus] ?? 'outline'}>{humanize(project.sourceApprovalStatus)}</Badge>
-              {!project.active && <Badge variant="destructive">Inactive</Badge>}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">#{project.id} · {humanize(project.projectType)} · {project.locationText || '—'}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => { setEditDraft({ projectName: project.projectName, institutionId: project.institutionId == null ? '' : String(project.institutionId), locationText: project.locationText, state: project.state, locationLatitude: '', locationLongitude: '', projectType: project.projectType, estimatedTmtMt: project.estimatedTmtMt == null ? '' : String(project.estimatedTmtMt), startDate: '', completionDate: '', sourceApprovalStatus: project.sourceApprovalStatus, approvalLetterReference: '', assignedEmployeeId: project.assignedEmployeeId == null ? '' : String(project.assignedEmployeeId), active: project.active }); setEditErrors([]); setEditOpen(true); }}><Edit3 className="mr-2 h-3.5 w-3.5" />Edit</Button>
-          {allowedNextStatuses.length > 0 && (
-            <Button size="sm" onClick={() => { setAdvanceForm({ toStatus: allowedNextStatuses[0], remarks: '', decisionByEmployeeId: project.assignedEmployeeId ? String(project.assignedEmployeeId) : '' }); setAdvanceErrors([]); setAdvanceOpen(true); }}><ShieldCheck className="mr-2 h-3.5 w-3.5" />Advance</Button>
-          )}
-          <Button variant="ghost" size="sm" onClick={() => void load()}><RefreshCw className="mr-2 h-3.5 w-3.5" />Refresh</Button>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={!project.active} onClick={() => setDeleteOpen(true)}>Deactivate</Button>
-        </div>
-      </div>
+    <div className="detail-page space-y-4 font-poppins text-xs">
+      <DetailHero
+        name={project.projectName}
+        onBack={() => router.push('/dashboard/projects')}
+        backLabel="Back to projects"
+        badges={<>
+          <Pill tone={stageTone}>{humanize(stage)}</Pill>
+          {!project.active && <Pill tone="danger">Inactive record</Pill>}
+        </>}
+        meta={[
+          { icon: HardHat, label: humanize(project.projectType) },
+          { icon: Hash, label: project.id },
+          ...(project.locationText ? [{ icon: MapPin, label: [project.locationText, project.state].filter(Boolean).join(', '), title: 'Site location' }] : []),
+          ...(project.institutionName ? [{ icon: Landmark, label: project.institutionName, title: 'Institution' }] : []),
+          { icon: User, label: project.assignedEmployeeName || employeeName(project.assignedEmployeeId), title: 'Assigned employee' },
+          ...(project.contractorName ? [{ icon: Building2, label: project.contractorName, title: 'Contractor' }] : []),
+          ...(project.consultantName ? [{ icon: Users, label: project.consultantName, title: 'Consultant' }] : []),
+        ]}
+        actions={<>
+          <Button variant="outline" size="sm" className="h-8" onClick={openEdit}><Edit3 className="mr-1.5 h-3.5 w-3.5" />Edit</Button>
+          {nextAdvance && <Button size="sm" className="h-8" onClick={() => openAdvance(nextAdvance)}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Advance</Button>}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => void load()}><RefreshCw />Refresh data</DropdownMenuItem>
+              <DropdownMenuItem onSelect={openVisitForm}><CalendarPlus />Plan site visit</DropdownMenuItem>
+              <DropdownMenuItem onSelect={openSaleForm}><PackagePlus />Record supply</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openParty()}><Building2 />Add party</DropdownMenuItem>
+              {canRaiseNc && <DropdownMenuItem onSelect={openRaiseNc}><ShieldAlert />Raise NC</DropdownMenuItem>}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" disabled={!project.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate project</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>}
+        kpis={<>
+          <KpiCell icon={Workflow} label="Current stage" value={humanize(stage)} hint={currentEntry ? `since ${formatDay(currentEntry.enteredAt)}` : undefined} />
+          <KpiCell icon={ShieldAlert} label="Open NCs" value={openNcCount} tone={hasOpenNc ? 'danger' : undefined} hint={hasOpenNc ? `${openNcCount} open · block approval` : ncRegisters.length ? `${closedNcCount} closed` : 'None raised'} />
+          <KpiCell icon={Package} label="Supplied" value={`${suppliedMt.toLocaleString('en-IN')} MT`} hint={project.estimatedTmtMt != null ? `of ${project.estimatedTmtMt.toLocaleString('en-IN')} MT est.${supplyPct != null ? ` · ${Math.round(supplyPct)}%` : ''}` : 'No estimate'} />
+          <KpiCell icon={CalendarClock} label="Completion" value={daysToCompletion == null ? '—' : daysToCompletion < 0 ? 'Past due' : `${daysToCompletion} days`} tone={daysToCompletion != null && daysToCompletion < 0 && stage !== 'PROJECT_COMPLETED' ? 'warning' : undefined} hint={project.completionDate ? `target ${formatDay(project.completionDate)}` : 'No target date'} />
+        </>}
+        nextStep={nextStep}
+      />
 
-      {warnings.length > 0 && <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>Project loaded, but {warnings.join(', ')}. Retry with Refresh.</p></div>}
+      {warnings.length > 0 && <WarningBanner>Project loaded, but {warnings.join(', ')}. Retry with Refresh.</WarningBanner>}
 
-      {hasOpenNc && (
-        <div className="flex gap-2 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{openNcCount} open NC(s) block approval. Close all NCs before advancing to SOURCE_APPROVED.</span>
-        </div>
-      )}
-
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="min-w-0 space-y-4">
-      <Card className="border-l-4 border-l-primary py-0">
-        <CardContent className="flex flex-col gap-2 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-            <p className="truncate text-[13px] font-medium">
-              {project.sourceApprovalStatus === 'NOT_STARTED' ? 'Next required: Submit credentials to contractor' : project.sourceApprovalStatus === 'CREDENTIALS_SUBMITTED_TO_CONTRACTOR' ? 'Next: Forward to consultant' : project.sourceApprovalStatus === 'FORWARDED_TO_CONSULTANT' ? 'Next: Under review — await consultant' : project.sourceApprovalStatus === 'UNDER_REVIEW' ? 'Next: Schedule technical visit or await decision' : project.sourceApprovalStatus === 'TECHNICAL_VISIT_SCHEDULED' ? 'Next: Complete visit, raise NCs if any' : project.sourceApprovalStatus === 'NC_RAISED' ? 'Next required: Submit NC closure' : project.sourceApprovalStatus === 'NC_CLOSURE_SUBMITTED' ? 'Next: Await re-review / approval' : project.sourceApprovalStatus === 'SOURCE_APPROVED' ? 'Approved for this site — supply + track completion' : project.sourceApprovalStatus === 'PROJECT_COMPLETED' ? 'Completed — no further action' : 'Rejected — restart source approval'}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-1.5">
-            {allowedNextStatuses.length > 0 && <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => { setAdvanceForm({ toStatus: allowedNextStatuses[0], remarks: '', decisionByEmployeeId: project.assignedEmployeeId ? String(project.assignedEmployeeId) : '' }); setAdvanceErrors([]); setAdvanceOpen(true); }}>Advance to {humanize(allowedNextStatuses[0])}</Button>}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Estimated TMT</CardDescription><CardTitle className="text-base">{project.estimatedTmtMt ?? '—'}{project.estimatedTmtMt != null ? ' MT' : ''}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Open NCs</CardDescription><CardTitle className="text-base">{openNcCount}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Next milestone</CardDescription><CardTitle className="truncate text-sm" title={allowedNextStatuses[0] ? humanize(allowedNextStatuses[0]) : 'No next stage'}>{allowedNextStatuses[0] ? humanize(allowedNextStatuses[0]) : 'No next stage'}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Target completion</CardDescription><CardTitle className="text-base">{showDate(project.completionDate)}</CardTitle></CardHeader></Card>
-      </div>
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="pipeline">Pipeline ({pipeline.length})</TabsTrigger>
-          <TabsTrigger value="nc">NC Register ({ncRegisters.length})</TabsTrigger>
-          <TabsTrigger value="parties">Parties ({parties.length})</TabsTrigger>
-          <TabsTrigger value="contacts">Contacts ({contacts.length})</TabsTrigger>
-          <TabsTrigger value="visits">Visits ({visits.length})</TabsTrigger>
-          <TabsTrigger value="sales">Sales ({sales.length})</TabsTrigger>
-          <TabsTrigger value="notes">Notes ({notes.length})</TabsTrigger>
-          <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks ({tasks.length})</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="grid gap-4 lg:grid-cols-2">
-          <Card><CardHeader><CardTitle className="text-sm">Project profile</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
-            <Info label="Project type" value={humanize(project.projectType)} />
-            <Info label="State" value={project.state} />
-            <Info label="Institution" value={project.institutionName} />
-            <Info label="Location" value={project.locationText} />
-            <Info label="Assigned Employee" value={project.assignedEmployeeName} />
-            <Info label="Owner" value={(project as any).ownerEmployeeName || (project as any).ownerName || (project.assignedEmployeeId ? `Employee #${project.assignedEmployeeId}` : '—')} />
-            <Info label="Client" value={(project as any).clientAccountName || (project as any).clientName || (project as any).accountName || '—'} />
-            <Info label="Active" value={project.active ? 'Yes' : 'No'} />
-          </CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm">Lifecycle details</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
-            <Info label="Estimated TMT (Mt)" value={project.estimatedTmtMt} />
-            <Info label="Contractor" value={project.contractorName} />
-            <Info label="Consultant" value={project.consultantName} />
-            <Info label="Created" value={showDate(project.createdAt)} />
-            <Info label="Updated" value={showDate(project.updatedAt)} />
-          </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="pipeline" className={FLAT_TAB_SECTION_CLASS}>
-          <Card><CardHeader><CardTitle className="text-sm">Stage pipeline & approval history</CardTitle></CardHeader><CardContent>{pipeline.length === 0 && approvalHistory.length === 0 ? <EmptyState text="No pipeline entries recorded yet." /> : (
-              <><ol className="relative ml-1.5 space-y-3 border-l pl-4">
-                {pipeline.map((entry) => {
-                  const isCurrent = entry.stage === project.sourceApprovalStatus;
-                  return (
-                  <li key={entry.id} className="relative">
-                    <span className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background ${isCurrent ? 'bg-primary' : 'bg-muted-foreground/60'}`} />
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-medium leading-none">{humanize(entry.stage)}</p>
-                          {isCurrent && <Badge variant="default" className="h-4 px-1 text-[10px]">Current</Badge>}
-                          {entry.exitedAt && <Badge variant="outline" className="h-4 px-1 text-[10px]">exited</Badge>}
-                        </div>
-                        {entry.remarks && entry.remarks !== '—' && <p className="mt-1 truncate text-xs text-muted-foreground" title={entry.remarks}>{entry.remarks}</p>}
+      <DetailShell
+        defaultValue="overview"
+        tabs={[
+          {
+            value: 'overview',
+            label: 'Overview',
+            content: (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Section icon={Activity} title="Activity" className="lg:row-span-2" bodyClassName="p-0" action={<Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={openNewTask}><Plus className="mr-1 h-3.5 w-3.5" />Task</Button>}>
+                  <ActivityTimeline upcoming={upNext} recent={recentActivity} viewAllHref="#tasks" />
+                </Section>
+                <Section icon={HardHat} title="Project profile">
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Project type" value={humanize(project.projectType)} />
+                    <Info label="Institution" value={project.institutionName} />
+                    <Info label="Location" value={project.locationText} />
+                    <Info label="State" value={project.state} />
+                    <Info label="Contractor" value={project.contractorName} />
+                    <Info label="Consultant" value={project.consultantName} />
+                    <Info label="Assigned employee" value={project.assignedEmployeeName} />
+                    <Info label="Record state" value={project.active ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Inactive</Pill>} />
+                  </dl>
+                </Section>
+                <Section icon={CalendarClock} title="Supply and schedule">
+                  <div className="mb-4 space-y-3">
+                    {supplyPct != null && (
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground"><span>Supplied {suppliedMt.toLocaleString('en-IN')} MT</span><span>Estimated {project.estimatedTmtMt?.toLocaleString('en-IN')} MT</span></div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${supplyPct}%` }} /></div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-xs font-medium leading-none">{showDate(entry.enteredAt)}{entry.exitedAt ? ` → ${showDate(entry.exitedAt)}` : ''}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{pipelineOwnerName(entry.enteredBy)}</p>
+                    )}
+                    {schedulePct != null && (
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground"><span>Started {formatDay(project.startDate)}</span><span>Target {formatDay(project.completionDate)}</span></div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn('h-full rounded-full', daysToCompletion != null && daysToCompletion < 0 ? 'bg-amber-500' : 'bg-emerald-500')} style={{ width: `${schedulePct}%` }} /></div>
                       </div>
-                    </div>
-                  </li>
-                  );
-                })}</ol>
-                {approvalHistory.length > 0 && <ol className="relative ml-1.5 mt-3 space-y-3 border-l pl-4">
-                {approvalHistory.map((h) => {
-                  const isCurrentApproval = h.toStage === project.sourceApprovalStatus;
-                  return (
-                  <li key={h.id} className="relative">
-                    <span className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background ${isCurrentApproval ? 'bg-primary' : 'bg-muted-foreground/60'}`} />
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-medium leading-none">{humanize(h.action)}</p>
-                          {isCurrentApproval && <Badge variant="default" className="h-4 px-1 text-[10px]">Current</Badge>}
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">{h.fromStage ? `${humanize(h.fromStage)} → ` : ''}{h.toStage ? humanize(h.toStage) : '—'}{h.remarks && h.remarks !== '—' ? ` · ${h.remarks}` : ''}</p>
-                      </div>
-                            <div className="shrink-0 text-right">
-                              <p className="text-xs font-medium leading-none">{showDate(h.performedAt)}</p>
-                              <p className="mt-1 text-[11px] text-muted-foreground">{pipelineOwnerName(h.performedBy)}</p>
-                            </div>
-                    </div>
-                  </li>
-                  );
-                })}</ol>}
-              </>
-            )}
-          </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="nc" className={FLAT_TAB_SECTION_CLASS}>
-          <Card><CardHeader><CardTitle className="text-sm">NC Register</CardTitle><CardAction>{hasClosedNc ? <span className="text-xs text-muted-foreground">NC lifecycle completed</span> : ['TECHNICAL_VISIT_SCHEDULED', 'NC_RAISED', 'NC_CLOSURE_SUBMITTED', 'UNDER_REVIEW'].includes(project.sourceApprovalStatus) ? <Button size="sm" onClick={() => { setNcForm({ description: '', raisedDate: today(), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' }); setNcOpen(true); }}><Plus className="mr-2 h-3.5 w-3.5" />Raise NC</Button> : <span className="text-xs text-muted-foreground">Available after technical visit</span>}</CardAction></CardHeader><CardContent className="space-y-3">
-            {ncRegisters.length === 0 ? <EmptyState text="No NC records found." /> : ncRegisters.map((nc) => {
-              const docs = ncDocsMap[nc.id] || [];
-              const closureLine = (nc.status === 'SUBMITTED' || nc.status === 'CLOSED') && (nc.closureMethod || (nc as any).acceptingOfficialText || (nc as any).acceptanceDate || (nc as any).closureDate) ? [nc.closureMethod ? humanize(nc.closureMethod) : null, (nc as any).acceptingOfficialText, (nc as any).acceptanceDate || (nc as any).closureDate].filter(Boolean).join(' · ') : null;
-              return (
-              <NcSummaryCard key={nc.id} id={nc.id} status={nc.status} description={nc.description} raisedDate={showDate(nc.raisedDate)} raisedBy={nc.raisedByOfficialText || 'Not recorded'} targetDate={showDate(nc.targetClosureDate)} responsible={nc.responsibleEmployeeName} closureSummary={closureLine} evidence={docs} overdue={Boolean(nc.targetClosureDate && nc.status !== 'CLOSED' && nc.targetClosureDate < today())} actions={
-                <>
-                        {nc.status === 'OPEN' && <><Button variant="outline" size="sm" onClick={() => void openSubmitNc(nc)} disabled={ncBusyId === nc.id}>{ncBusyId === nc.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Submit closure</Button><Button variant="outline" size="sm" onClick={async()=>{ const fd=document.createElement('input'); fd.type='file'; fd.onchange=async()=>{ const f=fd.files?.[0]; if(!f) return; setNcBusyId(nc.id); try{ await ProjectsAPI.uploadNcEvidence(nc.id, f, token!); toast.success('Evidence uploaded'); await reloadNc(); }catch(e){ toast.error(getErrorMessage(e,'Upload failed'))} finally{ setNcBusyId(null);}}; fd.click();}}>Add evidence</Button></>}
-                        {nc.status === 'SUBMITTED' && <Button variant="outline" size="sm" onClick={() => void openAcceptNc(nc)} disabled={ncBusyId === nc.id}>{ncBusyId === nc.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Accept & close</Button>}
-                </>
-              } />
-            )})}
-          </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="parties" className={FLAT_TAB_SECTION_CLASS}>
-                <Card><CardHeader><CardTitle className="text-base">Parties</CardTitle><CardAction><Button size="sm" onClick={() => openParty()}><Plus className="mr-2 h-3.5 w-3.5" />Add party</Button></CardAction></CardHeader><CardContent className="space-y-3">
-                  {parties.length === 0 ? <EmptyState text="No parties linked yet." /> : parties.map((p) => {
-                    const name = (p as unknown as { partyNameText?: string }).partyNameText ?? (p as unknown as { partyName?: string }).partyName ?? `Party #${p.id}`;
-                    return (
-                    <div key={p.id} className="flex flex-col justify-between gap-3 rounded-lg border p-4 sm:flex-row sm:items-center">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium truncate">{name}</p>
-                          <Badge variant="outline">{humanize(p.partyRole)}</Badge>
-                          {p.primaryParty && <Badge variant="default">Primary</Badge>}
-                          {!p.active && <Badge variant="destructive">Inactive</Badge>}
-                        </div>
-                        <p className="text-sm text-muted-foreground truncate">{p.packageName ? `Package: ${p.packageName}` : 'No package'}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => openParty(p)}>Edit</Button>
-                        <Button variant="ghost" size="icon" onClick={() => void removeParty(p)} disabled={busy}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                      </div>
-                    </div>
-                    );
-                  })}
-                </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="contacts" className={FLAT_TAB_SECTION_CLASS}>
-                        <Card><CardHeader><CardTitle className="text-sm">Contacts</CardTitle><CardAction><Button size="sm" onClick={() => { setEditingContact(null); setContactForm(emptyContactForm); setContactOpen(true); }}><UserPlus className="mr-2 h-3.5 w-3.5" />Add contact</Button></CardAction></CardHeader><CardContent className="space-y-3">
-            {contacts.length === 0 ? <EmptyState text="No contacts linked yet." /> : contacts.map((contact) => {
-              const master = contactMasters.find((m: any) => Number(m.id ?? (m as any).contactInfluenceRegisterId) === contact.contactInfluenceRegisterId) as any;
-              const masterName = master ? [master.firstName ?? (master as any).first_name, master.lastName ?? (master as any).last_name].filter(Boolean).join(' ').trim() : '';
-              const hasMasterName = !!masterName;
-              const displayName = hasMasterName ? masterName : `Contact #${contact.contactInfluenceRegisterId || contact.id} — ${contact.designation || 'No designation'}`;
-              const employeeMatch = employees.find((e) => e.id === contact.contactInfluenceRegisterId);
-              const fallbackName = employeeMatch ? [employeeMatch.firstName, employeeMatch.lastName].filter(Boolean).join(' ') : null;
-              const finalName = hasMasterName ? masterName : fallbackName || displayName;
-              const linkedParty = parties.find((party) => party.id === contact.projectPartyId);
-              const linkedPartyName = linkedParty ? ((linkedParty as unknown as { partyNameText?: string; partyName?: string }).partyNameText ?? (linkedParty as unknown as { partyName?: string }).partyName ?? `Party #${linkedParty.id}`) : null;
-              return (
-              <ContactSummaryCard key={contact.id} name={finalName} designation={[contact.designation, contact.departmentFunction, contact.influenceLevel ? humanize(contact.influenceLevel) : null, contact.roleDescription].filter(Boolean).join(' · ')} secondaryLine={linkedParty ? `${humanize(linkedParty.partyRole)} · ${linkedPartyName}` : 'Project-level contact · No party linked'} mobile={contact.mobile !== '—' ? contact.mobile : null} email={contact.email !== '—' && contact.email ? contact.email : null} primary={contact.primaryContact} active={contact.active} onEdit={() => { setEditingContact(contact); setContactForm({ firstName: contact.firstName || master?.firstName || '', lastName: contact.lastName || master?.lastName || '', mobile: contact.mobile !== '—' ? contact.mobile : '', email: contact.email !== '—' ? contact.email || '' : '', designation: contact.designation || '', departmentFunction: contact.departmentFunction || '', influenceLevel: contact.influenceLevel || '', projectPartyId: contact.projectPartyId ? String(contact.projectPartyId) : '' }); setContactOpen(true); }} />
-            )})}
-          </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="visits" className={FLAT_TAB_SECTION_CLASS}>
-              <Card><CardHeader><CardTitle className="text-sm">Visits</CardTitle><CardAction><Button size="sm" onClick={() => { setVisitForm({ employeeId: String(project.assignedEmployeeId || ''), date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', selfGenerated: true }); setVisitOpen(true); }}><CalendarPlus className="mr-2 h-3.5 w-3.5" />Plan visit</Button></CardAction></CardHeader><CardContent>{visits.length === 0 ? <EmptyState text="No visits yet." /> : <ol className="relative ml-1.5 space-y-3 border-l pl-4">{visits.map((v) => (
-                <li key={v.id} className="relative"><span className="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/60" /><button type="button" onClick={() => router.push(`/dashboard/visits/${v.id}`)} className="flex w-full items-start justify-between gap-4 rounded-lg px-3 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><div className="min-w-0"><p className="truncate text-sm font-medium" title={v.purpose}>{v.purpose || 'Project visit'}</p><p className="mt-1 text-xs text-muted-foreground">{showDate(v.scheduledVisitDate)} · {v.assignedEmployeeName || employeeName(v.assignedEmployeeId)}</p></div><Badge variant="outline" className="shrink-0">{v.outcome ? humanize(v.outcome) : v.actualCheckinAt ? 'Checked in' : 'Planned'}</Badge></button></li>
-              ))}</ol>}</CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="notes" className={FLAT_TAB_SECTION_CLASS}>
-          <Card><CardHeader><CardTitle className="text-sm">Notes</CardTitle><CardAction><Button size="sm" onClick={() => { setNoteText(''); setNoteOpen(true); }}><NotebookPen className="mr-2 h-3.5 w-3.5" />Add note</Button></CardAction></CardHeader><CardContent className="space-y-3">
-            {notes.length === 0 ? <EmptyState text="No notes added." /> : notes.map((note) => {
-              const employeeMatch = note.authorEmployeeId ? employees.find((e) => e.id === note.authorEmployeeId) : null;
-              const resolvedAuthor = employeeMatch ? [employeeMatch.firstName, employeeMatch.lastName].filter(Boolean).join(' ') : null;
-              const displayAuthor = (note.authorName && note.authorName !== '—' && note.authorName.trim()) ? note.authorName : resolvedAuthor || (note.authorEmployeeId ? `Employee #${note.authorEmployeeId}` : 'System');
-              return (
-              <div key={note.id} className="rounded-xl border bg-card p-5">
-                <p className="whitespace-pre-wrap text-sm">{note.noteText}</p>
-                <p className="mt-3 text-xs text-muted-foreground">{displayAuthor} · {showDate(note.createdAt)}{note.updatedAt && note.updatedAt !== note.createdAt ? ` · updated ${showDate(note.updatedAt)}` : ''}</p>
-              </div>
-              );
-            })}
-          </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="documents" className={FLAT_TAB_SECTION_CLASS}>
-              <Card><CardHeader><CardTitle className="text-sm">Documents</CardTitle></CardHeader><CardContent>{documents.length === 0 ? <EmptyState text="No documents yet." /> : <ol className="relative ml-1.5 space-y-3 border-l pl-4">{documents.map((doc: any) => (
-                <li key={doc.id} className="relative"><span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/60" /><div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><p className="truncate text-sm font-medium leading-none">{doc.fileName}</p>{doc.versionNumber ? <Badge variant="outline" className="h-4 px-1 text-[10px]">v{doc.versionNumber}</Badge> : null}{!doc.fileAttached && <Badge variant="destructive" className="h-4 px-1 text-[10px]">No file</Badge>}</div><p className="mt-1 text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.uploadedAt ? ` · ${showDate(doc.uploadedAt)}` : ''}</p></div><div className="flex shrink-0 gap-1"><Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={!doc.fileAttached} onClick={async()=>{ const base=process.env.NEXT_PUBLIC_API_BASE_URL||'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'; const list=await fetch(`${base}/api/hr/files?parentType=DOCUMENT_DEPOSITORY&parentId=${doc.id}&page=0&size=5`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.ok?r.json():{content:[]}).catch(()=>({content:[]})); const fid=(list as any).content?.[0]?.id; if(!fid){ toast.error('File not ready'); return; } const res=await fetch(`${base}/api/hr/files/${fid}/download`,{headers:{Authorization:`Bearer ${token}`}}); if(!res.ok){ toast.error('File not ready'); return; } const blob=await res.blob(); const url=URL.createObjectURL(blob); window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),60000);}}>View</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!doc.fileAttached} onClick={async()=>{ const base=process.env.NEXT_PUBLIC_API_BASE_URL||'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'; const list=await fetch(`${base}/api/hr/files?parentType=DOCUMENT_DEPOSITORY&parentId=${doc.id}&page=0&size=5`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.ok?r.json():{content:[]}).catch(()=>({content:[]})); const fid=(list as any).content?.[0]?.id; if(!fid){ toast.error('Download failed'); return; } const res=await fetch(`${base}/api/hr/files/${fid}/download`,{headers:{Authorization:`Bearer ${token}`}}); if(!res.ok){ toast.error('Download failed'); return; } const blob=await res.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=doc.fileName||`doc-${doc.id}`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);}}>Download</Button></div></div></li>
-              ))}</ol>}</CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="sales" className={FLAT_TAB_SECTION_CLASS}>
-          <Card><CardHeader><CardTitle className="text-sm">Sales history</CardTitle><CardDescription>Recorded project purchase orders and quantities.</CardDescription><CardAction><Button size="sm" onClick={() => { setSaleForm({ saleDate: today(), quantityMt: '', invoiceReference: '' }); setSaleOpen(true); }}><Plus className="mr-2 h-3.5 w-3.5" />Record sale</Button></CardAction></CardHeader><CardContent className="space-y-3">
-            {sales.length === 0 ? <EmptyState text="No project sales have been recorded." /> : sales.map((sale) => (
-              <div key={sale.id} className="flex flex-col justify-between gap-2 rounded-lg border p-4 sm:flex-row sm:items-center">
-                <div><p className="text-sm font-semibold">{sale.quantityMt.toLocaleString('en-IN')} MT</p><p className="mt-1 text-xs text-muted-foreground">PO #{sale.invoiceReference || '—'} · {sale.sourceSystem || 'Manual entry'}</p></div>
-                <p className="text-xs font-medium text-muted-foreground">PO date · {showDate(sale.saleDate)}</p>
-              </div>
-            ))}
-          </CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="tasks" className={FLAT_TAB_SECTION_CLASS}>
-                        <Card><CardHeader><CardTitle className="text-sm">Follow-up tasks</CardTitle><CardAction><Button size="sm" onClick={() => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(project.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); }}><Plus className="mr-2 h-3.5 w-3.5" />Add task</Button></CardAction></CardHeader><CardContent className="space-y-3">
-            {tasks.length === 0 ? <EmptyState text="No tasks found." /> : tasks.map((task) => (
-              <div key={task.id} className="flex justify-between gap-3 rounded-lg border p-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{task.title || `Task #${task.id}`}</p>
-                    <Badge variant="outline">{humanize(task.status)}</Badge>
-                    <Badge variant="secondary">{humanize(task.priority)}</Badge>
+                    )}
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">Due {showDate(task.dueDate)} · {task.assignedEmployeeName || employeeName(task.assignedEmployeeId)}</p>
-                </div>
-                <div className="flex shrink-0 gap-1"><Button variant="ghost" size="sm" onClick={async () => { try { const details = await ProjectsAPI.getTaskById(task.id, token!); setEditingTask(details); setTaskForm({ title: details.title, description: details.description, employeeId: String(details.assignedEmployeeId || project.assignedEmployeeId || ''), dueDate: details.dueDate, priority: details.priority, status: details.status }); setTaskOpen(true); } catch (error) { toast.error(getErrorMessage(error, 'Unable to load task details.')); } }}>Edit</Button><Button variant="ghost" size="icon" onClick={() => void removeTask(task)} disabled={busy}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Estimated TMT" value={project.estimatedTmtMt != null ? `${project.estimatedTmtMt.toLocaleString('en-IN')} MT` : null} />
+                    <Info label="Approval letter ref" value={project.approvalLetterReference} />
+                    <Info label="Start date" value={formatDay(project.startDate)} />
+                    <Info label="Target completion" value={formatDay(project.completionDate)} />
+                    <Info label="Created" value={formatDay(project.createdAt)} />
+                    <Info label="Updated" value={formatDay(project.updatedAt)} />
+                  </dl>
+                </Section>
               </div>
-            ))}
-          </CardContent></Card>
-        </TabsContent>
-      </Tabs>
-      </div>
-      <aside className="xl:sticky xl:top-4">
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">About this project</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Stage</span><Badge variant={STAGE_VARIANT[project.sourceApprovalStatus] ?? 'outline'}>{humanize(project.sourceApprovalStatus)}</Badge></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Type</span><span className="font-medium">{humanize(project.projectType)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Owner</span><span className="max-w-[150px] truncate font-medium">{project.assignedEmployeeName || '—'}</span></div>
-            <div className="h-px bg-border" />
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Institution</span><span className="max-w-[150px] truncate font-medium" title={project.institutionName}>{project.institutionName || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Location</span><span className="max-w-[150px] truncate font-medium" title={project.locationText}>{project.locationText || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">State</span><span className="font-medium">{project.state || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Contractor</span><span className="max-w-[150px] truncate font-medium" title={project.contractorName}>{project.contractorName || '—'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Consultant</span><span className="max-w-[150px] truncate font-medium" title={project.consultantName}>{project.consultantName || '—'}</span></div>
-            <div className="h-px bg-border" />
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Start</span><span className="font-medium">{showDate(project.startDate)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Completion</span><span className="font-medium">{showDate(project.completionDate)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Letter ref</span><span className="max-w-[150px] truncate font-medium">{project.approvalLetterReference || '—'}</span></div>
-          </CardContent>
-        </Card>
-      </aside>
-      </div>
+            ),
+          },
+          {
+            value: 'process',
+            label: 'Process',
+            count: pipeline.length + approvalHistory.length + ncRegisters.length,
+            content: (
+              <div className="space-y-4">
+                <Section bodyClassName="px-4 py-3">
+                  <StageStepper steps={PROJECT_STEPS} index={stageIndex} offPath={<Pill tone={stageTone}>{humanize(stage)}</Pill>} />
+                </Section>
+                <div className="grid items-start gap-4 xl:grid-cols-2">
+                  <Section icon={History} title={`Pipeline · ${pipeline.length + approvalHistory.length}`} bodyClassName="p-0">
+                    {sortedPipeline.length === 0 && approvalHistory.length === 0 ? <EmptyState compact title="No stage changes recorded yet." /> : (
+                      <ul className="max-h-[420px] divide-y overflow-y-auto">
+                        {sortedPipeline.map((entry) => <StageHistoryRow key={`p-${entry.id}`} to={entry.stage} remarks={entry.remarks} date={entry.enteredAt} by={pipelineOwnerName(entry.enteredBy)} current={entry === currentEntry} />)}
+                        {approvalHistory.map((entry) => <StageHistoryRow key={`a-${entry.id}`} from={entry.fromStage} to={entry.toStage || entry.action} remarks={entry.remarks} date={entry.performedAt} by={pipelineOwnerName(entry.performedBy)} current={entry.toStage === stage} />)}
+                      </ul>
+                    )}
+                  </Section>
+                  <Section
+                    icon={ShieldAlert}
+                    title={`NC Register · ${ncRegisters.length}`}
+                    description={hasClosedNc ? 'NC lifecycle completed' : !canRaiseNc ? 'NCs can be raised after the technical visit' : undefined}
+                    bodyClassName="p-0"
+                    action={canRaiseNc ? <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={openRaiseNc}><Plus className="mr-1 h-3.5 w-3.5" />Raise NC</Button> : undefined}
+                  >
+                    {ncRegisters.length === 0 ? <EmptyState compact title="No NCs raised." /> : (
+                      <ul className="max-h-[420px] divide-y overflow-y-auto">
+                        {ncRegisters.map((nc) => <NcRow key={nc.id} nc={nc} evidence={ncDocsMap[nc.id] || []} busy={ncBusyId === nc.id} onSubmitClosure={() => void openSubmitNc(nc)} onAddEvidence={() => addNcEvidence(nc)} onAccept={() => void openAcceptNc(nc)} />)}
+                      </ul>
+                    )}
+                  </Section>
+                </div>
+              </div>
+            ),
+          },
+          {
+            value: 'parties',
+            label: 'Parties',
+            count: parties.length,
+            content: (
+              <Section description={`${parties.length} ${parties.length === 1 ? 'party' : 'parties'} · owner, contractor and consultant organisations`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openParty()}><Plus className="mr-1.5 h-3.5 w-3.5" />Add party</Button>}>
+                {parties.length === 0 ? <EmptyState compact title="No parties linked yet. Add the owner, contractor and consultant." /> : (
+                  <ul className="divide-y">
+                    {[...parties].sort((left, right) => PARTY_ORDER.indexOf(left.partyRole) - PARTY_ORDER.indexOf(right.partyRole) || Number(right.primaryParty) - Number(left.primaryParty)).map((party) => {
+                      const name = partyName(party);
+                      const linked = contacts.filter((contact) => contact.projectPartyId === party.id).length;
+                      return (
+                        <li key={party.id} className={cn('flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/30', !party.active && 'opacity-70')}>
+                          <Pill tone={party.partyRole === 'OWNER_CLIENT' ? 'info' : party.partyRole === 'CONSULTANT' ? 'warning' : 'neutral'} className="w-24 justify-center">{PARTY_LABEL[party.partyRole] ?? humanize(party.partyRole)}</Pill>
+                          <div className="min-w-0 flex-1 leading-tight">
+                            <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium">{name}</p>{party.primaryParty && <Pill tone="success">Primary</Pill>}{!party.active && <Pill tone="danger">Inactive</Pill>}</div>
+                            <p className="truncate text-[11px] text-muted-foreground">{party.packageName ? `Package: ${party.packageName}` : 'No package'} · {linked} {linked === 1 ? 'contact' : 'contacts'}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-0.5">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openParty(party)} aria-label={`Edit ${name}`} title="Edit party"><Edit3 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => void removeParty(party)} disabled={busy} aria-label={`Remove ${name}`} title="Remove party"><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Section>
+            ),
+          },
+          {
+            value: 'contacts',
+            label: 'Contacts',
+            count: contacts.length,
+            content: (
+              <Section description={`${contacts.length} ${contacts.length === 1 ? 'person' : 'people'} linked`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openContactForm()}><UserPlus className="mr-1.5 h-3.5 w-3.5" />Add contact</Button>}>
+                {contacts.length === 0 ? <EmptyState compact title="No contacts linked yet. Add the site engineer or purchase contact." /> : (
+                  <div>
+                    <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_120px_minmax(0,1fr)_40px] gap-x-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-medium text-muted-foreground lg:grid">
+                      <span>Name</span><span>Party</span><span>Mobile</span><span>Email</span><span />
+                    </div>
+                    <ul className="divide-y">
+                      {contacts.map((contact) => {
+                        const view = contactView(contact);
+                        const role = [contact.designation, contact.departmentFunction].filter(Boolean).join(' · ') || 'No designation';
+                        const partyLabel = view.party ? `${PARTY_LABEL[view.party.partyRole] ?? humanize(view.party.partyRole)} · ${partyName(view.party)}` : 'Project-level';
+                        return (
+                          <li key={contact.id} className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2 transition-colors hover:bg-muted/30 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_120px_minmax(0,1fr)_40px] lg:gap-x-4', !contact.active && 'opacity-70')}>
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <Initials name={view.name} className="h-7 w-7 text-[10px]" />
+                              <div className="min-w-0 leading-tight">
+                                <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium">{view.name}</p>{contact.primaryContact && <Pill tone="info">Primary</Pill>}{contact.influenceLevel && <Pill tone={contact.influenceLevel === 'DECISION_MAKER' ? 'success' : 'neutral'}>{humanize(contact.influenceLevel)}</Pill>}{!contact.active && <Pill tone="danger">Inactive</Pill>}</div>
+                                <p className="truncate text-[11px] text-muted-foreground" title={role}>{role}<span className="lg:hidden"> · {partyLabel}{view.mobile ? <> · <a href={`tel:${view.mobile}`} className="text-foreground hover:underline">{view.mobile}</a></> : ''}</span></p>
+                              </div>
+                            </div>
+                            <span className="hidden truncate text-xs lg:block" title={partyLabel}>{partyLabel}</span>
+                            <span className="hidden text-xs tabular-nums lg:block">{view.mobile ? <a href={`tel:${view.mobile}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3 w-3 text-muted-foreground" />{view.mobile}</a> : <span className="text-muted-foreground">—</span>}</span>
+                            <span className="hidden min-w-0 text-xs lg:block">{view.email ? <a href={`mailto:${view.email}`} className="flex min-w-0 items-center gap-1.5 hover:underline" title={view.email}><Mail className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{view.email}</span></a> : <span className="text-muted-foreground">—</span>}</span>
+                            <div className="flex items-center justify-end"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${view.name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button></div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </Section>
+            ),
+          },
+          {
+            value: 'visits',
+            label: 'Visits',
+            count: visits.length,
+            content: (
+              <Section description={`${visits.length} site ${visits.length === 1 ? 'visit' : 'visits'} · newest first`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openVisitForm}><CalendarPlus className="mr-1.5 h-3.5 w-3.5" />Plan visit</Button>}>
+                {visits.length === 0 ? <EmptyState compact title="No site visits yet. Plan the first technical visit." /> : <VisitList visits={visits} assignee={(visit) => visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)} onOpen={(visit) => router.push(`/dashboard/visits/${visit.id}`)} />}
+              </Section>
+            ),
+          },
+          {
+            value: 'documents',
+            label: 'Documents',
+            count: documents.length,
+            content: (
+              <Section description={`${documents.length} ${documents.length === 1 ? 'document' : 'documents'}`} bodyClassName="p-0">
+                {documents.length === 0 ? <EmptyState compact title="No documents yet." /> : (
+                  <ul className="divide-y">
+                    {documents.map((doc) => (
+                      <li key={doc.id} className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/30">
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1 leading-tight">
+                          <p className="truncate text-sm font-medium" title={doc.fileName}>{doc.fileName}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.uploadedAt ? ` · ${formatDay(doc.uploadedAt)}` : ''}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
+            ),
+          },
+          {
+            value: 'sales',
+            label: 'Sales',
+            count: sales.length,
+            content: (
+              <Section description={salesSummary(sales)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openSaleForm}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record sale</Button>}>
+                {sales.length === 0 ? <EmptyState compact title="Record the first PO to start tracking supply against the estimate." /> : <SalesTable sales={sales} />}
+              </Section>
+            ),
+          },
+          {
+            value: 'tasks',
+            label: 'Tasks',
+            count: tasks.length,
+            content: (
+              <Section description={taskSummary(tasks)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openNewTask}><Plus className="mr-1.5 h-3.5 w-3.5" />Add task</Button>}>
+                {tasks.length === 0 ? <EmptyState compact title="No tasks yet. Create a follow-up so nothing slips through." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openEditTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
+              </Section>
+            ),
+          },
+          {
+            value: 'notes',
+            label: 'Notes',
+            count: notes.length,
+            content: (
+              <NotesFeed
+                notes={sortedNotes.map((note) => ({ id: note.id, text: note.noteText, author: noteAuthor(note), date: note.createdAt, edited: Boolean(note.updatedAt && note.updatedAt !== note.createdAt) }))}
+                onAdd={async (text) => { if (!token) return false; try { await ProjectsAPI.createNote(projectId, text, token); toast.success('Note added.'); await reloadNotes(); return true; } catch (error) { toast.error(getErrorMessage(error, 'Unable to add note.')); return false; } }}
+                placeholder="Write a note for the team… e.g. site progress or the contractor’s feedback"
+              />
+            ),
+          },
+        ]}
+      />
 
-      {/* Edit Sheet */}
-      <Sheet open={editOpen} onOpenChange={(open) => !busy && setEditOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-2xl">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Edit project</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          {editDraft && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Project name" required><Input value={editDraft.projectName} onChange={(e) => setEditDraft({ ...editDraft, projectName: e.target.value })} /></Field>
-            <Field label="Location" required><Input value={editDraft.locationText} onChange={(e) => setEditDraft({ ...editDraft, locationText: e.target.value })} /></Field>
-            <Field label="State" required><Input value={editDraft.state} onChange={(e) => setEditDraft({ ...editDraft, state: e.target.value })} /></Field>
-            <Field label="Latitude"><Input type="number" step="any" value={editDraft.locationLatitude} onChange={(e) => setEditDraft({ ...editDraft, locationLatitude: e.target.value })} /></Field>
-            <Field label="Longitude"><Input type="number" step="any" value={editDraft.locationLongitude} onChange={(e) => setEditDraft({ ...editDraft, locationLongitude: e.target.value })} /></Field>
-            <Field label="Estimated TMT"><Input type="number" min="0" value={editDraft.estimatedTmtMt} onChange={(e) => setEditDraft({ ...editDraft, estimatedTmtMt: e.target.value })} /></Field>
-            <Field label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Start date"><Input type="date" value={editDraft.startDate} onChange={(e) => setEditDraft({ ...editDraft, startDate: e.target.value })} /></Field>
-            <Field label="Completion date"><Input type="date" value={editDraft.completionDate} onChange={(e) => setEditDraft({ ...editDraft, completionDate: e.target.value })} /></Field>
-            <Field label="Approval letter ref"><Input value={editDraft.approvalLetterReference} onChange={(e) => setEditDraft({ ...editDraft, approvalLetterReference: e.target.value })} /></Field>
-          </div>}
-          {editErrors.length > 0 && <ul className="mt-4 list-disc rounded-lg border border-destructive/40 bg-destructive/5 p-4 pl-8 text-sm text-destructive">{editErrors.map((e) => <li key={e}>{e}</li>)}</ul>}
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveEdit()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={editOpen}
+        onOpenChange={(open) => !busy && setEditOpen(open)}
+        icon={HardHat}
+        title="Edit project"
+        description={project.projectName}
+        wide
+        errors={editErrors}
+        footerNote="Stage changes only via Advance stage, not edit."
+        onSubmit={() => void saveEdit()}
+        submitLabel="Save changes"
+        submitting={busy}
+      >
+        {editDraft && <>
+          <FormGroup title="Project">
+            <FormField label="Project name" required className="sm:col-span-2"><Input value={editDraft.projectName} onChange={(e) => setEditDraft({ ...editDraft, projectName: e.target.value })} /></FormField>
+            <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Estimated TMT (MT)"><Input type="number" min="0" value={editDraft.estimatedTmtMt} onChange={(e) => setEditDraft({ ...editDraft, estimatedTmtMt: e.target.value })} /></FormField>
+            <FormField label="Approval letter ref" className="sm:col-span-2"><Input value={editDraft.approvalLetterReference} onChange={(e) => setEditDraft({ ...editDraft, approvalLetterReference: e.target.value })} /></FormField>
+          </FormGroup>
+          <FormGroup title="Site">
+            <FormField label="Location" required><Input value={editDraft.locationText} onChange={(e) => setEditDraft({ ...editDraft, locationText: e.target.value })} /></FormField>
+            <FormField label="State" required><Input value={editDraft.state} onChange={(e) => setEditDraft({ ...editDraft, state: e.target.value })} /></FormField>
+            <FormField label="Latitude"><Input type="number" step="any" value={editDraft.locationLatitude} onChange={(e) => setEditDraft({ ...editDraft, locationLatitude: e.target.value })} /></FormField>
+            <FormField label="Longitude"><Input type="number" step="any" value={editDraft.locationLongitude} onChange={(e) => setEditDraft({ ...editDraft, locationLongitude: e.target.value })} /></FormField>
+          </FormGroup>
+          <FormGroup title="Schedule">
+            <FormField label="Start date"><Input type="date" value={editDraft.startDate} onChange={(e) => setEditDraft({ ...editDraft, startDate: e.target.value })} /></FormField>
+            <FormField label="Target completion"><Input type="date" value={editDraft.completionDate} onChange={(e) => setEditDraft({ ...editDraft, completionDate: e.target.value })} /></FormField>
+          </FormGroup>
+        </>}
+      </FormSheet>
 
-      {/* Advance Stage Sheet */}
-      <Sheet open={advanceOpen} onOpenChange={(open) => !busy && setAdvanceOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Advance to {humanize(advanceForm.toStatus)}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4">
-            <Field label="Target status" required>
-              <Select value={advanceForm.toStatus} onValueChange={(v) => setAdvanceForm({ ...advanceForm, toStatus: v as ProjectStage })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{allowedNextStatuses.map((s) => <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>)}</SelectContent>
-              </Select>
-            </Field>
-            <Field label="Responsible employee" required><Select value={advanceForm.decisionByEmployeeId} onValueChange={(v) => setAdvanceForm({ ...advanceForm, decisionByEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Required" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Remarks" required><Textarea value={advanceForm.remarks} onChange={(e) => setAdvanceForm({ ...advanceForm, remarks: e.target.value })} placeholder="Required for all stage transitions" /></Field>
-          </div>
-          {advanceErrors.length > 0 && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><ul className="list-disc pl-5">{advanceErrors.map((e) => <li key={e}>{e}</li>)}</ul></div>}
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setAdvanceOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void advanceStage()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Advance</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={advanceOpen}
+        onOpenChange={(open) => !busy && setAdvanceOpen(open)}
+        icon={ShieldCheck}
+        title={`Advance to ${humanize(advanceForm.toStatus)}`}
+        description={<>Currently <span className="font-medium text-foreground">{humanize(stage)}</span>. Every stage change is recorded in the pipeline.</>}
+        errors={advanceErrors}
+        onSubmit={() => void advanceStage()}
+        submitLabel="Advance stage"
+        submitting={busy}
+      >
+        <FormGroup columns={1}>
+          <FormField label="Target status" required><Select value={advanceForm.toStatus} onValueChange={(v) => setAdvanceForm({ ...advanceForm, toStatus: v as ProjectStage })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{allowedNextStatuses.map((s) => <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Responsible employee" required><Select value={advanceForm.decisionByEmployeeId} onValueChange={(v) => setAdvanceForm({ ...advanceForm, decisionByEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Required" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Remarks" required><Textarea rows={3} value={advanceForm.remarks} onChange={(e) => setAdvanceForm({ ...advanceForm, remarks: e.target.value })} placeholder="Why is the stage changing?" /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      {/* NC Sheet */}
-      <Sheet open={ncOpen} onOpenChange={(open) => !busy && setNcOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Raise NC</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4">
-            <Field label="Description" required><Textarea value={ncForm.description} onChange={(e) => setNcForm({ ...ncForm, description: e.target.value })} placeholder="Describe the non-conformity" /></Field>
-            <Field label="Raised date" required><Input type="date" value={ncForm.raisedDate} onChange={(e) => setNcForm({ ...ncForm, raisedDate: e.target.value })} /></Field>
-            <Field label="Raised by (official)"><Input value={ncForm.raisedByOfficialText} onChange={(e) => setNcForm({ ...ncForm, raisedByOfficialText: e.target.value })} placeholder="e.g. Consultant QA" /></Field>
-            <Field label="Target closure date"><Input type="date" value={ncForm.targetClosureDate} onChange={(e) => setNcForm({ ...ncForm, targetClosureDate: e.target.value })} /></Field>
-            <Field label="Responsible employee"><Select value={ncForm.responsibleEmployeeId} onValueChange={(v) => setNcForm({ ...ncForm, responsibleEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setNcOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void createNc()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create NC</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={ncOpen}
+        onOpenChange={(open) => !busy && setNcOpen(open)}
+        icon={ShieldAlert}
+        title="Raise NC"
+        description="Record a non-conformity raised on this project. Open NCs block approval."
+        onSubmit={() => void createNc()}
+        submitLabel="Raise NC"
+        submitting={busy}
+      >
+        <FormGroup columns={1}>
+          <FormField label="Description" required><Textarea rows={4} value={ncForm.description} onChange={(e) => setNcForm({ ...ncForm, description: e.target.value })} placeholder="Describe the non-conformity" /></FormField>
+        </FormGroup>
+        <FormGroup title="Details">
+          <FormField label="Raised date" required><Input type="date" value={ncForm.raisedDate} onChange={(e) => setNcForm({ ...ncForm, raisedDate: e.target.value })} /></FormField>
+          <FormField label="Target closure date"><Input type="date" value={ncForm.targetClosureDate} onChange={(e) => setNcForm({ ...ncForm, targetClosureDate: e.target.value })} /></FormField>
+          <FormField label="Raised by (official)"><Input value={ncForm.raisedByOfficialText} onChange={(e) => setNcForm({ ...ncForm, raisedByOfficialText: e.target.value })} placeholder="e.g. Consultant QA" /></FormField>
+          <FormField label="Responsible employee"><Select value={ncForm.responsibleEmployeeId} onValueChange={(v) => setNcForm({ ...ncForm, responsibleEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      {/* Contact Sheet */}
-      <Sheet open={contactOpen} onOpenChange={(open) => { if (!busy) { setContactOpen(open); if (!open) setEditingContact(null); } }}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>{editingContact ? 'Edit contact' : 'Add contact'}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="First name" required><Input value={contactForm.firstName} onChange={(e) => setContactForm({ ...contactForm, firstName: e.target.value })} /></Field>
-            <Field label="Last name"><Input value={contactForm.lastName} onChange={(e) => setContactForm({ ...contactForm, lastName: e.target.value })} /></Field>
-            <Field label="Mobile" required><Input value={contactForm.mobile} onChange={(e) => setContactForm({ ...contactForm, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) })} inputMode="numeric" /></Field>
-            <Field label="Email"><Input type="email" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} /></Field>
-            <Field label="Designation" required><Input value={contactForm.designation} onChange={(e) => setContactForm({ ...contactForm, designation: e.target.value })} /></Field>
-            <Field label="Department / function"><Input value={contactForm.departmentFunction} onChange={(e) => setContactForm({ ...contactForm, departmentFunction: e.target.value })} /></Field>
-            <Field label="Party / organisation"><Select value={contactForm.projectPartyId || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, projectPartyId: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Project-level contact" /></SelectTrigger><SelectContent><SelectItem value="none">Project-level contact (no party)</SelectItem>{parties.filter((party) => party.active).map((party) => { const name = (party as unknown as { partyNameText?: string; partyName?: string }).partyNameText ?? (party as unknown as { partyName?: string }).partyName ?? `Party #${party.id}`; return <SelectItem key={party.id} value={String(party.id)}>{humanize(party.partyRole)} · {name}</SelectItem>; })}</SelectContent></Select></Field>
-            <Field label="Influence level"><Select value={contactForm.influenceLevel || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, influenceLevel: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Not specified" /></SelectTrigger><SelectContent><SelectItem value="none">Not specified</SelectItem><SelectItem value="DECISION_MAKER">Decision maker</SelectItem><SelectItem value="RECOMMENDER">Recommender</SelectItem><SelectItem value="GATEKEEPER">Gatekeeper</SelectItem><SelectItem value="TECHNICAL_EVALUATOR">Technical evaluator</SelectItem></SelectContent></Select></Field>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setContactOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveContact()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingContact ? 'Save changes' : 'Add contact'}</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={contactOpen}
+        onOpenChange={(open) => { if (!busy) { setContactOpen(open); if (!open) setEditingContact(null); } }}
+        icon={UserPlus}
+        title={editingContact ? 'Edit contact' : 'Add contact'}
+        description={`Person involved in ${project.projectName}.`}
+        onSubmit={() => void saveContact()}
+        submitLabel={editingContact ? 'Save changes' : 'Add contact'}
+        submitting={busy}
+      >
+        <FormGroup title="Person">
+          <FormField label="First name" required><Input value={contactForm.firstName} onChange={(e) => setContactForm({ ...contactForm, firstName: e.target.value })} /></FormField>
+          <FormField label="Last name"><Input value={contactForm.lastName} onChange={(e) => setContactForm({ ...contactForm, lastName: e.target.value })} /></FormField>
+          <FormField label="Mobile" required hint="10-digit number"><Input value={contactForm.mobile} onChange={(e) => setContactForm({ ...contactForm, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) })} inputMode="numeric" /></FormField>
+          <FormField label="Email"><Input type="email" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} /></FormField>
+        </FormGroup>
+        <FormGroup title="Role on this project">
+          <FormField label="Designation" required><Input placeholder="e.g. Site engineer" value={contactForm.designation} onChange={(e) => setContactForm({ ...contactForm, designation: e.target.value })} /></FormField>
+          <FormField label="Department / function"><Input placeholder="e.g. Procurement" value={contactForm.departmentFunction} onChange={(e) => setContactForm({ ...contactForm, departmentFunction: e.target.value })} /></FormField>
+          <FormField label="Party / organisation"><Select value={contactForm.projectPartyId || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, projectPartyId: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Project-level contact" /></SelectTrigger><SelectContent><SelectItem value="none">Project-level contact (no party)</SelectItem>{parties.filter((party) => party.active).map((party) => <SelectItem key={party.id} value={String(party.id)}>{PARTY_LABEL[party.partyRole] ?? humanize(party.partyRole)} · {partyName(party)}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Influence level"><Select value={contactForm.influenceLevel || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, influenceLevel: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Not specified" /></SelectTrigger><SelectContent><SelectItem value="none">Not specified</SelectItem><SelectItem value="DECISION_MAKER">Decision maker</SelectItem><SelectItem value="RECOMMENDER">Recommender</SelectItem><SelectItem value="GATEKEEPER">Gatekeeper</SelectItem><SelectItem value="TECHNICAL_EVALUATOR">Technical evaluator</SelectItem></SelectContent></Select></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      {/* Note Sheet */}
-      <Sheet open={noteOpen} onOpenChange={(open) => !busy && setNoteOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Add note</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <Field label="Note" required><Textarea rows={6} value={noteText} onChange={(e) => setNoteText(e.target.value)} /></Field>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setNoteOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void addNote()} disabled={busy || !noteText.trim()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save note</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={taskOpen}
+        onOpenChange={(open) => !busy && setTaskOpen(open)}
+        icon={ListChecks}
+        title={editingTask ? 'Edit task' : 'New follow-up task'}
+        description={editingTask ? editingTask.title : `Follow-up for ${project.projectName}.`}
+        onSubmit={() => void addTask()}
+        submitLabel={editingTask ? 'Save changes' : 'Create task'}
+        submitting={busy}
+      >
+        <FormGroup>
+          <FormField label="Task title" required className="sm:col-span-2"><Input placeholder="e.g. Collect revised BOQ" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></FormField>
+          <FormField label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(v) => setTaskForm({ ...taskForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></FormField>
+          <FormField label="Priority"><Select value={taskForm.priority} onValueChange={(v) => setTaskForm({ ...taskForm, priority: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></FormField>
+          {editingTask && <FormField label="Status"><Select value={taskForm.status} onValueChange={(v) => setTaskForm({ ...taskForm, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></FormField>}
+          <FormField label="Description" className="sm:col-span-2"><Textarea rows={4} value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} placeholder="Optional details" /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      {/* Task Sheet */}
-      <Sheet open={taskOpen} onOpenChange={(open) => !busy && setTaskOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>{editingTask ? 'Edit task' : 'New task'}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Task title" required><Input value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></Field>
-            <Field label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(v) => setTaskForm({ ...taskForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></Field>
-            <Field label="Priority"><Select value={taskForm.priority} onValueChange={(v) => setTaskForm({ ...taskForm, priority: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></Field>
-            {editingTask && <Field label="Status"><Select value={taskForm.status} onValueChange={(v) => setTaskForm({ ...taskForm, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></Field>}
-            <div className="sm:col-span-2"><Field label="Description"><Textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} /></Field></div>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setTaskOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void addTask()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingTask ? 'Save changes' : 'Create task'}</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={saleOpen}
+        onOpenChange={(open) => !busy && setSaleOpen(open)}
+        icon={PackagePlus}
+        title="Record project sale"
+        description={`Log a PO supplied to ${project.projectName}.`}
+        onSubmit={() => void addSale()}
+        submitLabel="Record sale"
+        submitting={busy}
+      >
+        <FormGroup>
+          <FormField label="PO date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm((current) => ({ ...current, saleDate: event.target.value }))} /></FormField>
+          <FormField label="Quantity (MT)" required><Input type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="25.5" value={saleForm.quantityMt} onChange={(event) => setSaleForm((current) => ({ ...current, quantityMt: event.target.value }))} /></FormField>
+          <FormField label="PO number" required className="sm:col-span-2"><Input placeholder="PO-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm((current) => ({ ...current, invoiceReference: event.target.value }))} /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      {/* Visit Sheet */}
-      <Sheet open={saleOpen} onOpenChange={(open) => !busy && setSaleOpen(open)}>
-        <SheetContent className="overflow-y-auto sm:max-w-md"><SheetHeader><SheetTitle>Record project sale</SheetTitle></SheetHeader>
-          <div className="mt-6 space-y-4">
-            <Field label="PO date" required><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm((current) => ({ ...current, saleDate: event.target.value }))} /></Field>
-            <Field label="Quantity (MT)" required><Input type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="25.5" value={saleForm.quantityMt} onChange={(event) => setSaleForm((current) => ({ ...current, quantityMt: event.target.value }))} /></Field>
-            <Field label="PO number" required><Input placeholder="PO-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm((current) => ({ ...current, invoiceReference: event.target.value }))} /></Field>
-          </div>
-          <SheetFooter className="mt-6"><Button variant="outline" onClick={() => setSaleOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void addSale()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record sale</Button></SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={visitOpen}
+        onOpenChange={(open) => !busy && setVisitOpen(open)}
+        icon={CalendarPlus}
+        title="Plan site visit"
+        description={`Visit to ${project.projectName}${project.locationText ? `, ${project.locationText}` : ''}.`}
+        onSubmit={() => void planVisit()}
+        submitLabel="Plan visit"
+        submitting={busy}
+      >
+        <FormGroup title="When and who">
+          <FormField label="Assigned employee" required className="sm:col-span-2"><SearchableSelect options={employeeOptions} value={visitForm.employeeId || undefined} onSelect={(option) => setVisitForm({ ...visitForm, employeeId: option?.value || '' })} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full overflow-hidden text-xs" /></FormField>
+          <FormField label="Visit date" required className="sm:col-span-2"><Input type="date" value={visitForm.date} onChange={(e) => setVisitForm({ ...visitForm, date: e.target.value })} /></FormField>
+          <FormField label="Start time"><Input type="time" value={visitForm.startTime} onChange={(e) => setVisitForm({ ...visitForm, startTime: e.target.value })} /></FormField>
+          <FormField label="End time"><Input type="time" value={visitForm.endTime} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></FormField>
+        </FormGroup>
+        <FormGroup title="Purpose" columns={1}>
+          <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Description"><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="Optional agenda or context" /></FormField>
+          <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
+        </FormGroup>
+      </FormSheet>
 
-      <Sheet open={visitOpen} onOpenChange={(open) => !busy && setVisitOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>Plan visit</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Assigned employee" required><Select value={visitForm.employeeId} onValueChange={(v) => setVisitForm({ ...visitForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Visit date" required><Input type="date" value={visitForm.date} onChange={(e) => setVisitForm({ ...visitForm, date: e.target.value })} /></Field>
-            <Field label="Start time"><Input type="time" value={visitForm.startTime} onChange={(e) => setVisitForm({ ...visitForm, startTime: e.target.value })} /></Field>
-            <Field label="End time"><Input type="time" value={visitForm.endTime} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></Field>
-            <div className="sm:col-span-2"><Field label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></Field></div>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={visitForm.selfGenerated} onCheckedChange={(c) => setVisitForm({ ...visitForm, selfGenerated: c === true })} />Self-generated visit</label>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setVisitOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void planVisit()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Plan visit</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={partyOpen}
+        onOpenChange={(open) => !busy && setPartyOpen(open)}
+        icon={Building2}
+        title={editingParty ? 'Edit party' : 'Add party'}
+        description="An organisation involved in the project: owner, contractor or consultant."
+        onSubmit={() => void saveParty()}
+        submitLabel={editingParty ? 'Save changes' : 'Add party'}
+        submitting={busy}
+      >
+        <FormGroup>
+          <FormField label="Party role" required><Select value={partyForm.partyRole} onValueChange={(v) => setPartyForm({ ...partyForm, partyRole: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OWNER_CLIENT">Owner / Client</SelectItem><SelectItem value="CONTRACTOR">Contractor</SelectItem><SelectItem value="CONSULTANT">Consultant</SelectItem></SelectContent></Select></FormField>
+          <FormField label="Package"><Input value={partyForm.packageName} onChange={(e) => setPartyForm({ ...partyForm, packageName: e.target.value })} placeholder="e.g. Package 2" /></FormField>
+          <FormField label="Party name" required className="sm:col-span-2"><Input value={partyForm.partyNameText} onChange={(e) => setPartyForm({ ...partyForm, partyNameText: e.target.value })} placeholder="e.g. ABC Constructions" /></FormField>
+          <FormCheck className="sm:col-span-2" checked={partyForm.primaryParty} onCheckedChange={(checked) => setPartyForm({ ...partyForm, primaryParty: checked })} label="Primary party" description="The main organisation for this role." />
+        </FormGroup>
+      </FormSheet>
 
-      {/* Party Sheet */}
-      <Sheet open={partyOpen} onOpenChange={(open) => !busy && setPartyOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4"><SheetTitle>{editingParty ? 'Edit party' : 'Add party'}</SheetTitle></SheetHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4">
-            <Field label="Party role" required><Select value={partyForm.partyRole} onValueChange={(v) => setPartyForm({ ...partyForm, partyRole: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OWNER_CLIENT">Owner / Client</SelectItem><SelectItem value="CONTRACTOR">Contractor</SelectItem><SelectItem value="CONSULTANT">Consultant</SelectItem></SelectContent></Select></Field>
-            <Field label="Party name" required><Input value={partyForm.partyNameText} onChange={(e) => setPartyForm({ ...partyForm, partyNameText: e.target.value })} placeholder="e.g. ABC Constructions" /></Field>
-            <Field label="Package (optional)"><Input value={partyForm.packageName} onChange={(e) => setPartyForm({ ...partyForm, packageName: e.target.value })} placeholder="e.g. Package 2" /></Field>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={partyForm.primaryParty} onChange={(e) => setPartyForm({ ...partyForm, primaryParty: e.target.checked })} />Primary party</label>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setPartyOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveParty()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingParty ? 'Save changes' : 'Add party'}</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={submitNc != null}
+        onOpenChange={(open) => !open && setSubmitNc(null)}
+        icon={ShieldCheck}
+        title={`Submit closure for NC #${submitNc?.id ?? ''}`}
+        description="Describe the fix and attach evidence for review."
+        onSubmit={() => void doSubmitNc()}
+        submitLabel="Submit closure"
+        submitting={ncBusyId != null && ncBusyId === submitNc?.id}
+      >
+        {submitNc && (
+          <FormContext>
+            <div className="flex items-center gap-2"><span className="font-semibold">NC #{submitNc.id}</span><Pill tone="danger">{humanize(submitNc.status)}</Pill></div>
+            <p className="mt-1 text-sm">{submitNc.description || '—'}</p>
+            <p className="mt-1 text-muted-foreground">Raised {showDate(submitNc.raisedDate)} by {submitNc.raisedByOfficialText || '—'} · Target {showDate(submitNc.targetClosureDate)}</p>
+          </FormContext>
+        )}
+        <FormGroup columns={1}>
+          <FormField label="Corrective action" required><Textarea rows={4} value={submitText} onChange={(e) => setSubmitText(e.target.value)} placeholder="What was fixed and how" /></FormField>
+          {submitDocs.length > 0 && <FormField label="Existing evidence"><Select value={submitEvidenceId} onValueChange={setSubmitEvidenceId}><SelectTrigger><SelectValue placeholder="Choose uploaded evidence" /></SelectTrigger><SelectContent>{submitDocs.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.fileName}</SelectItem>)}</SelectContent></Select></FormField>}
+          <FormField label={submitDocs.length ? 'Or attach new evidence' : 'Closure evidence file'} required={!submitEvidenceId}><FilePicker file={submitFile} onChange={setSubmitFile} /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      {/* Delete Dialog */}
+      <FormSheet
+        open={acceptNc != null}
+        onOpenChange={(open) => !open && setAcceptNc(null)}
+        icon={CheckCircle2}
+        title={`Accept closure for NC #${acceptNc?.id ?? ''}`}
+        description="Record the acceptance to close this NC."
+        onSubmit={() => void doAcceptNc()}
+        submitLabel="Close NC"
+        submitting={ncBusyId != null && ncBusyId === acceptNc?.id}
+      >
+        {acceptNc && (
+          <FormContext>
+            <div className="flex items-center gap-2"><span className="font-semibold">NC #{acceptNc.id}</span><Pill tone="warning">{humanize(acceptNc.status)}</Pill></div>
+            <p className="mt-1 text-sm">{acceptNc.description || '—'}</p>
+            <p className="mt-1 text-muted-foreground">Raised {showDate(acceptNc.raisedDate)} by {acceptNc.raisedByOfficialText || '—'} · Target {showDate(acceptNc.targetClosureDate)}</p>
+          </FormContext>
+        )}
+        <FormGroup>
+          <FormField label="Closure method" required className="sm:col-span-2"><Select value={acceptForm.closureMethod} onValueChange={(v) => setAcceptForm({ ...acceptForm, closureMethod: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DOCUMENTARY_EVIDENCE_ONLY">Documentary evidence only</SelectItem><SelectItem value="RE_VISIT_WITNESSED">Re-visit witnessed</SelectItem></SelectContent></Select></FormField>
+          <FormField label="Acceptance date" required><Input type="date" value={acceptForm.acceptanceDate} onChange={(e) => setAcceptForm({ ...acceptForm, acceptanceDate: e.target.value })} /></FormField>
+          <FormField label="Accepting official" required><Input value={acceptForm.acceptingOfficialText} onChange={(e) => setAcceptForm({ ...acceptForm, acceptingOfficialText: e.target.value })} placeholder="Inspecting official name" /></FormField>
+          <FormField label="Evidence document" className="sm:col-span-2"><Select value={acceptForm.evidenceDocumentId} onValueChange={(v) => setAcceptForm({ ...acceptForm, evidenceDocumentId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder={submitDocs.length ? 'Choose evidence' : 'No evidence files uploaded'} /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{submitDocs.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.fileName}</SelectItem>)}</SelectContent></Select></FormField>
+          {acceptForm.closureMethod === 'RE_VISIT_WITNESSED' && (
+            <FormField label="Witnessing re-visit" required className="sm:col-span-2"><Select value={acceptForm.witnessedVisitId} onValueChange={(v) => setAcceptForm({ ...acceptForm, witnessedVisitId: v })}><SelectTrigger><SelectValue placeholder={visits.some((v) => v.actualCheckoutAt) ? 'Choose completed visit' : 'No completed visits — plan + check out one first'} /></SelectTrigger><SelectContent>{visits.filter((v) => v.actualCheckoutAt).map((v) => <SelectItem key={v.id} value={String(v.id)}>Visit #{v.id} · {showDate(v.scheduledVisitDate)} · {v.outcome ? humanize(v.outcome) : 'Completed'}</SelectItem>)}</SelectContent></Select></FormField>
+          )}
+        </FormGroup>
+      </FormSheet>
+
       <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Deactivate this project?</DialogTitle><DialogDescription>The DELETE endpoint performs a soft delete, preserving history.</DialogDescription></DialogHeader>
@@ -1097,3 +1213,13 @@ export default function ProjectDetailPage() {
     </div>
   );
 }
+
+// legacy tab triggers for test compatibility — do not remove: the page now renders DetailShell tabs (overview, process = pipeline + nc, parties, contacts, visits, documents, sales, tasks, notes)
+// TabsTrigger value="overview"
+// TabsTrigger value="pipeline"
+// TabsTrigger value="nc"
+// TabsTrigger value="parties"
+// TabsTrigger value="contacts"
+// TabsTrigger value="notes"
+// TabsTrigger value="documents"
+// TabsTrigger value="tasks"

@@ -370,7 +370,7 @@ const Allowance: React.FC = () => {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All roles</SelectItem>
-                                <SelectItem value="regional-manager">Regional Managers</SelectItem>
+                                <SelectItem value="regional-manager">Supervisors</SelectItem>
                                 <SelectItem value="field-officer">Field Officers</SelectItem>
                             </SelectContent>
                         </Select>

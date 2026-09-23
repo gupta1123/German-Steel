@@ -617,7 +617,7 @@ export const InstitutionsAPI = {
   async deleteTask(taskId: number, token: string): Promise<void> {
     await request(`/api/tasks/${taskId}`, token, { method: 'DELETE' });
   },
-  async planVisit(payload: { institutionId: number; assignedEmployeeId: number; assignedByEmployeeId: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; purpose: string; selfGenerated: boolean }, token: string): Promise<void> {
+  async planVisit(payload: { institutionId: number; assignedEmployeeId: number; assignedByEmployeeId: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; purpose: string; description?: string | null; selfGenerated: boolean }, token: string): Promise<void> {
     await request('/api/common/visits', token, json('POST', {
       visitType: 'INSTITUTIONAL_VISIT',
       clientAccountId: null,
@@ -631,6 +631,7 @@ export const InstitutionsAPI = {
       scheduledLatitude: null,
       scheduledLongitude: null,
       purpose: payload.purpose,
+      description: payload.description ?? null,
       purposeCode: null,
       purposeText: null,
       contactIds: [],

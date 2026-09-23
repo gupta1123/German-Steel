@@ -78,7 +78,7 @@ const mockEmployees: Employee[] = [
   {
     id: 4,
     name: "Diana Prince",
-    role: "Regional Manager",
+    role: "Supervisor",
     da: 2500,
     salary: 60000,
     carRatePerKm: 18,
@@ -360,7 +360,7 @@ export default function AllowanceSettings() {
                             <SelectContent>
                               <SelectItem value="Field Officer">Field Officer</SelectItem>
                               <SelectItem value="Sales Manager">Sales Manager</SelectItem>
-                              <SelectItem value="Regional Manager">Regional Manager</SelectItem>
+                              <SelectItem value="Regional Manager">Supervisor</SelectItem>
                               <SelectItem value="Area Manager">Area Manager</SelectItem>
                             </SelectContent>
                           </Select>

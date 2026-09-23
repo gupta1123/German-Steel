@@ -1,10 +1,8 @@
 "use client";
 
-import { AlertCircle, Calendar, ClipboardList, MapPin, Store, User, ImageIcon } from 'lucide-react';
+import { AlertCircle, Calendar, ClipboardList, User, ImageIcon } from 'lucide-react';
 import { format, isValid, parseISO } from 'date-fns';
 import type { Task } from '@/lib/api';
-import { formatCityLabel } from '@/lib/city-options';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function displayDate(value?: string) {
@@ -37,14 +35,16 @@ export default function VisitTasksTab({ tasks, type, priority, onPriorityChange,
   const filtered = tasks.filter(task => priority === 'all' || task.priority.trim().toLowerCase() === priority);
   const Icon = type === 'requirement' ? ClipboardList : AlertCircle;
 
+  const noun = type === 'requirement' ? 'requirement' : 'complaint';
+
   return (
-    <section className="min-w-0 space-y-3" aria-label={`${type}s for this visit`} aria-busy={loading}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card" aria-label={`${noun}s for this visit`} aria-busy={loading}>
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2">
         <p className="text-xs text-muted-foreground">
-          {loading ? 'Loading records…' : `${filtered.length} of ${tasks.length} ${tasks.length === 1 ? type : `${type}s`}`}
+          {loading ? 'Loading records…' : priority === 'all' ? `${tasks.length} ${tasks.length === 1 ? noun : `${noun}s`} linked to this visit` : `${filtered.length} of ${tasks.length} ${tasks.length === 1 ? noun : `${noun}s`}`}
         </p>
         <Select value={priority} onValueChange={onPriorityChange}>
-          <SelectTrigger aria-label="Filter by priority" className="h-8 w-[152px] bg-background text-xs shadow-none">
+          <SelectTrigger aria-label="Filter by priority" className="h-7 w-[140px] bg-background text-xs shadow-none">
             <SelectValue placeholder="All priorities" />
           </SelectTrigger>
           <SelectContent>
@@ -54,70 +54,45 @@ export default function VisitTasksTab({ tasks, type, priority, onPriorityChange,
             <SelectItem value="high">High</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+      </header>
 
       {error ? (
-        <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">{error}</p>
+        <p role="alert" className="px-4 py-4 text-center text-xs text-destructive">{error}</p>
       ) : loading ? (
-        <div className="rounded-lg border bg-card p-4 text-xs text-muted-foreground">Loading {type}s for this visit…</div>
+        <p className="px-4 py-4 text-center text-xs text-muted-foreground">Loading {noun}s for this visit…</p>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center rounded-lg border border-dashed px-4 py-8 text-center">
-          <Icon className="mb-2 h-5 w-5 text-muted-foreground" />
-          <p className="text-sm font-medium">{tasks.length ? `No ${priority}-priority ${type}s` : `No ${type}s recorded`}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{tasks.length ? 'Choose another priority to see more records.' : `No ${type} has been linked to this visit yet.`}</p>
-        </div>
-      ) : filtered.map(task => {
-        const due = displayDate(task.dueDate);
-        const created = displayDate(task.createdAt);
-        const updated = displayDate(task.updatedAt);
-        const priorityLabel = task.priority ? `${task.priority.charAt(0).toUpperCase()}${task.priority.slice(1)}` : 'Priority not set';
-        const statusLabel = task.status ? task.status.replace(/[_-]/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase()) : 'Status not set';
-        return (
-          <article key={task.id} className="overflow-hidden rounded-lg border bg-card">
-            <div className="space-y-3 p-4">
-              <div className="flex items-start gap-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Icon className="h-4 w-4" /></div>
+        <p className="px-4 py-4 text-center text-xs text-muted-foreground">{tasks.length ? `No ${priority}-priority ${noun}s. Choose another priority.` : `No ${noun} has been linked to this visit yet.`}</p>
+      ) : (
+        <ul className="divide-y">
+          {filtered.map((task) => {
+            const due = displayDate(task.dueDate);
+            const created = displayDate(task.createdAt);
+            const priorityLabel = task.priority ? `${task.priority.charAt(0).toUpperCase()}${task.priority.slice(1)}` : 'No priority';
+            const statusLabel = task.status ? task.status.replace(/[_-]/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) : 'No status';
+            const assignee = task.assignedTo || (task.assignedToId ? `Employee #${task.assignedToId}` : 'Not assigned');
+            return (
+              <li key={task.id} className="flex items-start gap-3 px-4 py-2.5">
+                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <h3 className="break-words text-sm font-semibold leading-5">{task.title || `${type === 'requirement' ? 'Requirement' : 'Complaint'} #${task.id}`}</h3>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">#{task.id}{created ? ` · Created ${created}` : ''}</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-sm font-medium">{task.title || `${type === 'requirement' ? 'Requirement' : 'Complaint'} #${task.id}`}</p>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0 text-[11px] font-medium leading-5 ${priorityStyles[task.priority] || 'border-border bg-muted text-muted-foreground'}`}>{priorityLabel}</span>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0 text-[11px] font-medium leading-5 ${statusStyle(task.status || '')}`}>{statusLabel}</span>
+                  </div>
+                  {task.description && <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs text-foreground/80" title={task.description}>{task.description}</p>}
+                  <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />Due {due || 'not set'}</span>
+                    <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />{assignee}</span>
+                    {task.assignedBy && <span>by {task.assignedBy}</span>}
+                    {!!task.imageCount && <span className="inline-flex items-center gap-1"><ImageIcon className="h-3 w-3" />{task.imageCount}</span>}
+                    <span>#{task.id}{created ? ` · ${created}` : ''}</span>
+                  </p>
                 </div>
-              </div>
-
-              <p className={`whitespace-pre-wrap break-words text-sm leading-5 ${task.description ? 'text-foreground/85' : 'text-muted-foreground'}`}>
-                {task.description || 'No description provided.'}
-              </p>
-
-              {(task.storeName || task.storeCity) && (
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {task.storeName && <span className="flex min-w-0 items-center gap-1.5"><Store className="h-3.5 w-3.5 shrink-0" /><span className="break-words">{task.storeName}</span></span>}
-                  {task.storeCity && <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0" />{formatCityLabel(task.storeCity)}</span>}
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-1.5">
-                <Badge variant="outline" className={`px-2 py-0.5 text-[11px] font-medium ${priorityStyles[task.priority] || 'bg-muted text-muted-foreground'}`}>{priorityLabel}{task.priority ? ' priority' : ''}</Badge>
-                <Badge variant="outline" className={`px-2 py-0.5 text-[11px] font-medium ${statusStyle(task.status)}`}>{statusLabel}</Badge>
-                {!!task.imageCount && <span className="inline-flex items-center gap-1 px-1 text-[11px] text-muted-foreground"><ImageIcon className="h-3 w-3" />{task.imageCount} images</span>}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 border-t bg-muted/20 px-4 py-3 sm:grid-cols-2">
-              <div className="min-w-0">
-                <p className="mb-1 text-[11px] text-muted-foreground">Assigned employee</p>
-                <p className="flex items-start gap-1.5 text-xs font-medium"><User className="h-3.5 w-3.5 shrink-0" /><span className="break-words">{task.assignedTo || (task.assignedToId ? `Employee #${task.assignedToId} (name unavailable)` : 'Not assigned')}</span></p>
-              </div>
-              <div>
-                <p className="mb-1 text-[11px] text-muted-foreground">Due date</p>
-                <p className="flex items-center gap-1.5 text-xs font-medium"><Calendar className="h-3.5 w-3.5 shrink-0" />{due || 'Not specified'}</p>
-              </div>
-            </div>
-            {(task.assignedBy || (updated && updated !== created)) && <div className="flex flex-wrap justify-between gap-1 px-4 py-2 text-[11px] text-muted-foreground">
-              {task.assignedBy && <span>Assigned by {task.assignedBy}</span>}
-              {updated && updated !== created && <span>Updated {updated}</span>}
-            </div>}
-          </article>
-        );
-      })}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

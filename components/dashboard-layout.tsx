@@ -94,7 +94,7 @@ const allSidebarCategories = [
     icon: Settings,
     items: [
       { name: "Settings", href: "/dashboard/settings", icon: Settings },
-      { name: "Approvals", href: "/dashboard/approvals", icon: FileText },
+      { name: "Attendance correction", href: "/dashboard/approvals", icon: FileText },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
     ]
@@ -156,7 +156,7 @@ export default function DashboardLayout({
       currentUser?.authorities?.some((auth) => normalizeRoleValue(auth.authority) === target);
 
     if (hasManagerPrivileges(userRole, currentUser)) {
-      return 'Manager';
+      return 'Supervisor';
     }
     if (normalizeRoleValue(userRole) === 'ADMIN' || hasAuthority('ROLE_ADMIN')) {
       return 'Admin';

@@ -676,7 +676,7 @@ export const ProjectsAPI = {
   async deleteTask(taskId: number, token: string): Promise<void> {
     await request(`/api/tasks/${taskId}`, token, { method: 'DELETE' });
   },
-  async planVisit(payload: { projectId: number; assignedEmployeeId: number; assignedByEmployeeId: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; purpose: string; selfGenerated: boolean }, token: string): Promise<void> {
+  async planVisit(payload: { projectId: number; assignedEmployeeId: number; assignedByEmployeeId: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; purpose: string; description?: string | null; selfGenerated: boolean }, token: string): Promise<void> {
     await request('/api/common/visits', token, { method: 'POST', body: JSON.stringify({
       visitType: 'PROJECT_SITE_VISIT',
       clientAccountId: null,
@@ -690,6 +690,7 @@ export const ProjectsAPI = {
       scheduledLatitude: null,
       scheduledLongitude: null,
       purpose: payload.purpose,
+      description: payload.description ?? null,
       purposeCode: null,
       purposeText: null,
       contactIds: [],

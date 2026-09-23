@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { FIELD_OFFICER_WEB_ACCESS_MESSAGE } from "@/lib/auth";
 import Image from "next/image";
 
 export default function LoginPage() {
@@ -44,12 +45,21 @@ export default function LoginPage() {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
-              {error && (
+              {error && error !== FIELD_OFFICER_WEB_ACCESS_MESSAGE && (
                 <div
                   role="alert"
                   className="px-4 py-3 rounded-md text-sm border border-destructive/40 text-destructive bg-destructive/10"
                 >
                   {error}
+                </div>
+              )}
+              {error === FIELD_OFFICER_WEB_ACCESS_MESSAGE && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] leading-5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100"
+                >
+                  <Smartphone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <p>{FIELD_OFFICER_WEB_ACCESS_MESSAGE}</p>
                 </div>
               )}
 

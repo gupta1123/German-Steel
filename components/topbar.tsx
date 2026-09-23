@@ -49,9 +49,9 @@ export default function Topbar({ heading, subheading, backHref, onBack, viewRole
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {viewRole && <Badge variant="outline" className="gap-1.5 whitespace-nowrap border-border bg-muted/50 px-2 py-1 text-[11px] font-medium text-foreground" aria-label={`Current view: ${viewRole === 'admin' ? 'Admin' : 'Regional manager'}`}>
+        {viewRole && <Badge variant="outline" className="gap-1.5 whitespace-nowrap border-border bg-muted/50 px-2 py-1 text-[11px] font-medium text-foreground" aria-label={`Current view: ${viewRole === 'admin' ? 'Admin' : 'Supervisor'}`}>
           {viewRole === 'admin' ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> : <UsersRound className="h-3.5 w-3.5" aria-hidden="true" />}
-          {viewRole === 'admin' ? 'Admin view' : 'Regional manager view'}
+          {viewRole === 'admin' ? 'Admin view' : 'Supervisor view'}
         </Badge>}
         <ThemeToggle />
       </div>

@@ -47,7 +47,7 @@ export default function MobileBottomNav({ sidebarCategories, isManager }: Mobile
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
       { name: "Pricing", href: "/dashboard/pricing", icon: Tag },
-      { name: "Approvals", href: "/dashboard/approvals", icon: FileText },
+      { name: "Attendance correction", href: "/dashboard/approvals", icon: FileText },
     ];
 
     // Add important pages that are allowed for the current role

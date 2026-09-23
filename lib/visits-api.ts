@@ -37,6 +37,7 @@ export type CommonVisitRow = {
   actualCheckinAt: string | null;
   actualCheckoutAt: string | null;
   purpose: string;
+  description?: string | null;
   outcome: VisitOutcome | null;
   discussionSummary: string | null;
   nextActionText: string | null;

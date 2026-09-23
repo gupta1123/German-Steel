@@ -2,7 +2,8 @@ const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const LOGIN_ENDPOINT = `${API_BASE_URL}/api/auth/login`;
 const CURRENT_USER_ENDPOINT = `${API_BASE_URL}/api/auth/me`;
 
-export const FIELD_OFFICER_WEB_ACCESS_MESSAGE = 'Field Officer accounts do not have access to the web portal.';
+export const FIELD_OFFICER_WEB_ACCESS_MESSAGE =
+  'Field Officer accounts are mobile-only. Please sign in on the German Steels mobile app to continue.';
 
 export const normalizeRoleValue = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -20,9 +21,25 @@ export const isManagerRoleValue = (value: string | null | undefined): boolean =>
   'ZONAL SUPERVISOR',
 ].includes(simpleRole(value));
 
-export const isFieldOfficerRoleValue = (value: string | null | undefined): boolean => (
-  simpleRole(value) === 'FIELD OFFICER'
-);
+export const isFieldOfficerRoleValue = (value: string | null | undefined): boolean => {
+  // Field staff can be FIELD_OFFICER, RETAIL_FE, INSTITUTION_PROJECT_FE,
+  // DUAL_FE or the generic EMPLOYEE job role (with or without a ROLE_
+  // prefix). Generic Employee accounts are field staff for web-access
+  // purposes, so they are blocked from the web portal like Field Officers.
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^role\s+/, '');
+  return (
+    normalized.includes('field officer') ||
+    normalized === 'retail fe' ||
+    normalized === 'institution project fe' ||
+    normalized === 'dual fe' ||
+    normalized === 'employee'
+  );
+};
 
 export const isAdminSetupRoleValue = (value: string | null | undefined): boolean => [
   'ADMIN',
@@ -189,8 +206,30 @@ const normalizeProfile = (raw: unknown, username: string, fallbackRole: string) 
   const outer = objectOf(raw) ?? {};
   const profile = objectOf(outer.data) ?? outer;
   const employee = objectOf(profile.employee) ?? {};
-  const roles = roleListFrom(profile, fallbackRole);
-  const primaryRole = roles[0] ?? 'USER';
+  const employeeDesignation = objectOf(employee.designation) ?? {};
+  const roles = [
+    ...roleListFrom(profile, fallbackRole),
+    ...roleListFrom(
+      {
+        roles: [
+          employee.role,
+          employee.employeeRole,
+          employee.roleName,
+          employee.designationName,
+          employeeDesignation.name,
+          objectOf(employee.userDto)?.roles,
+          objectOf(employee.userDto)?.role,
+          objectOf(employee.user)?.roles,
+          objectOf(employee.user)?.role,
+        ].filter(Boolean),
+      },
+      '',
+    ),
+  ];
+  const dedupedRoles = [...new Set(roles.filter(Boolean))];
+  const rolesForUse = dedupedRoles.length > 0 ? dedupedRoles : [fallbackRole].filter(Boolean);
+  const rolesFinal = rolesForUse.length > 0 ? rolesForUse : ['USER'];
+  const primaryRole = rolesFinal[0] ?? 'USER';
   const employeeId = numberOf(profile.employeeId, employee.id) ?? 0;
   const firstName = stringOf(profile.firstName, employee.firstName);
   const lastName = stringOf(profile.lastName, employee.lastName);
@@ -205,7 +244,7 @@ const normalizeProfile = (raw: unknown, username: string, fallbackRole: string) 
   const currentUser: CurrentUserDto = {
     password: '',
     username: userRoleData.username,
-    authorities: roles.map((authority) => ({ authority })),
+    authorities: rolesFinal.map((authority) => ({ authority })),
     accountNonExpired: profile.accountNonExpired !== false,
     accountNonLocked: profile.accountNonLocked !== false,
     credentialsNonExpired: profile.credentialsNonExpired !== false,
@@ -239,7 +278,7 @@ export const authService = {
       });
       if (!profileResponse.ok) throw new Error(`Profile request failed (${profileResponse.status})`);
       const profile = normalizeProfile(await profileResponse.json(), credentials.username, login.role);
-      if (isFieldOfficerRoleValue(profile.primaryRole)) {
+      if (hasFieldOfficerPrivileges(profile.primaryRole, profile.currentUser)) {
         tokenManager.removeToken();
         throw new Error(FIELD_OFFICER_WEB_ACCESS_MESSAGE);
       }

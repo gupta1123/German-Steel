@@ -449,7 +449,7 @@ export default function TeamSettings() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="regionalManager">Regional Manager</Label>
+                <Label htmlFor="regionalManager">Supervisor</Label>
                 <Select 
                   value={newTeam.regionalManager} 
                   onValueChange={(value) => setNewTeam({...newTeam, regionalManager: value})}
@@ -561,7 +561,7 @@ export default function TeamSettings() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Regional Managers</CardTitle>
+            <CardTitle className="text-sm font-medium">Supervisors</CardTitle>
             <Crown className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -640,7 +640,7 @@ export default function TeamSettings() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="editRegionalManager">Regional Manager</Label>
+                <Label htmlFor="editRegionalManager">Supervisor</Label>
                 <Select 
                   value={editingTeam.regionalManager} 
                   onValueChange={(value) => setEditingTeam({...editingTeam, regionalManager: value})}

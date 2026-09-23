@@ -2,18 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft, CalendarPlus, Edit3, Loader2, NotebookPen, PackagePlus, Plus, RefreshCw, Trash2, UserPlus } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowRight, ArrowRightLeft, Building2, CalendarDays, CalendarPlus, Edit3, ExternalLink, Handshake, FileText, Hash, History, ListChecks, Loader2, Mail, MapPin, MapPinned, MoreHorizontal, NotebookPen, Package, PackagePlus, Phone, Plus, RefreshCw, StickyNote, Tag, Trash2, TrendingUp, User, UserPlus, Users, Wallet, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-const VISIT_PURPOSES = [
-  { value: 'ROUTINE_VISIT', label: 'Routine Visit' },
-  { value: 'TECHNICAL_DISCUSSION', label: 'Technical Discussion' },
-  { value: 'NC_FOLLOW_UP', label: 'NC Follow-up' },
-  { value: 'RELATIONSHIP_MEETING', label: 'Relationship Meeting' },
-  { value: 'ORDER_FOLLOW_UP', label: 'Order Follow-up' },
-  { value: 'PAYMENT_FOLLOW_UP', label: 'Payment Follow-up' },
-  { value: 'OTHER', label: 'Other' },
-] as const;
 
 import { useAuth } from '@/components/auth-provider';
 import { isAdminSetupRoleValue, isManagerRoleValue } from '@/lib/auth';
@@ -35,28 +26,28 @@ import {
   type RetailTask,
   type RetailVisit,
 } from '@/lib/retail-api';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { DetailShell } from '@/components/detail-shell';
+import { ActivityTimeline, NotesFeed, SalesTable, TaskList, VisitList, salesSummary, taskSummary, FormCheck, FormField, FormGroup, FormSheet, DetailHero, DetailSkeleton, EmptyState, Info, Initials, KpiCell, Pill, Section, VISIT_PURPOSES, WarningBanner, dayKey, isOpenTask, purposeLabel, today, visitStatus, type ActivityItem, type Tone } from '@/components/detail-ui';
+import { cn } from '@/lib/utils';
+import { formatClientTypeLabel } from '@/lib/client-type-label';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface CustomerDetailPageProps { accountId: number }
 interface ContactForm { firstName: string; lastName: string; mobile: string; email: string; dateOfBirth: string; anniversaryDate: string; designation: string; roleDescription: string; primaryContact: boolean; active: boolean }
-interface VisitForm { employeeId: string; date: string; startTime: string; endTime: string; purpose: string; selfGenerated: boolean }
+interface VisitForm { employeeId: string; date: string; startTime: string; endTime: string; purpose: string; description: string; selfGenerated: boolean }
 interface SaleForm { saleDate: string; quantityMt: string; invoiceReference: string }
 interface TaskForm { title: string; description: string; employeeId: string; dueDate: string; priority: RetailTask['priority']; status: RetailTask['status'] }
 interface MonthlySalesForm { declaredMonthlySalesMt: string; changeReason: string }
 
 const emptyContact: ContactForm = { firstName: '', lastName: '', mobile: '', email: '', dateOfBirth: '', anniversaryDate: '', designation: '', roleDescription: '', primaryContact: false, active: true };
-const today = () => new Date().toISOString().slice(0, 10);
-const emptyVisit = (): VisitForm => ({ employeeId: '', date: today(), startTime: '10:00', endTime: '10:30', purpose: '', selfGenerated: true });
+const emptyVisit = (): VisitForm => ({ employeeId: '', date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
 const emptySale = (): SaleForm => ({ saleDate: today(), quantityMt: '', invoiceReference: '' });
 const emptyTask = (): TaskForm => ({ title: '', description: '', employeeId: '', dueDate: today(), priority: 'MEDIUM', status: 'OPEN' });
 const emptyMonthlySales = (): MonthlySalesForm => ({ declaredMonthlySalesMt: '', changeReason: '' });
@@ -64,17 +55,6 @@ const humanize = (value: string | null | undefined) => value ? value.replaceAll(
 const showDate = (value: string) => value ? new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleString('en-IN', value.length === 10 ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}{required && <span className="ml-1 text-destructive">*</span>}</Label>{children}</div>;
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">{text}</div>;
-}
-
-function Info({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div><p className="text-xs text-muted-foreground">{label}</p><div className="mt-0.5 text-xs font-medium leading-5">{value || '—'}</div></div>;
-}
 
 export default function CustomerDetailPage({ accountId }: CustomerDetailPageProps) {
   const router = useRouter();
@@ -90,12 +70,14 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const [brandHistory, setBrandHistory] = useState<RetailBrandUsage[]>([]);
   const [commercialHistory, setCommercialHistory] = useState<RetailCommercialHistory[]>([]);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
+  const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
   const [groups, setGroups] = useState<RetailClientGroup[]>([]);
   const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const [competitorBrands, setCompetitorBrands] = useState<CompetitorBrand[]>([]);
   const [masterContacts, setMasterContacts] = useState<RetailMasterContact[]>([]);
   const [brandSelect, setBrandSelect] = useState('');
   const [brandRemarks, setBrandRemarks] = useState('');
+  const [brandFormOpen, setBrandFormOpen] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -243,6 +225,8 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const latestVisit = useMemo(() => [...visits]
     .filter((visit) => Boolean(visit.scheduledVisitDate))
     .sort((left, right) => String(right.scheduledVisitDate).localeCompare(String(left.scheduledVisitDate)))[0] ?? null, [visits]);
+  const openTasks = useMemo(() => tasks.filter(isOpenTask).sort((left, right) => String(left.dueDate).localeCompare(String(right.dueDate))), [tasks]);
+  const sortedNotes = useMemo(() => [...notes].sort((left, right) => String(right.updatedAt || right.createdAt).localeCompare(String(left.updatedAt || left.createdAt))), [notes]);
   const groupNameById = useMemo(() => new Map(groups.map((g) => [g.id, g.groupName])), [groups]);
   const regionNameById = useMemo(() => new Map(regions.map((r) => [r.id, r.name])), [regions]);
   const resolvedGroupName = account?.clientGroupName || (account?.clientGroupId ? groupNameById.get(account.clientGroupId) || `Group #${account.clientGroupId}` : 'No group');
@@ -281,6 +265,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
       toast.success('Brand usage added.');
       setBrandSelect('');
       setBrandRemarks('');
+      setBrandFormOpen(false);
       await loadBrandsSection();
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to add brand usage.')) } finally { setBusy(false) }
   };
@@ -360,7 +345,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     const assigned = Number(visitForm.employeeId); if (!assigned || !visitForm.date || !visitForm.purpose.trim()) { toast.error('Employee, visit date, and purpose are required.'); return }
     setBusy(true);
     try {
-      await RetailAPI.createVisit({ visitType: 'DEALER_VISIT', clientAccountId: account.id, institutionId: null, projectId: null, assignedEmployeeId: assigned, assignedByEmployeeId, scheduledVisitDate: visitForm.date, scheduledStartTime: `${visitForm.startTime}:00`, scheduledEndTime: `${visitForm.endTime}:00`, scheduledLatitude: account.outletLatitude, scheduledLongitude: account.outletLongitude, purpose: visitForm.purpose.trim(), selfGenerated: visitForm.selfGenerated }, token);
+      await RetailAPI.createVisit({ visitType: 'DEALER_VISIT', clientAccountId: account.id, institutionId: null, projectId: null, assignedEmployeeId: assigned, assignedByEmployeeId, scheduledVisitDate: visitForm.date, scheduledStartTime: `${visitForm.startTime}:00`, scheduledEndTime: `${visitForm.endTime}:00`, scheduledLatitude: account.outletLatitude, scheduledLongitude: account.outletLongitude, purpose: visitForm.purpose.trim(), description: visitForm.description.trim() || null, selfGenerated: visitForm.selfGenerated }, token);
       toast.success('Visit planned.'); setVisitOpen(false); await loadVisitsSection();
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to plan visit.')) } finally { setBusy(false) }
   };
@@ -505,42 +490,76 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to set Active. Use Edit instead.')) } finally { setBusy(false) }
   };
 
-  if (isLoading) return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <DetailSkeleton />;
   if (!Number.isFinite(accountId) || !account) return <Card><CardHeader><CardTitle>Customer not found</CardTitle><CardDescription>The account was not returned by the new paginated retail-accounts endpoint.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => router.push('/dashboard/customers')}><ArrowLeft className="mr-2 h-4 w-4" />Back to customers</Button></CardContent></Card>;
 
+  const ownerName = account.ownerEmployeeName || employeeName(account.ownerEmployeeId);
+  const openVisitForm = () => { setVisitForm({ ...emptyVisit(), employeeId: String(account.ownerEmployeeId || '') }); setVisitOpen(true) };
+  const openMonthlySales = () => { setMonthlySalesForm({ declaredMonthlySalesMt: account.declaredMonthlySalesMt == null ? '' : String(account.declaredMonthlySalesMt), changeReason: '' }); setMonthlySalesOpen(true) };
+  const statusTone: Tone = account.accountStatus === 'ACTIVE' ? 'success' : account.accountStatus === 'PROSPECT' ? 'info' : account.accountStatus === 'LOST' ? 'danger' : 'warning';
+  const nextStep: { text: string; done: boolean; action?: React.ReactNode } =
+    !account.networkMember && totalSales === 0 ? { text: 'Record the first sale, then onboard this account to the network.', done: false, action: <Button size="sm" className="h-8" onClick={() => { setSaleForm(emptySale()); setSaleOpen(true) }}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record first sale</Button> }
+    : !account.networkMember ? { text: 'First order is in. Onboard this account to the network.', done: false, action: <Button size="sm" className="h-8" onClick={() => setNetworkOpen(true)}>Network onboard</Button> }
+    : account.accountStatus === 'PROSPECT' ? { text: 'Network onboarding is done. Set the account status to Active.', done: false, action: <Button size="sm" className="h-8" onClick={() => void flipToActive()} disabled={busy}>Set Active</Button> }
+    : account.networkStatus === 'INACTIVE' ? { text: 'No sale in the last 3 months. Plan a win-back visit.', done: false, action: <Button size="sm" variant="outline" className="h-8" onClick={openVisitForm}><CalendarPlus className="mr-1.5 h-3.5 w-3.5" />Plan win-back visit</Button> }
+    : account.accountStatus === 'DORMANT' ? { text: 'Account is dormant. Re-activate it via Edit.', done: false, action: <Button size="sm" variant="outline" className="h-8" onClick={openEdit}>Edit account</Button> }
+    : { text: 'On track. Keep up regular visits and sales.', done: true };
+  const recentActivity: ActivityItem[] = [
+    ...visits.map((visit) => ({ key: `visit-${visit.id}`, date: visit.actualCheckinAt || visit.scheduledVisitDate, icon: CalendarDays, title: `Visit · ${purposeLabel(visit.purpose)}`, meta: `${visitStatus(visit).label} · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
+    ...sales.map((sale) => ({ key: `sale-${sale.id}`, date: sale.saleDate, icon: Package, title: `Sale · ${sale.quantityMt.toLocaleString('en-IN')} MT`, meta: `PO ${sale.invoiceReference || '—'}` })),
+    ...notes.map((note) => ({ key: `note-${note.id}`, date: note.createdAt, icon: StickyNote, title: `Note · ${note.authorName || employeeName(note.authorEmployeeId) || 'System'}`, meta: note.noteText })),
+    ...commercialHistory.map((entry) => ({ key: `change-${entry.id}`, date: entry.changedAt, icon: ArrowRightLeft, title: `${humanize(entry.fieldName)} changed`, meta: `${entry.oldValue || '—'} → ${entry.newValue || '—'} · ${entry.changedBy || 'System'}` })),
+  ].filter((item) => item.date && dayKey(item.date) <= today()).sort((left, right) => String(right.date).localeCompare(String(left.date))).slice(0, 8);
+  const upNext: ActivityItem[] = [
+    ...openTasks.map((task) => ({ key: `task-${task.id}`, date: task.dueDate, icon: ListChecks, title: task.title || `Task #${task.id}`, meta: `Task · ${humanize(task.priority)} · ${task.assignedEmployeeName || employeeName(task.assignedEmployeeId)}`, alert: Boolean(task.dueDate) && dayKey(task.dueDate) < today(), onClick: () => void openTask(task) })),
+    ...visits.filter((visit) => !visit.actualCheckinAt && !visit.outcome && dayKey(visit.scheduledVisitDate) >= today()).map((visit) => ({ key: `planned-${visit.id}`, date: visit.scheduledVisitDate, icon: CalendarDays, title: purposeLabel(visit.purpose), meta: `Planned visit · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
+  ].filter((item) => item.date).sort((left, right) => String(left.date).localeCompare(String(right.date)));
+
   return (
-    <div className="space-y-4 font-poppins text-xs">
-      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
-        <div className="flex gap-3"><Button size="icon" variant="outline" onClick={() => router.push('/dashboard/customers')} aria-label="Back to customers"><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-lg font-semibold">{account.accountName}</h1><Badge variant="outline">{humanize(account.accountStatus)}</Badge>{account.networkMember && <Badge>Network · {humanize(account.networkStatus)}</Badge>}{!account.active && <Badge variant="destructive">Inactive</Badge>}</div><p className="mt-0.5 text-xs text-muted-foreground">#{account.id}{account.gstNumber ? ` · ${account.gstNumber}` : ''} · Tier {account.clientTier} · {resolvedGroupName}</p></div></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={openEdit}><Edit3 className="mr-2 h-3.5 w-3.5" />Edit</Button>{!account.networkMember && <Button size="sm" onClick={() => setNetworkOpen(true)}><PackagePlus className="mr-2 h-3.5 w-3.5" />Network onboard</Button>}<Button variant="ghost" size="sm" onClick={() => void load()}><RefreshCw className="mr-2 h-3.5 w-3.5" />Refresh</Button>{canDeactivate && <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={!account.active} onClick={() => setDeleteOpen(true)}>Deactivate</Button>}</div>
-      </div>
+    <div className="detail-page space-y-4 font-poppins text-xs">
+      <DetailHero
+        name={account.accountName}
+        onBack={() => router.push('/dashboard/customers')}
+        backLabel="Back to customers"
+        badges={<>
+          <Pill tone={statusTone}>{humanize(account.accountStatus)}</Pill>
+          {account.networkMember && <Pill tone={account.networkStatus === 'INACTIVE' ? 'warning' : 'info'}>Network · {humanize(account.networkStatus)}</Pill>}
+          {!account.active && <Pill tone="danger">Inactive record</Pill>}
+        </>}
+        meta={[
+          { icon: Building2, label: formatClientTypeLabel(account.clientType) || 'Retail' },
+          { icon: Hash, label: account.id },
+          ...(account.gstNumber ? [{ icon: FileText, label: account.gstNumber, mono: true }] : []),
+          ...(account.addressCity || account.addressState ? [{ icon: MapPin, label: [account.addressCity, account.addressState].filter(Boolean).join(', ') }] : []),
+          { icon: User, label: ownerName, title: 'Account owner' },
+          { icon: Users, label: resolvedGroupName, title: 'Client group' },
+          { icon: MapPinned, label: resolvedRegionName, title: 'Region' },
+          { icon: Tag, label: `Tier ${account.clientTier}`, title: 'Client tier' },
+        ]}
+        actions={<>
+            <Button variant="outline" size="sm" className="h-8" onClick={openEdit}><Edit3 className="mr-1.5 h-3.5 w-3.5" />Edit</Button>
+            {!account.networkMember && <Button size="sm" className="h-8" onClick={() => setNetworkOpen(true)}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Network onboard</Button>}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onSelect={() => void load()}><RefreshCw />Refresh data</DropdownMenuItem>
+                <DropdownMenuItem onSelect={openMonthlySales}><TrendingUp />Update declared MT</DropdownMenuItem>
+                <DropdownMenuItem onSelect={openVisitForm}><CalendarPlus />Plan visit</DropdownMenuItem>
+                {canDeactivate && <><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" disabled={!account.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate account</DropdownMenuItem></>}
+              </DropdownMenuContent>
+            </DropdownMenu>
+        </>}
+        kpis={<>
+          <KpiCell icon={TrendingUp} label="Sales recorded" value={`${totalSales.toLocaleString('en-IN')} MT`} hint={`Declared ${account.declaredMonthlySalesMt ?? '—'} MT / month`} action={<Button variant="link" size="sm" className="h-auto shrink-0 p-0 text-xs" onClick={openMonthlySales}>Update</Button>} />
+          <KpiCell icon={Tag} label="Active brands" value={brands.length} hint={brands.length ? brands.slice(0, 2).map(brandDisplayName).join(', ') : 'None tracked'} />
+          <KpiCell icon={ListChecks} label="Open tasks" value={openTaskCount} hint={openTasks[0] ? `Next due ${showDate(openTasks[0].dueDate)}` : 'Nothing pending'} />
+          <KpiCell icon={CalendarDays} label="Last visit" value={latestVisit ? showDate(latestVisit.scheduledVisitDate) : 'No visits'} hint={latestVisit ? (latestVisit.assignedEmployeeName || employeeName(latestVisit.assignedEmployeeId)) : 'Plan one from Visits'} />
+        </>}
+        nextStep={nextStep}
+      />
 
-      {warnings.length > 0 && <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>The account loaded, but {warnings.join(', ')}. You can retry with Refresh.</p></div>}
+      {warnings.length > 0 && <WarningBanner>The account loaded, but {warnings.join(', ')}. You can retry with Refresh.</WarningBanner>}
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="min-w-0 space-y-4">
-      <Card className="border-l-4 border-l-primary py-0">
-        <CardContent className="flex flex-col gap-2 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-            <p className="truncate text-[13px] font-medium">
-              {!account.networkMember && totalSales === 0 ? 'Next required: Record first sale, then onboard' : !account.networkMember ? 'Next required: Network onboard (first order done)' : account.accountStatus === 'PROSPECT' ? 'Next required: Set status to Active' : account.networkMember && account.networkStatus === 'INACTIVE' ? 'Next required: Win-back visit — no sale in 3 months' : account.accountStatus === 'DORMANT' ? 'Next: Re-activate via Edit' : 'On track — regular visits & sales in tabs below'}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-1.5">
-            {!account.networkMember && totalSales === 0 && <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => { setSaleForm(emptySale()); setSaleOpen(true) }}>Record first sale</Button>}
-            {!account.networkMember && totalSales > 0 && <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => setNetworkOpen(true)}>Network onboard</Button>}
-            {account.networkMember && account.accountStatus === 'PROSPECT' && <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => void flipToActive()} disabled={busy}>Set Active</Button>}
-            {account.networkMember && account.networkStatus === 'INACTIVE' && <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => { setVisitForm({ ...emptyVisit(), employeeId: String(account.ownerEmployeeId || '') }); setVisitOpen(true) }}><CalendarPlus className="mr-1 h-3 w-3" />Plan win-back visit</Button>}
-          </div>
-        </CardContent>
-      </Card>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardHeader className="flex-row items-center justify-between pb-2"><div><CardDescription className="text-xs">Monthly sales</CardDescription><CardTitle className="text-base">{totalSales.toLocaleString('en-IN')} / {account.declaredMonthlySalesMt ?? '—'} MT</CardTitle></div><Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => { setMonthlySalesForm({ declaredMonthlySalesMt: account.declaredMonthlySalesMt == null ? '' : String(account.declaredMonthlySalesMt), changeReason: '' }); setMonthlySalesOpen(true); }}>Update</Button></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Active brands</CardDescription><CardTitle className="text-base">{brands.length}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Open tasks</CardDescription><CardTitle className="text-base">{openTaskCount}</CardTitle></CardHeader></Card>
-        <Card><CardHeader className="pb-2"><CardDescription className="text-xs">Last visit</CardDescription><CardTitle className="text-base">{latestVisit ? showDate(latestVisit.scheduledVisitDate) : 'No visits'}</CardTitle></CardHeader></Card>
-      </div>
       <DetailShell
         defaultValue="overview"
         tabs={[
@@ -548,164 +567,389 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
             value: 'overview',
             label: 'Overview',
             content: (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Card><CardHeader><CardTitle className="text-sm">Account and ownership</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2"><Info label="Account status" value={humanize(account.accountStatus)} /><Info label="Account owner" value={account.ownerEmployeeName || employeeName(account.ownerEmployeeId)} /><Info label="Client group" value={resolvedGroupName} /><Info label="Focus sector" value={humanize(account.focusSector)} /><Info label="Client tier" value={`Tier ${account.clientTier}`} /><Info label="Region" value={resolvedRegionName} /></CardContent></Card>
-                <Card><CardHeader><CardTitle className="text-sm">Outlet and network</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2"><Info label="Address" value={[account.addressVillageArea, account.addressTaluka, account.addressCity, account.addressDistrict, account.addressState, account.pinCode].filter(Boolean).join(', ')} /><Info label="GPS" value={`${account.outletLatitude}, ${account.outletLongitude}`} /><Info label="Network member" value={account.networkMember ? 'Yes' : 'No'} /><Info label="Network status" value={humanize(account.networkStatus)} /><Info label="Onboarding date" value={account.networkOnboardingDate ? showDate(account.networkOnboardingDate) : '—'} /><Info label="Record state" value={account.active ? 'Active' : 'Inactive'} /></CardContent></Card>
+              <div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                <Section icon={Activity} title="Activity" className="lg:row-span-2" bodyClassName="p-0" action={<Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => void openTask()}><Plus className="mr-1 h-3.5 w-3.5" />Task</Button>}>
+                  <ActivityTimeline upcoming={upNext} recent={recentActivity} viewAllHref="#tasks" />
+                </Section>
+                <Section icon={MapPin} title="Outlet and network">
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info className="sm:col-span-2" label="Address" value={[account.addressVillageArea, account.addressTaluka, account.addressCity, account.addressDistrict, account.addressState, account.pinCode].filter(Boolean).join(', ')} />
+                    <Info
+                      className="sm:col-span-2"
+                      label="GPS"
+                      value={account.outletLatitude != null && account.outletLongitude != null ? (
+                        <a href={`https://www.google.com/maps?q=${account.outletLatitude},${account.outletLongitude}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:underline">
+                          {account.outletLatitude}, {account.outletLongitude}<ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                        </a>
+                      ) : null}
+                    />
+                    <Info label="Network member" value={account.networkMember ? <Pill tone="success">Yes</Pill> : <Pill>No</Pill>} />
+                    <Info label="Network status" value={humanize(account.networkStatus)} />
+                    <Info label="Onboarding date" value={account.networkOnboardingDate ? showDate(account.networkOnboardingDate) : '—'} />
+                    <Info label="Record state" value={account.active ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Inactive</Pill>} />
+                  </dl>
+                </Section>
+                <Section icon={Wallet} title="Commercial">
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Client type" value={formatClientTypeLabel(account.clientType)} />
+                    <Info label="GSTIN" value={account.gstNumber ? <span className="font-mono" data-preserve-case="true">{account.gstNumber}</span> : null} />
+                    <Info label="Declared monthly sales" value={<span className="inline-flex items-center gap-2">{account.declaredMonthlySalesMt ?? '—'} MT<Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={openMonthlySales}>Update</Button></span>} />
+                    <Info label="Client tier" value={`Tier ${account.clientTier}`} />
+                    <Info label="Credit terms" value={`${account.creditTermsDays ?? '—'} days`} />
+                    <Info label="Credit limit" value={money(account.creditLimitAmount)} />
+                  </dl>
+                </Section>
+                </div>
               </div>
             ),
           },
           {
             value: 'relationship',
-            label: `Relationship (${brands.length + brandHistory.length + commercialHistory.length})`,
+            label: 'Relationship',
+            count: brands.length + brandHistory.length + commercialHistory.length,
             content: (
               <div className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-2"><Card><CardHeader><CardTitle className="text-sm">Active brands</CardTitle></CardHeader><CardContent>
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-                  <Select value={brandSelect} onValueChange={setBrandSelect}><SelectTrigger className="h-8 flex-1 text-xs"><SelectValue placeholder="Choose brand to add" /></SelectTrigger><SelectContent>{competitorBrands.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}</SelectContent></Select>
-                  <Button variant="outline" size="sm" className="h-8" onClick={() => void addBrand()} disabled={busy || !brandSelect}><Plus className="mr-1 h-3.5 w-3.5" />Add</Button>
+                <Section
+                  icon={Tag}
+                  title={`Active brands · ${brands.length}`}
+                  action={<Button size="sm" variant={brandFormOpen ? 'ghost' : 'outline'} className="h-7 px-2 text-xs" onClick={() => setBrandFormOpen((open) => !open)}>{brandFormOpen ? <><X className="mr-1 h-3.5 w-3.5" />Close</> : <><Plus className="mr-1 h-3.5 w-3.5" />Add brand</>}</Button>}
+                  bodyClassName="p-0"
+                >
+                  {brandFormOpen && (
+                    <div className="grid gap-2 border-b bg-muted/30 px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <Select value={brandSelect} onValueChange={setBrandSelect}><SelectTrigger className="h-8 bg-background text-xs"><SelectValue placeholder="Choose brand" /></SelectTrigger><SelectContent>{competitorBrands.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}</SelectContent></Select>
+                      <Input value={brandRemarks} onChange={(e) => setBrandRemarks(e.target.value)} placeholder="Remarks (optional)" className="h-8 bg-background text-xs" />
+                      <Button size="sm" className="h-8" onClick={() => void addBrand()} disabled={busy || !brandSelect}>Add</Button>
+                    </div>
+                  )}
+                  {brands.length === 0 ? <EmptyState compact title="No active brands tracked yet." /> : (
+                    <div className="flex flex-wrap gap-2 px-4 py-3">
+                      {brands.map((brand) => (
+                        <span key={brand.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-1 pl-3 pr-1 text-xs" title={`${brand.remarks || 'No remarks'} · Added ${showDate(brand.addedAt)} by ${brandAddedBy(brand)}`}>
+                          <span className="truncate font-medium">{brandDisplayName(brand)}</span>
+                          {brand.remarks && <span className="hidden max-w-[180px] truncate text-muted-foreground sm:inline">· {brand.remarks}</span>}
+                          <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" onClick={() => void removeBrand(brand)} disabled={busy} aria-label={`Remove ${brandDisplayName(brand)}`} title="Remove brand"><X className="h-3 w-3" /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </Section>
+                <div className="grid items-start gap-4 xl:grid-cols-2">
+                  <Section icon={History} title={`Brand history · ${brandHistory.length}`} bodyClassName="p-0">
+                    {brandHistory.length === 0 ? <EmptyState compact title="No brands added or removed yet." /> : (
+                      <ul className="max-h-80 divide-y overflow-y-auto">
+                        {brandHistory.map((brand) => (
+                          <li key={brand.id} className="flex items-center gap-3 px-4 py-2">
+                            <span className={cn('h-2 w-2 shrink-0 rounded-full', brand.active ? 'bg-emerald-500' : 'bg-muted-foreground/40')} />
+                            <div className="min-w-0 flex-1 leading-tight">
+                              <p className="truncate text-sm font-medium">{brandDisplayName(brand)}</p>
+                              <p className="truncate text-[11px] text-muted-foreground">{showDate(brand.addedAt)}{brand.removedAt ? ` → ${showDate(brand.removedAt)}` : ''} · {brandAddedBy(brand)}</p>
+                            </div>
+                            <Pill tone={brand.active ? 'success' : 'neutral'}>{brand.active ? 'Active' : 'Removed'}</Pill>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Section>
+                  <Section icon={ArrowRightLeft} title={`Commercial changes · ${commercialHistory.length}`} bodyClassName="p-0">
+                    {commercialHistory.length === 0 ? <EmptyState compact title="No commercial changes recorded yet." /> : (
+                      <ul className="max-h-80 divide-y overflow-y-auto">
+                        {commercialHistory.map((entry) => (
+                          <li key={entry.id} className="px-4 py-2 leading-tight">
+                            <div className="flex min-w-0 items-center gap-2 text-xs">
+                              <span className="shrink-0 text-sm font-medium">{humanize(entry.fieldName)}</span>
+                              <span className="truncate text-muted-foreground line-through">{entry.oldValue || '—'}</span>
+                              <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <span className="truncate font-semibold">{entry.newValue || '—'}</span>
+                              <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground">{showDate(entry.changedAt)}</span>
+                            </div>
+                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={entry.changeReason}>{entry.changeReason || 'No reason recorded'} · {entry.changedBy || 'System'}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Section>
                 </div>
-                <Input value={brandRemarks} onChange={(e) => setBrandRemarks(e.target.value)} placeholder="Remarks (optional)" className="mb-3 h-8 text-xs" />
-                {brands.length === 0 ? <EmptyState text="No active brands." /> : <ol className="relative ml-1.5 space-y-3 border-l pl-4">{brands.map((brand) => <li key={brand.id} className="relative"><span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/60" /><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium leading-none">{brandDisplayName(brand)}</p><p className="mt-1 truncate text-xs text-muted-foreground" title={brand.remarks}>{brand.remarks || 'No remarks'} · by {brandAddedBy(brand)}</p></div><Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground hover:text-destructive" onClick={() => void removeBrand(brand)} disabled={busy}>Remove</Button></div></li>)}</ol>}</CardContent></Card><Card><CardHeader><CardTitle className="text-sm">Brand history</CardTitle></CardHeader><CardContent>{brandHistory.length === 0 ? <EmptyState text="No brand history." /> : <ol className="relative ml-1.5 space-y-3 border-l pl-4">{brandHistory.map((brand) => <li key={brand.id} className="relative"><span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/40" /><div className="flex items-center gap-1.5"><p className="truncate text-sm font-medium leading-none">{brandDisplayName(brand)}</p><Badge variant="outline" className="h-4 px-1 text-[10px]">{brand.active ? 'Active' : 'Removed'}</Badge></div><p className="mt-1 text-[11px] text-muted-foreground">{showDate(brand.addedAt)}{brand.removedAt ? ` · out ${showDate(brand.removedAt)}` : ''} · by {brandAddedBy(brand)}</p></li>)}</ol>}</CardContent></Card></div>
-                <Card><CardHeader><CardTitle className="text-sm">Commercial change history</CardTitle></CardHeader><CardContent>{commercialHistory.length === 0 ? <EmptyState text="No commercial changes found." /> : <ol className="relative ml-1.5 space-y-4 border-l pl-4">{commercialHistory.map((entry) => <li key={entry.id} className="relative"><span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/60" /><p className="text-sm font-medium leading-none">{humanize(entry.fieldName)} <span className="ml-1 font-normal text-muted-foreground">{entry.oldValue || '—'} → {entry.newValue || '—'}</span></p><p className="mt-1 truncate text-xs text-muted-foreground" title={entry.changeReason}>{entry.changeReason || 'No reason recorded'}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{entry.changedBy || 'System'} · {showDate(entry.changedAt)}</p></li>)}</ol>}</CardContent></Card>
               </div>
             ),
           },
           {
             value: 'contacts',
-            label: `Contacts (${resolvedContacts.length})`,
+            label: 'Contacts',
+            count: resolvedContacts.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Account contacts</CardTitle><CardAction><Button size="sm" onClick={() => openContact()}><UserPlus className="mr-2 h-3.5 w-3.5" />Add contact</Button></CardAction></CardHeader><CardContent className="space-y-2">{resolvedContacts.length === 0 ? <EmptyState text="No contacts are linked yet." /> : resolvedContacts.map((contact) => <div key={contact.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><p className="truncate text-sm font-medium">{[contact.firstName, contact.lastName].filter(Boolean).join(' ') || `Contact #${contact.id}`}</p>{contact.primaryContact && <Badge className="h-5 px-1.5 text-[10px]">Primary</Badge>}{!contact.active && <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">Inactive</Badge>}</div><p className="mt-0.5 truncate text-xs text-muted-foreground">{[contact.designation, contact.roleDescription].filter(Boolean).join(' · ') || '—'} · {[contact.mobile, contact.email].filter(Boolean).join(' · ') || 'No phone'}</p></div><div className="flex shrink-0 items-center gap-1"><Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openContact(contact)}>Edit</Button>{canDeactivate && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void removeContact(contact)} disabled={busy}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}</div></div>)}</CardContent></Card>
+              <Section description={`${resolvedContacts.length} ${resolvedContacts.length === 1 ? 'person' : 'people'} linked`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openContact()}><UserPlus className="mr-1.5 h-3.5 w-3.5" />Add contact</Button>}>
+                {resolvedContacts.length === 0 ? <EmptyState compact title="No contacts linked yet. Add the owner or purchase manager." /> : (
+                  <div>
+                    <div className="hidden grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_64px] gap-x-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-medium text-muted-foreground md:grid">
+                      <span>Name</span><span>Mobile</span><span>Email</span><span />
+                    </div>
+                    <ul className="divide-y">
+                      {resolvedContacts.map((contact) => {
+                        const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ') || `Contact #${contact.id}`;
+                        const role = [contact.designation, contact.roleDescription].filter(Boolean).join(' · ') || 'No designation';
+                        return (
+                          <li key={contact.id} className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_64px] md:gap-x-4', !contact.active && 'opacity-70')}>
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <Initials name={name} className="h-7 w-7 text-[10px]" />
+                              <div className="min-w-0 leading-tight">
+                                <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium">{name}</p>{contact.primaryContact && <Pill tone="info">Primary</Pill>}{!contact.active && <Pill tone="danger">Inactive</Pill>}</div>
+                                <p className="truncate text-[11px] text-muted-foreground" title={role}>
+                                  {role}
+                                  <span className="md:hidden">{contact.mobile ? <> · <a href={`tel:${contact.mobile}`} className="text-foreground hover:underline">{contact.mobile}</a></> : ''}</span>
+                                </p>
+                              </div>
+                            </div>
+                            <span className="hidden text-xs tabular-nums md:block">{contact.mobile ? <a href={`tel:${contact.mobile}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3 w-3 text-muted-foreground" />{contact.mobile}</a> : <span className="text-muted-foreground">—</span>}</span>
+                            <span className="hidden min-w-0 text-xs md:block">{contact.email ? <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1.5 hover:underline" title={contact.email}><Mail className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{contact.email}</span></a> : <span className="text-muted-foreground">—</span>}</span>
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContact(contact)} aria-label={`Edit ${name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button>
+                              {canDeactivate && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => void removeContact(contact)} disabled={busy} aria-label={`Remove ${name}`} title="Remove contact"><Trash2 className="h-3.5 w-3.5" /></Button>}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </Section>
             ),
           },
           {
             value: 'visits',
-            label: `Visits (${visits.length})`,
+            label: 'Visits',
+            count: visits.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Visits</CardTitle><CardAction><Button size="sm" onClick={() => { setVisitForm({ ...emptyVisit(), employeeId: String(account.ownerEmployeeId || '') }); setVisitOpen(true) }}><CalendarPlus className="mr-2 h-3.5 w-3.5" />Plan visit</Button></CardAction></CardHeader><CardContent>{visits.length === 0 ? <EmptyState text="No visits yet." /> : <ol className="relative ml-1.5 space-y-1 border-l pl-4">{visits.map((visit) => <li key={visit.id} className="relative"><span className="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/60" /><button type="button" onClick={() => router.push(`/dashboard/visits/${visit.id}`)} className="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><div className="flex items-center gap-1.5"><p className="text-sm font-medium leading-none">{showDate(visit.scheduledVisitDate)}</p><Badge variant="outline" className="h-4 px-1 text-[10px]">{visit.outcome ? humanize(visit.outcome) : visit.actualCheckinAt ? 'Checked in' : 'Planned'}</Badge></div><p className="mt-1 truncate text-xs text-muted-foreground" title={visit.purpose}>{visit.purpose || 'No purpose'} · {visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}</p>{visit.nextActionText && <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={visit.nextActionText}>Next: {visit.nextActionText}{visit.nextActionDate ? ` · ${showDate(visit.nextActionDate)}` : ''}</p>}</button></li>)}</ol>}</CardContent></Card>
+              <Section description={`${visits.length} ${visits.length === 1 ? 'visit' : 'visits'} · newest first`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openVisitForm}><CalendarPlus className="mr-1.5 h-3.5 w-3.5" />Plan visit</Button>}>
+                {visits.length === 0 ? <EmptyState compact title="No visits yet. Plan the first visit to this outlet." /> : <VisitList visits={visits} assignee={(visit) => visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)} onOpen={(visit) => router.push(`/dashboard/visits/${visit.id}`)} />}
+              </Section>
             ),
           },
           {
             value: 'sales',
-            label: `Sales (${sales.length})`,
+            label: 'Sales',
+            count: sales.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Sales history</CardTitle><CardAction><Button size="sm" onClick={() => { setSaleForm(emptySale()); setSaleOpen(true) }}><PackagePlus className="mr-2 h-3.5 w-3.5" />Record sale</Button></CardAction></CardHeader><CardContent className="space-y-3">{sales.length === 0 ? <EmptyState text="No sales have been recorded." /> : sales.map((sale) => <div key={sale.id} className="grid gap-2 rounded-lg border p-4 sm:grid-cols-4"><Info label="PO date" value={showDate(sale.saleDate)} /><Info label="Quantity" value={`${sale.quantityMt} MT`} /><Info label="PO number" value={sale.invoiceReference} /><Info label="Source" value={sale.sourceSystem} /></div>)}</CardContent></Card>
+              <Section
+                description={salesSummary(sales)}
+                bodyClassName="p-0"
+                action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => { setSaleForm(emptySale()); setSaleOpen(true) }}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record sale</Button>}
+              >
+                {sales.length === 0 ? <EmptyState compact title="Record the first PO to start tracking volume." /> : <SalesTable sales={sales} />}
+              </Section>
             ),
           },
           {
             value: 'tasks',
-            label: `Tasks (${tasks.length})`,
+            label: 'Tasks',
+            count: tasks.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Follow-up tasks</CardTitle><CardAction><Button size="sm" onClick={() => openTask()}><Plus className="mr-2 h-3.5 w-3.5" />Add task</Button></CardAction></CardHeader><CardContent className="space-y-3">{tasks.length === 0 ? <EmptyState text="No customer tasks found." /> : tasks.map((task) => <div key={task.id} className="flex justify-between gap-3 rounded-lg border p-4"><div><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{task.title || `Task #${task.id}`}</p><Badge variant="outline">{humanize(task.status)}</Badge><Badge variant="secondary">{humanize(task.priority)}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{task.description}</p><p className="mt-2 text-xs text-muted-foreground">Due {showDate(task.dueDate)} · {task.assignedEmployeeName || employeeName(task.assignedEmployeeId)}</p></div><div className="flex shrink-0 items-start gap-1"><Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openTask(task)}>Edit</Button><Button variant="ghost" size="icon" onClick={() => void removeTask(task)} disabled={busy}><Trash2 className="h-4 w-4 text-destructive" /></Button></div></div>)}</CardContent></Card>
+              <Section description={taskSummary(tasks)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => void openTask()}><Plus className="mr-1.5 h-3.5 w-3.5" />Add task</Button>}>
+                {tasks.length === 0 ? <EmptyState compact title="No tasks yet. Create a follow-up so nothing slips through." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
+              </Section>
             ),
           },
           {
             value: 'notes',
-            label: `Notes (${notes.length})`,
+            label: 'Notes',
+            count: notes.length,
             content: (
-              <Card><CardHeader><CardTitle className="text-sm">Notes</CardTitle><CardAction><Button size="sm" onClick={() => openNote()}><NotebookPen className="mr-2 h-3.5 w-3.5" />Add note</Button></CardAction></CardHeader><CardContent className="space-y-3">{notes.length === 0 ? <EmptyState text="No notes have been added." /> : notes.map((note) => <div key={note.id} className="rounded-xl border bg-card p-5"><div className="flex items-start justify-between gap-4"><p className="whitespace-pre-wrap text-sm leading-6">{note.noteText}</p><Button variant="ghost" size="icon" onClick={() => openNote(note)}><Edit3 className="h-4 w-4" /></Button></div><p className="mt-3 text-xs text-muted-foreground">{note.authorName || employeeName(note.authorEmployeeId) || 'System'} · {showDate(note.updatedAt || note.createdAt)}</p></div>)}</CardContent></Card>
+              <NotesFeed
+                notes={sortedNotes.map((note) => ({ id: note.id, text: note.noteText, author: note.authorName || employeeName(note.authorEmployeeId) || 'System', date: note.updatedAt || note.createdAt, edited: Boolean(note.updatedAt && note.updatedAt !== note.createdAt) }))}
+                onAdd={async (text) => { if (!token) return false; try { await RetailAPI.createNote(accountId, text, token); toast.success('Note added.'); await loadNotesSection(); return true; } catch (error) { toast.error(getErrorMessage(error, 'Unable to save note.')); return false; } }}
+                onEdit={(id) => { const note = notes.find((item) => item.id === id); if (note) openNote(note); }} placeholder="Write a note for the team… e.g. what was discussed on the call"
+              />
             ),
           },
         ]}
       />
-      </div>
-      <aside className="xl:sticky xl:top-4">
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">About this account</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Status</span><Badge variant="outline">{humanize(account.accountStatus)}</Badge></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Network</span><span className="font-medium">{account.networkMember ? humanize(account.networkStatus) : 'Not a member'}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Onboarded</span><span className="font-medium">{account.networkOnboardingDate ? showDate(account.networkOnboardingDate) : '—'}</span></div>
-            <div className="h-px bg-border" />
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Group</span><span className="max-w-[160px] truncate font-medium" title={resolvedGroupName}>{resolvedGroupName}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Tier</span><span className="font-medium">Tier {account.clientTier}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Owner</span><span className="max-w-[160px] truncate font-medium" title={account.ownerEmployeeName || employeeName(account.ownerEmployeeId)}>{account.ownerEmployeeName || employeeName(account.ownerEmployeeId)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Region</span><span className="font-medium">{resolvedRegionName}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Focus</span><span className="font-medium">{humanize(account.focusSector)}</span></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Terms</span><span className="font-medium">{account.creditTermsDays}d · {money(account.creditLimitAmount)}</span></div>
-            <div className="h-px bg-border" />
-          </CardContent>
-        </Card>
-      </aside>
-      </div>
 
 
-      <Sheet open={editOpen} onOpenChange={(open) => !busy && setEditOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-2xl"><SheetHeader className="border-b pb-4"><SheetTitle>Edit retail customer</SheetTitle></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">{editDraft && <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Account name" required><Input value={editDraft.accountName} onChange={(event) => setEditDraft({ ...editDraft, accountName: event.target.value })} /></Field><Field label="GSTIN" required><Input value={editDraft.gstNumber} onChange={(event) => setEditDraft({ ...editDraft, gstNumber: event.target.value.toUpperCase().slice(0, 15) })} /></Field><Field label="Client type"><Select value={editDraft.clientType} onValueChange={(value) => setEditDraft({ ...editDraft, clientType: value as RetailAccountDraft['clientType'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select></Field>
-        <Field label="Account status"><Select value={editDraft.accountStatus} onValueChange={(value) => setEditDraft({ ...editDraft, accountStatus: value as RetailAccountDraft['accountStatus'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select></Field><Field label="Owner"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => setEditDraft({ ...editDraft, ownerEmployeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></Field><Field label="Client group" required><Select value={editDraft.clientGroupId} onValueChange={(value) => setEditDraft({ ...editDraft, clientGroupId: value })}><SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger><SelectContent>{groups.filter((g) => g.active !== false).map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.groupName}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Village / area" required><Input value={editDraft.addressVillageArea} onChange={(event) => setEditDraft({ ...editDraft, addressVillageArea: event.target.value })} /></Field><Field label="Taluka" required><Input value={editDraft.addressTaluka} onChange={(event) => setEditDraft({ ...editDraft, addressTaluka: event.target.value })} /></Field><Field label="City" required><Input value={editDraft.addressCity} onChange={(event) => setEditDraft({ ...editDraft, addressCity: event.target.value })} /></Field><Field label="District" required><Input value={editDraft.addressDistrict} onChange={(event) => setEditDraft({ ...editDraft, addressDistrict: event.target.value })} /></Field><Field label="State" required><Input value={editDraft.addressState} onChange={(event) => setEditDraft({ ...editDraft, addressState: event.target.value })} /></Field><Field label="PIN code" required><Input value={editDraft.pinCode} onChange={(event) => setEditDraft({ ...editDraft, pinCode: event.target.value.replace(/\D/g, '').slice(0, 6) })} /></Field>
-        <Field label="Region"><Select value={editDraft.regionId} onValueChange={(value) => setEditDraft({ ...editDraft, regionId: value })}><SelectTrigger><SelectValue placeholder="Derived from PIN" /></SelectTrigger><SelectContent>{regions.filter((r) => r.active !== false).map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}</SelectContent></Select></Field><Field label="Latitude" required><Input type="number" value={editDraft.outletLatitude} onChange={(event) => setEditDraft({ ...editDraft, outletLatitude: event.target.value })} /></Field><Field label="Longitude" required><Input type="number" value={editDraft.outletLongitude} onChange={(event) => setEditDraft({ ...editDraft, outletLongitude: event.target.value })} /></Field>
-        <Field label="Monthly sales (MT)"><Input type="number" min="0" value={editDraft.declaredMonthlySalesMt} onChange={(event) => setEditDraft({ ...editDraft, declaredMonthlySalesMt: event.target.value })} /></Field><Field label="Focus sector"><Select value={editDraft.focusSector} onValueChange={(value) => setEditDraft({ ...editDraft, focusSector: value as RetailAccountDraft['focusSector'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="RETAIL">Retail</SelectItem><SelectItem value="GOVERNMENT_PROJECTS">Government projects</SelectItem><SelectItem value="DEVELOPER_PROJECTS">Developer projects</SelectItem><SelectItem value="ALL_SECTORS">All sectors</SelectItem></SelectContent></Select></Field><Field label="Client tier"><Select value={editDraft.clientTier} onValueChange={(value) => setEditDraft({ ...editDraft, clientTier: value as RetailAccountDraft['clientTier'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="A">A</SelectItem><SelectItem value="B">B</SelectItem><SelectItem value="C">C</SelectItem></SelectContent></Select></Field>
-        <Field label="Credit terms (days)" required><Input type="number" min="0" value={editDraft.creditTermsDays} onChange={(event) => setEditDraft({ ...editDraft, creditTermsDays: event.target.value })} /></Field><Field label="Credit limit" required><Input type="number" min="0" value={editDraft.creditLimitAmount} onChange={(event) => setEditDraft({ ...editDraft, creditLimitAmount: event.target.value })} /></Field><p className="text-xs text-muted-foreground sm:col-span-2">Network membership is managed only via Network onboard / leave, not via edit.</p>
-      </div>}{editErrors.length > 0 && <ul className="mt-4 list-disc rounded-lg border border-destructive/40 bg-destructive/5 p-4 pl-8 text-sm text-destructive">{editErrors.map((error) => <li key={error}>{error}</li>)}</ul>}</div><SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4"><Button variant="outline" onClick={() => setEditOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void saveAccount()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save account</Button></SheetFooter></SheetContent></Sheet>
+      <FormSheet
+        open={editOpen}
+        onOpenChange={(open) => !busy && setEditOpen(open)}
+        icon={Building2}
+        title="Edit retail account"
+        description={account.accountName}
+        wide
+        errors={editErrors}
+        footerNote="Network membership changes only via Network onboard."
+        onSubmit={() => void saveAccount()}
+        submitLabel="Save changes"
+        submitting={busy}
+      >
+        {editDraft && <>
+          <FormGroup title="Account">
+            <FormField label="Account name" required className="sm:col-span-2"><Input value={editDraft.accountName} onChange={(event) => setEditDraft({ ...editDraft, accountName: event.target.value })} /></FormField>
+            <FormField label="GSTIN" required><Input className="font-mono uppercase" value={editDraft.gstNumber} onChange={(event) => setEditDraft({ ...editDraft, gstNumber: event.target.value.toUpperCase().slice(0, 15) })} /></FormField>
+            <FormField label="Client type"><Select value={editDraft.clientType} onValueChange={(value) => setEditDraft({ ...editDraft, clientType: value as RetailAccountDraft['clientType'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Account status"><Select value={editDraft.accountStatus} onValueChange={(value) => setEditDraft({ ...editDraft, accountStatus: value as RetailAccountDraft['accountStatus'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Owner"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => setEditDraft({ ...editDraft, ownerEmployeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Client group" required className="sm:col-span-2"><Select value={editDraft.clientGroupId} onValueChange={(value) => setEditDraft({ ...editDraft, clientGroupId: value })}><SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger><SelectContent>{groups.filter((g) => g.active !== false).map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.groupName}</SelectItem>)}</SelectContent></Select></FormField>
+          </FormGroup>
+          <FormGroup title="Outlet address">
+            <FormField label="Village / area" required><Input value={editDraft.addressVillageArea} onChange={(event) => setEditDraft({ ...editDraft, addressVillageArea: event.target.value })} /></FormField>
+            <FormField label="Taluka" required><Input value={editDraft.addressTaluka} onChange={(event) => setEditDraft({ ...editDraft, addressTaluka: event.target.value })} /></FormField>
+            <FormField label="City" required><Input value={editDraft.addressCity} onChange={(event) => setEditDraft({ ...editDraft, addressCity: event.target.value })} /></FormField>
+            <FormField label="District" required><Input value={editDraft.addressDistrict} onChange={(event) => setEditDraft({ ...editDraft, addressDistrict: event.target.value })} /></FormField>
+            <FormField label="State" required><Input value={editDraft.addressState} onChange={(event) => setEditDraft({ ...editDraft, addressState: event.target.value })} /></FormField>
+            <FormField label="PIN code" required><Input inputMode="numeric" value={editDraft.pinCode} onChange={(event) => setEditDraft({ ...editDraft, pinCode: event.target.value.replace(/\D/g, '').slice(0, 6) })} /></FormField>
+            <FormField label="Region" hint="Derived from PIN when left empty." className="sm:col-span-2"><Select value={editDraft.regionId} onValueChange={(value) => setEditDraft({ ...editDraft, regionId: value })}><SelectTrigger><SelectValue placeholder="Derived from PIN" /></SelectTrigger><SelectContent>{regions.filter((r) => r.active !== false).map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Latitude" required><Input type="number" value={editDraft.outletLatitude} onChange={(event) => setEditDraft({ ...editDraft, outletLatitude: event.target.value })} /></FormField>
+            <FormField label="Longitude" required><Input type="number" value={editDraft.outletLongitude} onChange={(event) => setEditDraft({ ...editDraft, outletLongitude: event.target.value })} /></FormField>
+          </FormGroup>
+          <FormGroup title="Commercial">
+            <FormField label="Declared monthly sales (MT)"><Input type="number" min="0" value={editDraft.declaredMonthlySalesMt} onChange={(event) => setEditDraft({ ...editDraft, declaredMonthlySalesMt: event.target.value })} /></FormField>
+            <FormField label="Focus sector"><Select value={editDraft.focusSector} onValueChange={(value) => setEditDraft({ ...editDraft, focusSector: value as RetailAccountDraft['focusSector'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="RETAIL">Retail</SelectItem><SelectItem value="GOVERNMENT_PROJECTS">Government projects</SelectItem><SelectItem value="DEVELOPER_PROJECTS">Developer projects</SelectItem><SelectItem value="ALL_SECTORS">All sectors</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Client tier"><Select value={editDraft.clientTier} onValueChange={(value) => setEditDraft({ ...editDraft, clientTier: value as RetailAccountDraft['clientTier'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="A">Tier A</SelectItem><SelectItem value="B">Tier B</SelectItem><SelectItem value="C">Tier C</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Credit terms (days)" required><Input type="number" min="0" value={editDraft.creditTermsDays} onChange={(event) => setEditDraft({ ...editDraft, creditTermsDays: event.target.value })} /></FormField>
+            <FormField label="Credit limit (₹)" required className="sm:col-span-2"><Input type="number" min="0" value={editDraft.creditLimitAmount} onChange={(event) => setEditDraft({ ...editDraft, creditLimitAmount: event.target.value })} /></FormField>
+          </FormGroup>
+        </>}
+      </FormSheet>
 
-      <Sheet open={contactOpen} onOpenChange={(open) => !busy && setContactOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-lg"><SheetHeader className="border-b pb-4"><SheetTitle>{editingContact ? 'Edit contact' : 'Add contact'}</SheetTitle></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-1 py-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="First name" required><Input disabled={Boolean(editingContact)} value={contactForm.firstName} onChange={(event) => setContactForm({ ...contactForm, firstName: event.target.value })} /></Field><Field label="Last name"><Input disabled={Boolean(editingContact)} value={contactForm.lastName} onChange={(event) => setContactForm({ ...contactForm, lastName: event.target.value })} /></Field><Field label="Mobile" required><Input disabled={Boolean(editingContact)} value={contactForm.mobile} onChange={(event) => setContactForm({ ...contactForm, mobile: event.target.value.replace(/\D/g, '').slice(0, 10) })} /></Field><Field label="Email"><Input disabled={Boolean(editingContact)} type="email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} /></Field><Field label="Designation" required><Input value={contactForm.designation} onChange={(event) => setContactForm({ ...contactForm, designation: event.target.value })} /></Field><Field label="Role description"><Input value={contactForm.roleDescription} onChange={(event) => setContactForm({ ...contactForm, roleDescription: event.target.value })} /></Field>{!editingContact && <><Field label="Date of birth"><Input type="date" value={contactForm.dateOfBirth} onChange={(event) => setContactForm({ ...contactForm, dateOfBirth: event.target.value })} /></Field><Field label="Anniversary"><Input type="date" value={contactForm.anniversaryDate} onChange={(event) => setContactForm({ ...contactForm, anniversaryDate: event.target.value })} /></Field></>}<label className="flex items-center gap-2 text-sm"><Checkbox checked={contactForm.primaryContact} onCheckedChange={(checked) => setContactForm({ ...contactForm, primaryContact: checked === true })} />Primary contact</label>{editingContact && <label className="flex items-center gap-2 text-sm"><Checkbox checked={contactForm.active} onCheckedChange={(checked) => setContactForm({ ...contactForm, active: checked === true })} />Active link</label>}</div></div><SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4"><Button variant="outline" onClick={() => setContactOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void saveContact()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save contact</Button></SheetFooter></SheetContent></Sheet>
+      <FormSheet
+        open={contactOpen}
+        onOpenChange={(open) => !busy && setContactOpen(open)}
+        icon={UserPlus}
+        title={editingContact ? 'Edit contact' : 'Add contact'}
+        description={editingContact ? 'Name and phone come from the shared contact register and can’t be changed here.' : `Link a person to ${account.accountName}.`}
+        onSubmit={() => void saveContact()}
+        submitLabel={editingContact ? 'Save changes' : 'Add contact'}
+        submitting={busy}
+      >
+        <FormGroup title="Person">
+          <FormField label="First name" required><Input disabled={Boolean(editingContact)} value={contactForm.firstName} onChange={(event) => setContactForm({ ...contactForm, firstName: event.target.value })} /></FormField>
+          <FormField label="Last name"><Input disabled={Boolean(editingContact)} value={contactForm.lastName} onChange={(event) => setContactForm({ ...contactForm, lastName: event.target.value })} /></FormField>
+          <FormField label="Mobile" required hint={editingContact ? undefined : '10-digit number'}><Input disabled={Boolean(editingContact)} inputMode="numeric" value={contactForm.mobile} onChange={(event) => setContactForm({ ...contactForm, mobile: event.target.value.replace(/\D/g, '').slice(0, 10) })} /></FormField>
+          <FormField label="Email"><Input disabled={Boolean(editingContact)} type="email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} /></FormField>
+          {!editingContact && <>
+            <FormField label="Date of birth"><Input type="date" value={contactForm.dateOfBirth} onChange={(event) => setContactForm({ ...contactForm, dateOfBirth: event.target.value })} /></FormField>
+            <FormField label="Anniversary"><Input type="date" value={contactForm.anniversaryDate} onChange={(event) => setContactForm({ ...contactForm, anniversaryDate: event.target.value })} /></FormField>
+          </>}
+        </FormGroup>
+        <FormGroup title="Role at this account">
+          <FormField label="Designation" required><Input placeholder="e.g. Owner" value={contactForm.designation} onChange={(event) => setContactForm({ ...contactForm, designation: event.target.value })} /></FormField>
+          <FormField label="Role description"><Input placeholder="e.g. Approves purchases" value={contactForm.roleDescription} onChange={(event) => setContactForm({ ...contactForm, roleDescription: event.target.value })} /></FormField>
+          <FormCheck className="sm:col-span-2" checked={contactForm.primaryContact} onCheckedChange={(checked) => setContactForm({ ...contactForm, primaryContact: checked })} label="Primary contact" description="The main person the team reaches out to." />
+          {editingContact && <FormCheck className="sm:col-span-2" checked={contactForm.active} onCheckedChange={(checked) => setContactForm({ ...contactForm, active: checked })} label="Active link" description="Uncheck when this person no longer works with the account." />}
+        </FormGroup>
+      </FormSheet>
 
-      <Sheet open={noteOpen} onOpenChange={(open) => !busy && setNoteOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-lg"><SheetHeader className="border-b pb-4"><SheetTitle>{editingNote ? 'Edit note' : 'Add note'}</SheetTitle></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-1 py-4"><Field label="Note" required><Textarea rows={6} value={noteText} onChange={(event) => setNoteText(event.target.value)} /></Field></div><SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4"><Button variant="outline" onClick={() => setNoteOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void saveNote()} disabled={busy || !noteText.trim()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save note</Button></SheetFooter></SheetContent></Sheet>
+      <FormSheet
+        open={noteOpen}
+        onOpenChange={(open) => !busy && setNoteOpen(open)}
+        icon={NotebookPen}
+        title={editingNote ? 'Edit note' : 'Add note'}
+        description="Visible to everyone who works on this account."
+        onSubmit={() => void saveNote()}
+        submitLabel="Save note"
+        submitting={busy}
+        submitDisabled={!noteText.trim()}
+      >
+        <FormField label="Note" required><Textarea rows={8} value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="What was discussed, agreed, or needs follow-up…" /></FormField>
+      </FormSheet>
 
-      <Sheet open={visitOpen} onOpenChange={(open) => !busy && setVisitOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-lg"><SheetHeader className="border-b pb-4"><SheetTitle>Plan visit</SheetTitle></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-1 py-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Assigned employee" required><Select value={visitForm.employeeId} onValueChange={(value) => setVisitForm({ ...visitForm, employeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></Field><Field label="Visit date" required><Input type="date" value={visitForm.date} onChange={(event) => setVisitForm({ ...visitForm, date: event.target.value })} /></Field><Field label="Start time"><Input type="time" value={visitForm.startTime} onChange={(event) => setVisitForm({ ...visitForm, startTime: event.target.value })} /></Field><Field label="End time"><Input type="time" value={visitForm.endTime} onChange={(event) => setVisitForm({ ...visitForm, endTime: event.target.value })} /></Field><div className="sm:col-span-2"><Field label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></Field></div><label className="flex items-center gap-2 text-sm"><Checkbox checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked === true })} />Self-generated visit</label></div></div><SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4"><Button variant="outline" onClick={() => setVisitOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void saveVisit()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Plan visit</Button></SheetFooter></SheetContent></Sheet>
+      <FormSheet
+        open={visitOpen}
+        onOpenChange={(open) => !busy && setVisitOpen(open)}
+        icon={CalendarPlus}
+        title="Plan visit"
+        description={`Dealer visit to ${account.accountName}. Outlet GPS is used as the visit location.`}
+        onSubmit={() => void saveVisit()}
+        submitLabel="Plan visit"
+        submitting={busy}
+      >
+        <FormGroup title="When and who">
+          <FormField label="Assigned employee" required className="sm:col-span-2"><SearchableSelect options={employeeOptions} value={visitForm.employeeId || undefined} onSelect={(option) => setVisitForm({ ...visitForm, employeeId: option?.value || '' })} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full overflow-hidden text-xs" /></FormField>
+          <FormField label="Visit date" required className="sm:col-span-2"><Input type="date" value={visitForm.date} onChange={(event) => setVisitForm({ ...visitForm, date: event.target.value })} /></FormField>
+          <FormField label="Start time"><Input type="time" value={visitForm.startTime} onChange={(event) => setVisitForm({ ...visitForm, startTime: event.target.value })} /></FormField>
+          <FormField label="End time"><Input type="time" value={visitForm.endTime} onChange={(event) => setVisitForm({ ...visitForm, endTime: event.target.value })} /></FormField>
+        </FormGroup>
+        <FormGroup title="Purpose" columns={1}>
+          <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Description"><Textarea rows={3} value={visitForm.description} onChange={(event) => setVisitForm({ ...visitForm, description: event.target.value })} placeholder="Optional agenda or context" /></FormField>
+          <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
+        </FormGroup>
+      </FormSheet>
 
-      <Sheet open={saleOpen} onOpenChange={(open) => !busy && setSaleOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-lg"><SheetHeader className="border-b pb-4"><SheetTitle>Record actual sale</SheetTitle></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-1 py-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="PO date" required><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm({ ...saleForm, saleDate: event.target.value })} /></Field><Field label="Quantity (MT)" required><Input type="number" min="0.01" step="0.01" value={saleForm.quantityMt} onChange={(event) => setSaleForm({ ...saleForm, quantityMt: event.target.value })} /></Field><div className="sm:col-span-2"><Field label="PO number" required><Input placeholder="PO-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm({ ...saleForm, invoiceReference: event.target.value })} /></Field></div></div></div><SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4"><Button variant="outline" onClick={() => setSaleOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void saveSale()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record sale</Button></SheetFooter></SheetContent></Sheet>
+      <FormSheet
+        open={saleOpen}
+        onOpenChange={(open) => !busy && setSaleOpen(open)}
+        icon={PackagePlus}
+        title="Record sale"
+        description={`Log a purchase order from ${account.accountName}.`}
+        onSubmit={() => void saveSale()}
+        submitLabel="Record sale"
+        submitting={busy}
+      >
+        <FormGroup>
+          <FormField label="PO date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm({ ...saleForm, saleDate: event.target.value })} /></FormField>
+          <FormField label="Quantity (MT)" required><Input type="number" min="0.01" step="0.01" value={saleForm.quantityMt} onChange={(event) => setSaleForm({ ...saleForm, quantityMt: event.target.value })} /></FormField>
+          <FormField label="PO number" required className="sm:col-span-2"><Input placeholder="PO-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm({ ...saleForm, invoiceReference: event.target.value })} /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      <Sheet open={taskOpen} onOpenChange={(open) => !busy && setTaskOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-lg"><SheetHeader className="border-b pb-4"><SheetTitle>{editingTask ? 'Edit task' : 'New task'}</SheetTitle></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-1 py-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Task title" required><Input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></Field><Field label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(value) => setTaskForm({ ...taskForm, employeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></Field><Field label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm({ ...taskForm, dueDate: event.target.value })} /></Field><Field label="Priority"><Select value={taskForm.priority} onValueChange={(value) => setTaskForm({ ...taskForm, priority: value as RetailTask['priority'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></Field>{editingTask && <Field label="Status"><Select value={taskForm.status} onValueChange={(value) => setTaskForm({ ...taskForm, status: value as RetailTask['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></Field>}<div className="sm:col-span-2"><Field label="Description"><Textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} /></Field></div></div></div><SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4"><Button variant="outline" onClick={() => setTaskOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void saveTask()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingTask ? 'Save changes' : 'Create task'}</Button></SheetFooter></SheetContent></Sheet>
+      <FormSheet
+        open={taskOpen}
+        onOpenChange={(open) => !busy && setTaskOpen(open)}
+        icon={ListChecks}
+        title={editingTask ? 'Edit task' : 'New follow-up task'}
+        description={editingTask ? editingTask.title : `Follow-up for ${account.accountName}.`}
+        onSubmit={() => void saveTask()}
+        submitLabel={editingTask ? 'Save changes' : 'Create task'}
+        submitting={busy}
+      >
+        <FormGroup>
+          <FormField label="Task title" required className="sm:col-span-2"><Input placeholder="e.g. Share revised price list" value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></FormField>
+          <FormField label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(value) => setTaskForm({ ...taskForm, employeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm({ ...taskForm, dueDate: event.target.value })} /></FormField>
+          <FormField label="Priority"><Select value={taskForm.priority} onValueChange={(value) => setTaskForm({ ...taskForm, priority: value as RetailTask['priority'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></FormField>
+          {editingTask && <FormField label="Status"><Select value={taskForm.status} onValueChange={(value) => setTaskForm({ ...taskForm, status: value as RetailTask['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></FormField>}
+          <FormField label="Description" className="sm:col-span-2"><Textarea rows={4} value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} placeholder="Optional details" /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-      <Sheet open={monthlySalesOpen} onOpenChange={(open) => !busy && setMonthlySalesOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4">
-            <SheetTitle>Update declared MT</SheetTitle>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4">
-            <Field label="Declared monthly sales (MT)" required>
-              <Input type="number" min="0" step="0.01" value={monthlySalesForm.declaredMonthlySalesMt} onChange={(event) => setMonthlySalesForm({ ...monthlySalesForm, declaredMonthlySalesMt: event.target.value })} />
-            </Field>
-            <Field label="Change reason" required>
-              <Textarea value={monthlySalesForm.changeReason} onChange={(event) => setMonthlySalesForm({ ...monthlySalesForm, changeReason: event.target.value })} placeholder="e.g. Updated after monthly review with client" />
-              <p className="text-xs text-muted-foreground">This reason is recorded in the commercial change history.</p>
-            </Field>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setMonthlySalesOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveMonthlySales()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={monthlySalesOpen}
+        onOpenChange={(open) => !busy && setMonthlySalesOpen(open)}
+        icon={TrendingUp}
+        title="Update declared monthly sales"
+        description={`Currently ${account.declaredMonthlySalesMt ?? '—'} MT / month.`}
+        footerNote="The reason is saved to the commercial change history."
+        onSubmit={() => void saveMonthlySales()}
+        submitLabel="Update"
+        submitting={busy}
+      >
+        <FormGroup columns={1}>
+          <FormField label="Declared monthly sales (MT)" required><Input type="number" min="0" step="0.01" value={monthlySalesForm.declaredMonthlySalesMt} onChange={(event) => setMonthlySalesForm({ ...monthlySalesForm, declaredMonthlySalesMt: event.target.value })} /></FormField>
+          <FormField label="Change reason" required><Textarea rows={4} value={monthlySalesForm.changeReason} onChange={(event) => setMonthlySalesForm({ ...monthlySalesForm, changeReason: event.target.value })} placeholder="e.g. Updated after monthly review with client" /></FormField>
+        </FormGroup>
+      </FormSheet>
 
       <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}><DialogContent><DialogHeader><DialogTitle>Deactivate this customer?</DialogTitle><DialogDescription>The new DELETE endpoint performs a soft delete, preserving account history.</DialogDescription></DialogHeader><div className="rounded-lg border bg-muted/40 p-3 font-medium">{account.accountName}</div><DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</Button><Button variant="destructive" onClick={() => void deactivateAccount()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Deactivate</Button></DialogFooter></DialogContent></Dialog>
 
-      <Sheet open={networkOpen} onOpenChange={(open) => !busy && setNetworkOpen(open)}>
-        <SheetContent className="flex w-full flex-col sm:max-w-lg">
-          <SheetHeader className="border-b pb-4">
-            <SheetTitle>Network onboarding</SheetTitle>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Joining date" required>
-              <Input type="date" value={networkForm.joiningDate} onChange={(e) => setNetworkForm({ ...networkForm, joiningDate: e.target.value })} />
-            </Field>
-            <Field label="First order date" required>
-              <Input type="date" value={networkForm.firstOrderDate} onChange={(e) => setNetworkForm({ ...networkForm, firstOrderDate: e.target.value })} />
-            </Field>
-            <div className="sm:col-span-2">
-              <Field label="First order reference" required>
-                <Input value={networkForm.firstOrderReference} onChange={(e) => setNetworkForm({ ...networkForm, firstOrderReference: e.target.value })} placeholder="e.g. Invoice #1001 or SO-2026-001" />
-              </Field>
-            </div>
-            <div className="sm:col-span-2">
-              <Field label="Reason (optional)">
-                <Textarea value={networkForm.reason} onChange={(e) => setNetworkForm({ ...networkForm, reason: e.target.value })} placeholder="e.g. Commercial terms agreed, first order placed." />
-              </Field>
-            </div>
-          </div>
-          </div>
-          <SheetFooter className="flex-row items-center justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setNetworkOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void saveNetworkOnboard()} disabled={busy}>
-              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm onboarding
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <FormSheet
+        open={networkOpen}
+        onOpenChange={(open) => !busy && setNetworkOpen(open)}
+        icon={Handshake}
+        title="Network onboarding"
+        description={`Add ${account.accountName} to the German Steels dealer network.`}
+        footerNote="Confirms the commercial agreement is in place."
+        onSubmit={() => void saveNetworkOnboard()}
+        submitLabel="Confirm onboarding"
+        submitting={busy}
+      >
+        <FormGroup title="Dates">
+          <FormField label="Joining date" required><Input type="date" value={networkForm.joiningDate} onChange={(e) => setNetworkForm({ ...networkForm, joiningDate: e.target.value })} /></FormField>
+          <FormField label="First order date" required><Input type="date" value={networkForm.firstOrderDate} onChange={(e) => setNetworkForm({ ...networkForm, firstOrderDate: e.target.value })} /></FormField>
+        </FormGroup>
+        <FormGroup title="First order" columns={1}>
+          <FormField label="First order reference" required><Input value={networkForm.firstOrderReference} onChange={(e) => setNetworkForm({ ...networkForm, firstOrderReference: e.target.value })} placeholder="e.g. Invoice #1001 or SO-2026-001" /></FormField>
+          <FormField label="Reason"><Textarea rows={3} value={networkForm.reason} onChange={(e) => setNetworkForm({ ...networkForm, reason: e.target.value })} placeholder="e.g. Commercial terms agreed, first order placed." /></FormField>
+        </FormGroup>
+      </FormSheet>
     </div>
   );
 }

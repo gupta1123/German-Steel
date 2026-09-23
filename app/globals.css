@@ -194,6 +194,17 @@
   ul {
     @apply my-6 ml-6 list-disc [&>li]:mt-2;
   }
+
+  /* Detail pages and their side panels build lists with utility classes (rows, chips, timelines).
+     Opt them out of the prose list defaults above; :where() keeps specificity low so explicit
+     utilities such as list-disc or mt-2 still win. */
+  .detail-page :where(ul, ol) {
+    margin: 0;
+    list-style: none;
+  }
+  .detail-page :where(ul, ol) > :where(li) {
+    margin-top: 0;
+  }
   
   code {
     @apply relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold;

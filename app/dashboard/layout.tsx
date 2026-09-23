@@ -90,8 +90,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       subheading: "Track real-time employee locations"
     },
     "/dashboard/approvals": {
-      heading: "Approvals",
-      subheading: "Manage leave and approval requests"
+      heading: "Attendance correction",
+      subheading: "Review and manage attendance correction requests"
     },
     "/dashboard/projects": {
       heading: "Projects",

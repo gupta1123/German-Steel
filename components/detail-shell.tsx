@@ -4,6 +4,28 @@ import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
+import {
+  Building2,
+  CalendarCheck,
+  Navigation,
+  Receipt,
+  Target,
+  Wallet,
+  ClipboardList,
+  MessageSquareWarning,
+  Tag,
+  FileText,
+  Handshake,
+  IndianRupee,
+  LayoutDashboard,
+  ListChecks,
+  MapPin,
+  StickyNote,
+  Users,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react';
 
 // Shared detail-page shell foundation for Institution / Project / Retail (Phase 1).
 // - Standardizes visible tab order: Overview, Process or Relationship, Contacts, Visits, Documents, Tasks, Notes
@@ -15,12 +37,21 @@ export type DetailTabValue =
   | 'overview'
   | 'process'
   | 'relationship'
+  | 'parties'
   | 'contacts'
   | 'visits'
+  | 'brands'
+  | 'requirements'
+  | 'complaints'
   | 'documents'
   | 'sales'
   | 'tasks'
-  | 'notes';
+  | 'notes'
+  | 'attendance'
+  | 'expenses'
+  | 'salary'
+  | 'targets'
+  | 'tracking';
 
 export interface DetailTab {
   value: DetailTabValue;
@@ -31,37 +62,109 @@ export interface DetailTab {
 
 const FLAT_TAB_SECTION_CLASS = '[&>[data-slot=card]]:gap-4 [&>[data-slot=card]]:rounded-none [&>[data-slot=card]]:border-0 [&>[data-slot=card]]:bg-transparent [&>[data-slot=card]]:py-0 [&>[data-slot=card]]:shadow-none [&>[data-slot=card]>[data-slot=card-header]]:px-0 [&>[data-slot=card]>[data-slot=card-content]]:px-0';
 
-const TAB_ORDER: DetailTabValue[] = ['overview', 'process', 'relationship', 'contacts', 'visits', 'documents', 'sales', 'tasks', 'notes'];
+const TAB_ORDER: DetailTabValue[] = ['overview', 'process', 'relationship', 'parties', 'contacts', 'visits', 'brands', 'requirements', 'complaints', 'documents', 'sales', 'tasks', 'notes', 'attendance', 'expenses', 'salary', 'targets', 'tracking'];
+
+const TAB_ICONS: Record<DetailTabValue, LucideIcon> = {
+  overview: LayoutDashboard,
+  process: Workflow,
+  relationship: Handshake,
+  parties: Building2,
+  contacts: Users,
+  visits: MapPin,
+  brands: Tag,
+  requirements: ClipboardList,
+  complaints: MessageSquareWarning,
+  documents: FileText,
+  sales: IndianRupee,
+  tasks: ListChecks,
+  notes: StickyNote,
+  attendance: CalendarCheck,
+  expenses: Receipt,
+  salary: Wallet,
+  targets: Target,
+  tracking: Navigation,
+};
 
 export function DetailShell({
   defaultValue = 'overview',
   tabs,
+  value,
+  onValueChange,
 }: {
   defaultValue?: DetailTabValue;
   tabs: DetailTab[];
+  /** Controlled mode: the page owns the active tab (e.g. syncs it to ?tab=); hash syncing is skipped. */
+  value?: DetailTabValue;
+  onValueChange?: (value: DetailTabValue) => void;
 }) {
+  const controlled = value !== undefined;
   const sorted = React.useMemo(() => {
     const map = new Map(tabs.map((t) => [t.value, t]));
     return TAB_ORDER.filter((v) => map.has(v)).map((v) => map.get(v)!) as DetailTab[];
   }, [tabs]);
 
   const resolvedDefault = sorted.find((t) => t.value === defaultValue)?.value ?? sorted[0]?.value ?? 'overview';
+  const [uncontrolledActive, setActive] = React.useState<string>(resolvedDefault);
+  const active = controlled ? value : uncontrolledActive;
+  const listRef = React.useRef<HTMLDivElement>(null);
+
+  // Restore the tab from the URL hash so refresh / back keeps the user's place.
+  React.useEffect(() => {
+    if (controlled) return;
+    const syncFromHash = () => {
+      const fromHash = window.location.hash.replace('#', '');
+      if (sorted.some((t) => t.value === fromHash)) setActive(fromHash);
+    };
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const changeTab = (next: string) => {
+    if (controlled) { onValueChange?.(next as DetailTabValue); return; }
+    setActive(next);
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${next}`);
+  };
+
+  // Keep the active tab visible when the bar scrolls horizontally on small screens.
+  React.useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>('[data-state="active"]');
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [active]);
 
   return (
-    <Tabs defaultValue={resolvedDefault} className="space-y-4">
-      <TabsList className="h-auto flex-wrap justify-start">
-        {sorted.map((tab) => (
-          <TabsTrigger key={tab.value} value={tab.value}>
-            {tab.label}
-            {typeof tab.count === 'number' ? ` (${tab.count})` : ''}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+    <Tabs value={active} onValueChange={changeTab} className="space-y-3">
+      <div className="relative border-b border-border">
+        <TabsList
+          ref={listRef}
+          className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {sorted.map((tab) => {
+            const Icon = TAB_ICONS[tab.value];
+            return (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="group relative -mb-px shrink-0 gap-2 rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2.5 pt-2 text-[13px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:ring-offset-0 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                <Icon className="h-4 w-4 opacity-70 group-data-[state=active]:opacity-100" aria-hidden />
+                <span>{tab.label}</span>
+                {typeof tab.count === 'number' && (
+                  <span className="min-w-[1.25rem] rounded-full bg-muted px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums leading-none text-muted-foreground transition-colors group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
+                    {tab.count}
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </div>
       {sorted.map((tab) => (
         <TabsContent
           key={tab.value}
           value={tab.value}
-          className={tab.value === 'overview' ? undefined : FLAT_TAB_SECTION_CLASS}
+          className={cn('mt-0', tab.value === 'overview' ? undefined : FLAT_TAB_SECTION_CLASS)}
         >
           {tab.content}
         </TabsContent>

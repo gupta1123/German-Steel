@@ -3,12 +3,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,7 +18,6 @@ import {
   MapPin, 
   Calendar, 
   User, 
-  Building, 
   Clock, 
   Plus,
   MoreHorizontal,
@@ -36,25 +31,25 @@ import {
   TrendingUp,
   TrendingDown,
   DollarSign,
-  ArrowLeft,
   Store,
   CheckCircle,
   Loader2,
   ExternalLink,
   ClipboardList,
   ListTodo,
-  MapPin as MapMarker,
   LogIn,
   LogOut,
   Gift,
   ChevronLeft,
   ChevronRight,
-  X
+  X,
+  Hash,
+  Package,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCityLabel } from "@/lib/city-options";
 import { format, parseISO } from "date-fns";
-import { Heading, Text } from "@/components/ui/typography";
 import {
   Table,
   TableBody,
@@ -71,9 +66,6 @@ import {
   DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { CalendarIcon } from "lucide-react";
 import { API, BrandProCon, IntentAuditLog, MonthlySaleChange, Task, Note as ApiNote, VisitAttachmentResponse, VisitDto } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { hasManagerPrivileges } from "@/lib/auth";
@@ -84,6 +76,10 @@ import VisitTasksTab from './visit-tasks-tab';
 import { normalizeVisitTask } from '@/lib/visit-task';
 import { teamsApi } from '@/lib/teams-api';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
+import { DetailShell } from '@/components/detail-shell';
+import { DetailHero, DetailSkeleton, EmptyState, FormField, FormGroup, FormSheet, Info, KpiCell, OptionCards, Pill, Section, WarningBanner, formatDay, type HeroNextStep, type Tone } from '@/components/detail-ui';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Textarea } from '@/components/ui/textarea';
 
 type Priority = 'low' | 'medium' | 'high';
 
@@ -100,6 +96,7 @@ type VisitDetail = {
   employeeName: string;
   visit_date: string;
   purpose: string;
+  description?: string | null;
   priority: string;
   outcome: string | null;
   brandsInUse: string[];
@@ -552,8 +549,6 @@ export default function VisitDetailPage() {
       return '';
     }
   };
-  const [activeTab, setActiveTab] = useState("metrics");
-  const [activeInfoTab, setActiveInfoTab] = useState("visit-info");
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [brandProCons, setBrandProCons] = useState<BrandProCon[]>([]);
   const [intentAuditLogs, setIntentAuditLogs] = useState<IntentAuditLog[]>([]);
@@ -571,9 +566,8 @@ export default function VisitDetailPage() {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(3);
+  const pageSize = 10;
   const [searchQuery, setSearchQuery] = useState('');
-  const [showAll, setShowAll] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [taskLoading, setTaskLoading] = useState({ requirement: true, complaint: true });
   const [taskErrors, setTaskErrors] = useState<{ requirement: string | null; complaint: string | null }>({ requirement: null, complaint: null });
@@ -796,11 +790,6 @@ export default function VisitDetailPage() {
     return { emoji: '📅', status: 'Assigned', color: 'bg-muted text-muted-foreground', isOngoing: false };
   };
 
-  const getInitials = (name: string) => {
-    const nameParts = name.split(' ');
-    const initials = nameParts.map((part) => part[0]).join('');
-    return initials.toUpperCase().slice(0, 2);
-  };
 
   // Determine user role
   useEffect(() => {
@@ -813,20 +802,6 @@ export default function VisitDetailPage() {
     checkUserRole();
   }, [userRole, currentUser]);
 
-  const getStatusIcon = (status: 'Assigned' | 'On Going' | 'Checked Out' | 'Completed') => {
-    switch (status) {
-      case 'Assigned':
-        return <Clock className="w-4 h-4" />;
-      case 'On Going':
-        return <Loader2 className="w-4 h-4" />;
-      case 'Checked Out':
-        return <CheckCircle className="w-4 h-4" />;
-      case 'Completed':
-        return <CheckCircle className="w-4 h-4" />;
-      default:
-        return null;
-    }
-  };
 
   const getPriorityBadge = (priority: Priority) => {
     const priorityColors: { [key in Priority]: string } = {
@@ -935,6 +910,7 @@ export default function VisitDetailPage() {
         employeeName: visitData.assignedEmployeeName || (legacy.employeeName as string) || '',
         visit_date: visitData.scheduledVisitDate || (legacy.visit_date as string) || '',
         purpose: visitData.purpose || '',
+        description: (visitData as Record<string, unknown>).description as string ?? null,
         priority: (legacy.priority as string) || 'low',
         outcome: visitData.outcome ?? null,
         feedback: (legacy.feedback as string) || visitData.discussionSummary || '',
@@ -1412,12 +1388,6 @@ export default function VisitDetailPage() {
     { icon: MapPin, label: "Address", value: storeDetails?.address || "N/A" },
   ];
 
-  const displayMetrics = [
-    { label: "Total Visits", value: storeVisits.length },
-    { label: "Visit Duration", value: metrics.find(m => m.title === 'Visit Duration')?.value || "N/A" },
-    { label: "Intent Level", value: metrics.find(m => m.title === 'Intent Level')?.value || "N/A" },
-    { label: "Monthly Sale", value: metrics.find(m => m.title === 'Monthly Sales')?.value || "N/A" },
-  ];
 
   const handleOpenLocation = () => {
     if (visitDetail?.checkinLatitude && visitDetail?.checkinLongitude) {
@@ -1769,1309 +1739,391 @@ export default function VisitDetailPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background p-4 md:p-8">
-        <div className="mx-auto max-w-[1200px] space-y-6">
-          {/* Header skeleton */}
-          <div className="flex flex-wrap justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded-full" />
-              <div>
-                <Skeleton className="h-4 w-36 mb-2" />
-                <Skeleton className="h-3 w-24" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Skeleton className="h-9 w-24" />
-              <Skeleton className="h-9 w-24" />
-              <Skeleton className="h-9 w-24" />
-            </div>
-          </div>
+  if (isLoading) return <DetailSkeleton />;
 
-          {/* Metrics skeleton */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, idx) => (
-              <div key={idx} className="rounded-xl border p-4 bg-muted/20 space-y-3">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="h-6 w-16" />
-                <Skeleton className="h-2 w-20" />
-              </div>
-            ))}
-          </div>
+  const fmtTime = (time?: string | null) => {
+    if (!time) return '';
+    const parsed = parseISO(`1970-01-01T${time}`);
+    return Number.isNaN(parsed.getTime()) ? time : format(parsed, 'h:mm a');
+  };
+  const employeeLabel = resolveEmployeeName(visitDetail?.employeeName, visitDetail?.employeeId) || 'Unknown employee';
+  const statusTone: Tone = visitStatus.status === 'Completed' ? 'success' : visitStatus.status === 'On Going' ? 'info' : visitStatus.status === 'Checked Out' ? 'warning' : 'neutral';
+  const statusLabel = visitStatus.status === 'On Going' ? 'In progress' : visitStatus.status === 'Assigned' ? 'Scheduled' : visitStatus.status;
+  const clientKindLabel = visitDetail?.clientKind === 'RETAIL' ? 'Retail' : visitDetail?.clientKind === 'INSTITUTION' ? 'Institution' : visitDetail?.clientKind === 'PROJECT' ? 'Project' : null;
+  const durationValue = metrics.find((m) => m.title === 'Visit Duration')?.value;
+  const intentValue = metrics.find((m) => m.title === 'Intent Level')?.value;
+  const monthlySaleValue = metrics.find((m) => m.title === 'Monthly Sales')?.value;
+  const timeWindow = visitDetail?.checkinTime ? `${fmtTime(visitDetail.checkinTime)} → ${visitDetail.checkoutTime ? fmtTime(visitDetail.checkoutTime) : 'now'}` : 'Not checked in';
+  const hasLocation = Boolean(visitDetail?.checkinLatitude && visitDetail?.checkinLongitude);
+  const openTaskPanel = (kind: 'requirement' | 'complaint') => { setTaskCreateError(null); setTaskPanel(kind); };
+  const photos = [
+    ...checkinImages.map((src, index) => ({ src, label: `Check-in ${index + 1}` })),
+    ...(giftImage ? [{ src: giftImage, label: 'Gift' }] : []),
+  ];
+  const nextStep: HeroNextStep | null = visitStatus.status === 'Completed'
+    ? { done: true, text: visitDetail?.outcome || visitDetail?.feedback ? `Visit completed. Outcome: ${formatActivityValue(visitDetail?.outcome || visitDetail?.feedback)}.` : 'Visit completed.' }
+    : visitStatus.status === 'On Going'
+      ? { done: false, text: `In progress since ${fmtTime(visitDetail?.checkinTime)}.${canCheckoutVisit ? ' Check out when the visit ends.' : ' Waiting for check-out.'}`, action: canCheckoutVisit ? <Button size="sm" onClick={openCheckoutModal} disabled={isCheckingOut}><LogOut className="mr-1.5 h-3.5 w-3.5" />Check out</Button> : undefined }
+      : visitStatus.status === 'Assigned'
+        ? { done: false, text: 'Not checked in yet. The field employee checks in from the mobile app.' }
+        : null;
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left column skeleton */}
-            <div className="space-y-4">
-              <div className="rounded-xl border p-5 space-y-4 bg-card">
-                <Skeleton className="h-4 w-32" />
-                {[...Array(4)].map((_, idx) => (
-                  <div key={idx} className="flex items-center gap-3">
-                    <Skeleton className="h-9 w-9 rounded-lg" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-3 w-28" />
-                      <Skeleton className="h-2 w-20" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+  type TimelineItem =
+    | { key: string; at: number; kind: 'scheduled' }
+    | { key: string; at: number; kind: 'checkin' }
+    | { key: string; at: number; kind: 'note'; note: ApiNote }
+    | { key: string; at: number; kind: 'checkout' }
+    | { key: string; at: number; kind: 'inprogress' };
+  // Chronological timeline: scheduled → check-in → notes (by createdAt) → check-out.
+  const timeline: TimelineItem[] = (() => {
+    const timeOf = (date?: string, time?: string): number | null => {
+      if (!date || !time) return null;
+      const ms = new Date(`${date}T${time}`).getTime();
+      return Number.isNaN(ms) ? null : ms;
+    };
+    const dayStartOf = (date?: string): number | null => {
+      if (!date) return null;
+      const ms = new Date(`${date}T00:00:00`).getTime();
+      return Number.isNaN(ms) ? null : ms;
+    };
+    const items: TimelineItem[] = [{ key: 'scheduled', at: Number.MIN_SAFE_INTEGER, kind: 'scheduled' }];
+    const checkinAt = timeOf(visitDetail?.checkinDate, visitDetail?.checkinTime);
+    if (checkinAt != null) items.push({ key: 'checkin', at: checkinAt, kind: 'checkin' });
+    const checkoutAt = timeOf(visitDetail?.checkoutDate, visitDetail?.checkoutTime);
+    const scheduledAt = dayStartOf(visitDetail?.visit_date);
+    for (const note of notes) {
+      const created = typeof note.createdDate === 'string' && note.createdDate.trim() ? new Date(note.createdDate).getTime() : NaN;
+      // Undated notes sort with the scheduled day, never above a completed visit.
+      const at = Number.isNaN(created) ? (checkoutAt ?? scheduledAt ?? Number.MAX_SAFE_INTEGER) : created;
+      items.push({ key: `activity-note-${note.id}`, at, kind: 'note', note });
+    }
+    if (checkoutAt != null) items.push({ key: 'checkout', at: checkoutAt, kind: 'checkout' });
+    else items.push({ key: 'inprogress', at: Number.MAX_SAFE_INTEGER, kind: 'inprogress' });
+    return items.sort((a, b) => a.at - b.at);
+  })();
+  const timelineDot = (tone: 'muted' | 'success' | 'primary', Icon: typeof Calendar) => (
+    <span className={cn('relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-card', tone === 'success' && 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950', tone === 'primary' && 'border-primary/20 bg-primary/5')}>
+      <Icon className={cn('h-3 w-3', tone === 'success' ? 'text-emerald-600 dark:text-emerald-400' : tone === 'primary' ? 'text-primary' : 'text-muted-foreground')} />
+    </span>
+  );
 
-              <div className="rounded-xl border p-5 bg-card space-y-3">
-                <Skeleton className="h-4 w-28" />
-                {[...Array(5)].map((_, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-2 w-20" />
-                  </div>
-                ))}
-              </div>
-            </div>
+  return (
+    <div className="detail-page space-y-4 font-poppins text-xs">
+      <DetailHero
+        name={visitDetail?.storeName || 'Unknown store'}
+        onBack={handleBack}
+        backLabel="Back"
+        badges={<>
+          <Pill tone={statusTone}>{statusLabel}</Pill>
+          {clientKindLabel && <Pill>{clientKindLabel}</Pill>}
+        </>}
+        meta={[
+          { icon: Calendar, label: formatDay(visitDetail?.visit_date), title: 'Visit date' },
+          { icon: Clock, label: timeWindow, title: 'Check-in → check-out' },
+          { icon: User, label: employeeLabel, title: 'Visited by' },
+          ...(storeDetails?.city ? [{ icon: MapPin, label: formatCityLabel(storeDetails.city) }] : []),
+          { icon: Hash, label: visitDetail?.id ?? visitId },
+        ]}
+        description={visitDetail?.purpose ? <><span className="font-medium text-foreground">{visitDetail.purpose}</span>{visitDetail.description ? ` · ${visitDetail.description}` : ''}</> : undefined}
+        actions={<>
+          {canCheckoutVisit && <Button size="sm" className="h-8" onClick={openCheckoutModal} disabled={isCheckingOut}>{isCheckingOut ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <LogOut className="mr-1.5 h-3.5 w-3.5" />}Check out</Button>}
+          <Button variant="outline" size="sm" className="h-8" onClick={addNote}><MessageSquare className="mr-1.5 h-3.5 w-3.5" />Add note</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => openTaskPanel('requirement')}><FileText />Create requirement</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openTaskPanel('complaint')}><AlertCircle />Create complaint</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {visitDetail?.storeId ? <DropdownMenuItem onSelect={handleViewStore}><Store />Open account</DropdownMenuItem> : null}
+              {hasLocation && <DropdownMenuItem onSelect={handleOpenLocation}><MapPin />Check-in location</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>}
+        kpis={<>
+          <KpiCell icon={Clock} label="Duration" value={durationValue || '—'} hint={visitStatus.isOngoing ? 'still in progress' : undefined} />
+          <KpiCell icon={TrendingUp} label="Intent level" value={intentValue || '—'} />
+          <KpiCell icon={Package} label="Monthly sale" value={monthlySaleValue || '—'} />
+          <KpiCell icon={Calendar} label="Store visits" value={storeVisits.length} hint="all visits to this account" />
+        </>}
+        nextStep={nextStep}
+      />
 
-            {/* Main content skeleton */}
-            <div className="lg:col-span-2 space-y-6">
-              {[...Array(3)].map((_, idx) => (
-                <div key={idx} className="rounded-xl border bg-card">
-                  <div className="border-b p-5">
-                    <Skeleton className="h-4 w-32" />
-                  </div>
-                  <div className="p-5 space-y-4">
-                    {[...Array(2)].map((_, rowIdx) => (
-                      <div key={rowIdx} className="flex flex-wrap gap-4">
-                        <Skeleton className="h-3 w-32" />
-                        <Skeleton className="h-3 w-24" />
-                        <Skeleton className="h-3 w-28" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+      {checkoutMessage && <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300"><CheckCircle className="h-4 w-4 shrink-0" />{checkoutMessage}</div>}
+      {(checkoutError || error) && <WarningBanner>{checkoutError || error}</WarningBanner>}
 
-              {/* Tabbed sections */}
-              <div className="rounded-xl border bg-card">
-                <div className="p-5 border-b flex gap-4 overflow-x-auto">
-                  {[...Array(5)].map((_, idx) => (
-                    <Skeleton key={idx} className="h-8 w-24 rounded-full" />
-                  ))}
-                </div>
-                <div className="p-5 space-y-4">
-                  {[...Array(3)].map((_, idx) => (
-                    <div key={idx} className="rounded-lg border p-4 space-y-2">
-                      <Skeleton className="h-4 w-1/3" />
-                      <Skeleton className="h-3 w-1/2" />
-                      <Skeleton className="h-3 w-3/4" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-                  return (
-    <div className="mx-auto w-full max-w-[1600px]">
-      <div className="visit-details grid grid-cols-1 items-start gap-3 lg:grid-cols-[216px_minmax(0,1fr)_216px] xl:grid-cols-[232px_minmax(0,1fr)_232px]">
-        {/* Record context rail */}
-        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3">
-          <div className="back-button-container flex items-start justify-between gap-2">
-            <button className="back-button inline-flex h-9 items-center rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={handleBack}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </button>
-            <div className="flex flex-col items-end gap-1.5">
-              <Badge className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium">
-                {getStatusIcon(visitStatus.status as 'Assigned' | 'On Going' | 'Checked Out' | 'Completed')}
-                <span>{visitStatus.status}</span>
-              </Badge>
-            </div>
-          </div>
-
-          <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-            <CardContent className="flex flex-col gap-3 p-3">
-              <div className="profile flex min-w-0 items-center gap-3">
-                <div className="avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <span className="text-sm font-semibold">
-                    {getInitials(visitDetail?.storeName || '')}
-                  </span>
-                </div>
-                <div className="min-w-0">
-                  {visitDetail?.clientKind === 'RETAIL' ? (
-                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/15">Retail</span>
-                  ) : visitDetail?.clientKind === 'INSTITUTION' ? (
-                    <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-inset ring-violet-600/15">Institution</span>
-                  ) : visitDetail?.clientKind === 'PROJECT' ? (
-                    <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/15">Project</span>
-                  ) : (
-                    <p className="text-[11px] font-medium text-muted-foreground">Visit</p>
-                  )}
-                  <h2 className="mt-1 break-words text-sm font-semibold leading-5 text-foreground">
-                    {visitDetail?.storeName || 'Unknown store'}
-                  </h2>
-                  <p className="mt-0.5 break-words text-xs leading-4 text-muted-foreground">
-                    {resolveEmployeeName(visitDetail?.employeeName, visitDetail?.employeeId) || 'Unknown employee'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-full justify-start px-2.5 text-xs"
-                    onClick={handleViewStore}
-                  >
-                    <Store className="mr-1.5 h-3.5 w-3.5" />
-                    Store
-                  </Button>
-                </div>
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-full justify-start px-2.5 text-xs"
-                    onClick={() => {
-                      setTaskCreateError(null);
-                      setTaskPanel('requirement');
-                    }}
-                  >
-                    <FileText className="mr-1.5 h-3.5 w-3.5" />
-                    Requirement
-                  </Button>
-                </div>
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-full justify-start px-2.5 text-xs"
-                    onClick={() => {
-                      setTaskCreateError(null);
-                      setTaskPanel('complaint');
-                    }}
-                  >
-                    <AlertCircle className="mr-1.5 h-3.5 w-3.5" />
-                    Complaint
-                  </Button>
-                </div>
-                {canCheckoutVisit && (
-                  <div>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 w-full justify-start px-2.5 text-xs"
-                      onClick={openCheckoutModal}
-                      disabled={isCheckingOut}
-                    >
-                      {isCheckingOut ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <LogOut className="mr-1.5 h-3.5 w-3.5" />
-                      )}
-                      Check out
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              {(checkoutMessage || checkoutError || error) && (
-                <div className="space-y-2">
-                  {checkoutMessage && (
-                    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700">
-                      {checkoutMessage}
-                    </div>
-                  )}
-                  {(checkoutError || error) && (
-                    <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-                      {checkoutError || error}
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </CardContent>
-          </Card>
-
-          {/* Visit Information Card */}
-          <Card className="w-full gap-0 overflow-hidden rounded-lg border-border/80 bg-card py-0 shadow-none">
-            <header className="border-b px-3 py-2.5">
-              <CardTitle className="text-sm font-semibold text-foreground">
-                Visit information
-              </CardTitle>
-            </header>
-            <CardContent className="p-0">
-              {/* Tabs Navigation */}
-              <div className="flex border-b border-border bg-muted/20">
-                <button
-                  className={`flex-1 px-2 py-2 text-xs font-medium border-b-2 transition-colors ${
-                    activeInfoTab === 'visit-info' 
-                      ? 'border-primary text-foreground bg-background'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                  onClick={() => setActiveInfoTab('visit-info')}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <ClipboardList className="h-4 w-4" />
-                    <span>Visit</span>
-                  </div>
-                </button>
-                <button
-                  className={`flex-1 px-2 py-2 text-xs font-medium border-b-2 transition-colors ${
-                    activeInfoTab === 'store-info' 
-                      ? 'border-primary text-foreground bg-background'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                  onClick={() => setActiveInfoTab('store-info')}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <Store className="h-4 w-4" />
-                    <span>Store</span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Tab Content */}
-              <div className="p-3">
-                {activeInfoTab === 'visit-info' && (
-                  <dl className="grid grid-cols-2 gap-3 lg:grid-cols-1">
-                    {[
-                      { label: 'Purpose', icon: ListTodo, value: visitDetail?.purpose || 'Not recorded' },
-                      { label: 'Location', icon: MapMarker, value: visitDetail?.checkinLatitude && visitDetail?.checkinLongitude ? (
-                        <button onClick={handleOpenLocation} className="inline-flex items-center gap-1 text-primary hover:underline">
-                          View location <ExternalLink className="h-3 w-3" />
+      <DetailShell
+        defaultValue="overview"
+        tabs={[
+          {
+            value: 'overview',
+            label: 'Overview',
+            content: (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Section icon={ListTodo} title="Activity" className="lg:row-span-2" bodyClassName="px-4 pb-3 pt-1" action={<Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={addNote}><Plus className="mr-1 h-3.5 w-3.5" />Note</Button>}>
+                  <ol className="relative before:absolute before:bottom-3 before:left-[11px] before:top-3 before:w-px before:bg-border">
+                    {timeline.map((item, index) => {
+                      const spacing = index === timeline.length - 1 ? '' : 'pb-3';
+                      if (item.kind === 'scheduled') return (
+                        <li key={item.key} className={cn('relative flex gap-2.5', spacing)}>
+                          {timelineDot('muted', Calendar)}
+                          <div className="min-w-0 pt-0.5"><p className="text-xs font-semibold">Visit scheduled</p><p className="text-[11px] text-muted-foreground">{formatDay(visitDetail?.visit_date)}{visitDetail?.purpose ? ` · ${visitDetail.purpose}` : ''}</p></div>
+                        </li>
+                      );
+                      if (item.kind === 'checkin') return (
+                        <li key={item.key} className={cn('relative flex gap-2.5', spacing)}>
+                          {timelineDot('success', LogIn)}
+                          <div className="min-w-0 pt-0.5"><p className="text-xs font-semibold">Checked in</p><p className="text-[11px] text-muted-foreground">{formatDay(visitDetail?.checkinDate)} at {fmtTime(visitDetail?.checkinTime)}{hasLocation && <> · <button type="button" onClick={handleOpenLocation} className="text-foreground hover:underline">location</button></>}</p></div>
+                        </li>
+                      );
+                      if (item.kind === 'note') {
+                        const note = item.note;
+                        const author = note.employeeName || resolveEmployeeName(null, (note as unknown as Record<string, unknown>).authorEmployeeId as number);
+                        return (
+                          <li key={item.key} className={cn('group relative flex gap-2.5', spacing)}>
+                            {timelineDot('primary', MessageSquare)}
+                            <div className="min-w-0 flex-1 pt-0.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-5">{note.content}</p>
+                                <div className="flex shrink-0 items-center md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                                  <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-6 w-6 text-muted-foreground hover:text-foreground" aria-label="Edit note"><Edit className="h-3 w-3" /></Button>
+                                  <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Delete note"><Trash2 className="h-3 w-3" /></Button>
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">{['Note', formatNoteDate(note.createdDate), author].filter(Boolean).join(' · ')}</p>
+                            </div>
+                          </li>
+                        );
+                      }
+                      if (item.kind === 'checkout') return (
+                        <li key={item.key} className="relative flex gap-2.5">
+                          {timelineDot('success', CheckCircle)}
+                          <div className="min-w-0 pt-0.5">
+                            <p className="text-xs font-semibold">Visit completed</p>
+                            <p className="text-[11px] text-muted-foreground">{formatDay(visitDetail?.checkoutDate)} at {fmtTime(visitDetail?.checkoutTime)}{durationValue ? ` · ${durationValue}` : ''}</p>
+                            {(visitDetail?.outcome || visitDetail?.feedback) && <p className="mt-0.5 text-xs leading-5"><span className="font-medium">Outcome:</span> <span className="text-muted-foreground">{formatActivityValue(visitDetail?.outcome || visitDetail?.feedback)}</span></p>}
+                          </div>
+                        </li>
+                      );
+                      return (
+                        <li key={item.key} className="relative flex gap-2.5">
+                          {timelineDot('muted', Clock)}
+                          <div className="min-w-0 pt-0.5"><p className="text-xs font-semibold">{visitDetail?.checkinTime ? 'Visit in progress' : 'Awaiting check-in'}</p><p className="text-[11px] text-muted-foreground">{visitDetail?.checkinTime ? 'Waiting for check-out' : 'Not started yet'}</p></div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </Section>
+                <Section icon={ClipboardList} title="Visit details">
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Check-in" value={visitDetail?.checkinDate ? `${formatDay(visitDetail.checkinDate)}, ${fmtTime(visitDetail.checkinTime)}` : 'Not checked in'} />
+                    <Info label="Check-out" value={visitDetail?.checkoutDate ? `${formatDay(visitDetail.checkoutDate)}, ${fmtTime(visitDetail.checkoutTime)}` : 'Not checked out'} />
+                    <Info label="Outcome" value={visitDetail?.outcome ? formatActivityValue(visitDetail.outcome) : 'Not recorded'} />
+                    <Info label="Location" value={hasLocation ? <button type="button" onClick={handleOpenLocation} className="inline-flex items-center gap-1 hover:underline">View on map<ExternalLink className="h-3 w-3 text-muted-foreground" /></button> : 'Not recorded'} />
+                    {visitDetail?.feedback && visitDetail.feedback !== visitDetail.outcome && <Info className="sm:col-span-2" label="Feedback" value={formatActivityValue(visitDetail.feedback)} />}
+                    {hasSavedGift && <Info className="sm:col-span-2" label="Gift" value={<span className="inline-flex flex-wrap items-center gap-x-2"><Gift className="h-3.5 w-3.5 text-rose-500" />{visitDetail?.giftName?.trim() || 'Gift'}{visitDetail?.giftQuantity != null ? ` × ${visitDetail.giftQuantity}` : ''}{visitDetail?.giftRemarks?.trim() && <span className="font-normal text-muted-foreground">· {visitDetail.giftRemarks.trim()}</span>}</span>} />}
+                  </dl>
+                </Section>
+                <Section icon={Store} title="Account" action={visitDetail?.storeId ? <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={handleViewStore}>Open<ChevronRight className="ml-0.5 h-3.5 w-3.5" /></Button> : undefined}>
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Contact" value={storeDetails?.contactNumber ? <a href={`tel:${storeDetails.contactNumber}`} className="hover:underline">{storeDetails.contactNumber}</a> : 'Not recorded'} />
+                    <Info label="City" value={storeDetails?.city ? formatCityLabel(storeDetails.city) : 'Not recorded'} />
+                    <Info className="sm:col-span-2" label="Address" value={storeDetails?.address ? <span>{storeDetails.address} <button type="button" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${visitDetail?.storeName} ${storeDetails?.address}`)}`, '_blank')} className="ml-1 inline-flex items-center gap-1 font-normal text-muted-foreground hover:text-foreground hover:underline">Map<ExternalLink className="h-3 w-3" /></button></span> : 'Not recorded'} />
+                  </dl>
+                </Section>
+                <Section icon={ImageIcon} title={`Photos · ${photos.length}`} className="lg:col-span-2" bodyClassName={photos.length ? 'p-3' : 'p-0'}>
+                  {isGiftImageLoading && !photos.length ? <Skeleton className="h-24 w-full rounded-lg" /> : photos.length === 0 ? <EmptyState compact title={giftImageError ? 'Gift image could not be loaded. No check-in photos.' : 'No check-in or gift photos uploaded.'} /> : (
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+                      {photos.map((photo) => (
+                        <button key={photo.src} type="button" onClick={() => handleImageClick(photo.src)} className="group relative aspect-square overflow-hidden rounded-lg bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={`${photo.label} · view full size`}>
+                          <Image src={photo.src} alt={photo.label} width={240} height={240} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                          <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-4 text-left text-[10px] font-medium text-white">{photo.label}</span>
                         </button>
-                      ) : 'Not recorded' },
-                      { label: 'Check-in', icon: LogIn, value: visitDetail?.checkinDate && visitDetail?.checkinTime ? (
-                        <><span className="block">{format(new Date(visitDetail.checkinDate), "MMM dd, yyyy")}</span><span className="text-[11px] text-muted-foreground">{format(parseISO(`1970-01-01T${visitDetail.checkinTime}`), 'h:mm a')}</span></>
-                      ) : 'Not checked in' },
-                      { label: 'Check-out', icon: LogOut, value: visitDetail?.checkoutDate && visitDetail?.checkoutTime ? (
-                        <><span className="block">{format(new Date(visitDetail.checkoutDate), "MMM dd, yyyy")}</span><span className="text-[11px] text-muted-foreground">{format(parseISO(`1970-01-01T${visitDetail.checkoutTime}`), 'h:mm a')}</span></>
-                      ) : 'Not checked out' },
-                    ].map(({ label, icon: Icon, value }) => (
-                      <div key={label} className="flex min-w-0 items-start gap-2">
-                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <dt className="text-[11px] leading-4 text-muted-foreground">{label}</dt>
-                          <dd className="mt-0.5 break-words text-xs leading-4 text-foreground">{value}</dd>
-                        </div>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-
-                {activeInfoTab === 'store-info' && (
-                  <dl className="space-y-3">
-                    <div className="flex items-start gap-2">
-                      <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <dt className="text-[11px] text-muted-foreground">Contact</dt>
-                        <dd className="mt-0.5 break-words text-xs leading-4">
-                          {storeDetails?.contactNumber ? <a href={`tel:${storeDetails.contactNumber}`} className="hover:underline">{storeDetails.contactNumber}</a> : 'Not recorded'}
-                        </dd>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <MapMarker className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <dt className="text-[11px] text-muted-foreground">Address</dt>
-                        <dd className="mt-0.5 break-words text-xs leading-5">
-                          {storeDetails?.address || 'Not recorded'}
-                          {storeDetails?.city && <span className="block text-muted-foreground">{formatCityLabel(storeDetails.city)}</span>}
-                          {storeDetails?.city && (
-                            <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${visitDetail?.storeName} ${storeDetails?.address}`)}`, "_blank")} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
-                              View map <ExternalLink className="h-3 w-3" />
-                            </button>
-                          )}
-                        </dd>
-                      </div>
-                    </div>
-                  </dl>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-
-        {/* Main Content */}
-        <section className="min-w-0">
-          <div className="tabs mb-4 rounded-lg border bg-card p-1 shadow-sm">
-            <div className="md:hidden mb-3">
-              <Select value={activeTab} onValueChange={setActiveTab}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select section" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="metrics">Activity & Overview</SelectItem>
-                  <SelectItem value="visits">Recent Visits</SelectItem>
-                  <SelectItem value="brands">Brands</SelectItem>
-                  <SelectItem value="requirements">Requirements</SelectItem>
-                  <SelectItem value="complaints">Complaints</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="hidden min-w-0 grid-cols-5 gap-1 md:grid">
-              <button
-                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
-                  activeTab === 'metrics' 
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => setActiveTab('metrics')}
-              >
-                <TrendingUp className="hidden h-4 w-4 2xl:inline" />
-                <span>Activity</span>
-              </button>
-              <button
-                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
-                  activeTab === 'visits' 
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => setActiveTab('visits')}
-              >
-                <Calendar className="hidden h-4 w-4 2xl:inline" />
-                <span>Visits</span>
-              </button>
-              <button
-                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
-                  activeTab === 'brands' 
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => setActiveTab('brands')}
-              >
-                <Building className="hidden h-4 w-4 2xl:inline" />
-                <span>Brands</span>
-              </button>
-              <button
-                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
-                  activeTab === 'requirements' 
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => setActiveTab('requirements')}
-              >
-                <FileText className="hidden h-4 w-4 2xl:inline" />
-                <span>Requirements</span>
-              </button>
-              <button
-                className={`tab inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-1 py-2 text-xs font-medium transition-colors xl:px-2 ${
-                  activeTab === 'complaints' 
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => setActiveTab('complaints')}
-              >
-                <AlertCircle className="hidden h-4 w-4 2xl:inline" />
-                <span>Complaints</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Tab Content */}
-          <div className="tab-content">
-            {activeTab === 'metrics' && (
-              <div className="space-y-4">
-                <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-                  <header className="border-b px-4 py-3">
-                    <div>
-                      <CardTitle className="text-sm font-semibold">Visit overview</CardTitle>
-                    </div>
-                  </header>
-                  <CardContent className="p-3">
-                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                      {displayMetrics.map((metric, index) => (
-                        <div key={index} className="rounded-md bg-muted/45 px-3 py-2.5">
-                          <Text size="sm" tone="muted" weight="medium" className="mb-1 text-xs">
-                            {metric.label}
-                          </Text>
-                          <Heading size="lg" weight="semibold" className="break-words text-base text-foreground">
-                            {metric.value}
-                          </Heading>
-                        </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-                  <header className="border-b px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <CardTitle className="text-sm font-semibold">Visit activity</CardTitle>
-                      </div>
-                      <Button onClick={addNote} size="sm" className="h-7 shrink-0 px-2.5 text-xs">
-                        <Plus className="mr-1.5 h-3.5 w-3.5" />
-                        Add note
-                      </Button>
-                    </div>
-                  </header>
-                  <CardContent className="px-4 py-3">
-                    <div className="relative space-y-0 before:absolute before:bottom-3 before:left-[13px] before:top-3 before:w-px before:bg-border">
-                      <div className="relative flex gap-2.5 pb-4">
-                        <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background">
-                          <Calendar className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 pt-0.5">
-                          <p className="text-xs font-semibold text-foreground">Visit scheduled</p>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {visitDetail?.visit_date ? format(new Date(visitDetail.visit_date), "MMM dd, yyyy") : 'Date unavailable'}
-                            {visitDetail?.purpose ? ` · ${visitDetail.purpose}` : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      {(() => {
-                        // Chronological timeline: scheduled → check-in → notes (by createdAt) → check-out.
-                        // Notes were previously pinned above "Visit completed" regardless of time.
-                        const timeOf = (date?: string, time?: string): number | null => {
-                          if (!date || !time) return null;
-                          const parsed = new Date(`${date}T${time}`);
-                          const ms = parsed.getTime();
-                          return Number.isNaN(ms) ? null : ms;
-                        };
-                        const dayStartOf = (date?: string): number | null => {
-                          if (!date) return null;
-                          const parsed = new Date(`${date}T00:00:00`);
-                          const ms = parsed.getTime();
-                          return Number.isNaN(ms) ? null : ms;
-                        };
-                        type TimelineItem =
-                          | { key: string; at: number; kind: 'checkin' }
-                          | { key: string; at: number; kind: 'note'; note: ApiNote }
-                          | { key: string; at: number; kind: 'checkout' }
-                          | { key: string; at: number; kind: 'inprogress' };
-                        const items: TimelineItem[] = [];
-                        const checkinAt = timeOf(visitDetail?.checkinDate, visitDetail?.checkinTime);
-                        if (checkinAt != null) items.push({ key: 'checkin', at: checkinAt, kind: 'checkin' });
-                        const checkoutAt = timeOf(visitDetail?.checkoutDate, visitDetail?.checkoutTime);
-                        const scheduledAt = dayStartOf(visitDetail?.visit_date);
-                        for (const note of notes) {
-                          const created = typeof note.createdDate === 'string' && note.createdDate.trim()
-                            ? new Date(note.createdDate).getTime()
-                            : NaN;
-                          // Undated notes sort with the scheduled day, never above a completed visit.
-                          const at = Number.isNaN(created)
-                            ? (checkoutAt ?? scheduledAt ?? Number.MAX_SAFE_INTEGER)
-                            : created;
-                          items.push({ key: `activity-note-${note.id}`, at, kind: 'note', note });
-                        }
-                        if (checkoutAt != null) items.push({ key: 'checkout', at: checkoutAt, kind: 'checkout' });
-                        else items.push({ key: 'inprogress', at: Number.MAX_SAFE_INTEGER, kind: 'inprogress' });
-                        items.sort((a, b) => a.at - b.at);
-                        return items.map((item, index) => {
-                          const isLast = index === items.length - 1;
-                          if (item.kind === 'checkin') {
-                            return (
-                              <div key={item.key} className={`relative flex gap-2.5 ${isLast ? '' : 'pb-4'}`}>
-                                <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950">
-                                  <LogIn className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                                </div>
-                                <div className="min-w-0 pt-0.5">
-                                  <p className="text-xs font-semibold text-foreground">Checked in</p>
-                                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {format(new Date(visitDetail!.checkinDate!), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail!.checkinTime}`), 'h:mm a')}
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          }
-                          if (item.kind === 'note') {
-                            const note = item.note;
-                            return (
-                              <div key={item.key} className={`group relative flex gap-2.5 ${isLast ? '' : 'pb-4'}`}>
-                                <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
-                                  <MessageSquare className="h-3 w-3 text-primary" />
-                                </div>
-                                <div className="min-w-0 flex-1 pt-0.5">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <p className="whitespace-pre-wrap break-words text-xs font-medium leading-5 text-foreground">{note.content}</p>
-                                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                        {(() => {
-                                          const date = formatNoteDate(note.createdDate);
-                                          const author = note.employeeName || resolveEmployeeName(
-                                            null,
-                                            (note as unknown as Record<string, unknown>).authorEmployeeId as number,
-                                          );
-                                          return ['Note', date, author].filter(Boolean).join(' · ');
-                                        })()}
-                                      </p>
-                                    </div>
-                                    <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                                      <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-7 w-7 text-muted-foreground hover:text-foreground" aria-label="Edit note">
-                                        <Edit className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label="Delete note">
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          }
-                          if (item.kind === 'checkout') {
-                            return (
-                              <div key={item.key} className="relative flex gap-2.5">
-                                <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10">
-                                  <CheckCircle className="h-3 w-3 text-primary" />
-                                </div>
-                                <div className="min-w-0 pt-0.5">
-                                  <p className="text-xs font-semibold text-foreground">Visit completed</p>
-                                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {format(new Date(visitDetail!.checkoutDate!), "MMM dd, yyyy")} at {format(parseISO(`1970-01-01T${visitDetail!.checkoutTime}`), 'h:mm a')}
-                                  </p>
-                                  {(visitDetail!.outcome || visitDetail!.feedback) && (
-                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                      <span className="font-medium text-foreground">Outcome:</span> {formatActivityValue(visitDetail!.outcome || visitDetail!.feedback)}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          }
-                          return (
-                            <div key={item.key} className="relative flex gap-2.5">
-                              <div className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background">
-                                <Clock className="h-3 w-3 text-muted-foreground" />
-                              </div>
-                              <div className="min-w-0 pt-0.5">
-                                <p className="text-xs font-semibold text-foreground">Visit in progress</p>
-                                <p className="mt-0.5 text-[11px] text-muted-foreground">Waiting for check-out</p>
-                              </div>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </CardContent>
-                </Card>
+                  )}
+                </Section>
               </div>
-            )}
-
-            {activeTab === 'visits' && (
-              <section className="space-y-3" aria-labelledby="visit-history-heading">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 id="visit-history-heading" className="text-sm font-semibold text-foreground">Visit history</h2>
-                    <p className="text-xs text-muted-foreground">{filteredVisits.length} visits recorded for this store</p>
+            ),
+          },
+          {
+            value: 'visits',
+            label: 'Store visits',
+            count: storeVisits.length,
+            content: (
+              <Section
+                description={searchQuery ? `${filteredVisits.length} of ${storeVisits.length} visits match` : `${storeVisits.length} visits to this account · newest first`}
+                bodyClassName="p-0"
+                action={storeVisits.length > 3 ? (
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search purpose…" className="h-7 w-44 pl-7 pr-7 text-xs" aria-label="Search visit purpose" />
+                    {searchQuery && <button type="button" aria-label="Clear visit search" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => { setSearchQuery(''); setCurrentPage(1); }}><X className="h-3.5 w-3.5" /></button>}
                   </div>
-                  <div className="relative w-full sm:w-64">
-                    <Input
-                      placeholder="Search visit purpose"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="h-9 pr-9 text-sm shadow-none"
-                    />
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        aria-label="Clear visit search"
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                        onClick={() => {
-                          setSearchQuery('');
-                          setCurrentPage(1);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="overflow-hidden rounded-lg border bg-card">
-                  {currentVisits.map((visit: VisitDto) => {
-                    // Determine visit status
-                    const getVisitStatus = () => {
-                      if (visit.checkinDate && visit.checkinTime && visit.checkoutDate && visit.checkoutTime) {
-                        return { status: 'Completed', color: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300', icon: CheckCircle };
-                      } else if (visit.checkinDate && visit.checkinTime) {
-                        return { status: 'In progress', color: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300', icon: Clock };
-                      } else {
-                        return { status: 'Scheduled', color: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300', icon: Calendar };
-                      }
-                    };
-
-                    const visitStatus = getVisitStatus();
-                    const VisitStatusIcon = visitStatus.icon;
-
-                    return (
-                      <article
-                        key={visit.id}
-                        className="group grid gap-3 border-b px-3 py-3 transition-colors last:border-b-0 hover:bg-muted/25 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-4"
-                      >
-                        <div className="flex min-w-0 items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                            <Calendar className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <h3 className="text-sm font-semibold text-foreground">{visit.purpose || 'Visit'}</h3>
-                              <span className="text-[11px] text-muted-foreground">#{visit.id}</span>
+                ) : undefined}
+              >
+                {currentVisits.length === 0 ? <EmptyState compact title={searchQuery ? 'No visits match this purpose.' : 'No other visits recorded for this account.'} /> : (
+                  <ul className="divide-y">
+                    {currentVisits.map((visit: VisitDto) => {
+                      const done = Boolean(visit.checkinTime && visit.checkoutTime);
+                      const started = Boolean(visit.checkinDate && visit.checkinTime);
+                      const isCurrent = String(visit.id) === String(visitId);
+                      return (
+                        <li key={visit.id}>
+                          <button type="button" disabled={isCurrent} onClick={() => router.push(`/dashboard/visits/${visit.id}`)} className="group grid w-full grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2 text-left transition-colors enabled:hover:bg-muted/40 disabled:cursor-default disabled:bg-primary/[0.03]">
+                            <div className="leading-tight">
+                              <p className="text-sm font-medium tabular-nums">{started ? formatDay(visit.checkinDate) : 'Not started'}</p>
+                              <p className="text-[11px] text-muted-foreground">{started ? fmtTime(visit.checkinTime) : '—'}</p>
                             </div>
-                            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <Store className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">{visit.storeName || 'Store unavailable'}</span>
-                              </span>
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <User className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">{visit.employeeName || 'Employee unavailable'}</span>
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="h-3.5 w-3.5" />
-                                {visit.checkinDate && visit.checkinTime && visit.checkoutDate && visit.checkoutTime
-                                  ? calculateDuration(visit.checkinTime, visit.checkoutTime)
-                                  : 'Duration unavailable'}
-                              </span>
+                            <div className="min-w-0 leading-tight">
+                              <p className="truncate text-sm font-medium">{visit.purpose || 'Visit'}</p>
+                              <p className="truncate text-[11px] text-muted-foreground">{visit.employeeName || 'Employee unavailable'}{done && visit.checkinTime && visit.checkoutTime ? ` · ${calculateDuration(visit.checkinTime, visit.checkoutTime)}` : ''} · #{visit.id}</p>
                             </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-3 pl-11 sm:justify-end sm:pl-0">
-                          <Badge variant="outline" className={`${visitStatus.color} gap-1 px-1.5 py-0.5 text-[11px] font-medium shadow-none`}>
-                            <VisitStatusIcon className="h-3 w-3" />
-                            {visitStatus.status}
-                          </Badge>
-                          <div className="min-w-[78px] text-right">
-                            <p className="text-xs font-medium text-foreground">
-                              {visit.checkinDate && visit.checkinTime
-                                ? format(new Date(visit.checkinDate), "MMM dd, yyyy")
-                                : 'Date pending'}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {visit.checkinDate && visit.checkinTime
-                                ? format(parseISO(`1970-01-01T${visit.checkinTime}`), 'h:mm a')
-                                : 'Time pending'}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push(`/dashboard/visits/${visit.id}`)}
-                            className="h-8 px-2 text-xs font-medium"
-                          >
-                            View
-                            <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                  {currentVisits.length === 0 && (
-                    <div className="flex min-h-28 flex-col items-center justify-center px-4 py-8 text-center">
-                      <Calendar className="mb-2 h-5 w-5 text-muted-foreground" />
-                      <p className="text-sm font-medium text-foreground">No matching visits</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">Try a different visit purpose.</p>
+                            <span className="flex items-center gap-1.5">
+                              {isCurrent && <Pill tone="info">This visit</Pill>}
+                              <Pill tone={done ? 'success' : started ? 'info' : 'warning'}>{done ? 'Completed' : started ? 'In progress' : 'Scheduled'}</Pill>
+                              {!isCurrent && <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
+                    <span>Page {currentPage} of {totalPages}</span>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}><ChevronLeft className="mr-0.5 h-3.5 w-3.5" />Previous</Button>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage >= totalPages}>Next<ChevronRight className="ml-0.5 h-3.5 w-3.5" /></Button>
                     </div>
-                  )}
-                </div>
-                {storeVisits.length > pageSize && (
-                  <div className="mt-4">
-                    <Button onClick={() => setShowAll(!showAll)}>
-                      {showAll ? 'Show Less' : 'Show More'}
-                              </Button>
-                    {showAll && (
-                      <div className="flex items-center justify-between mt-4">
-                        <div className="flex items-center space-x-2">
-                          <Label htmlFor="pageSize">Rows per page:</Label>
-                          <Select value={pageSize.toString()} onValueChange={(value) => setPageSize(parseInt(value))}>
-                            <SelectTrigger className="w-20">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="3">3</SelectItem>
-                              <SelectItem value="5">5</SelectItem>
-                              <SelectItem value="10">10</SelectItem>
-                              <SelectItem value="25">25</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                          size="sm"
-                            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                            disabled={currentPage === 1}
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                            Previous
-                          </Button>
-                          
-                          <span className="text-sm text-muted-foreground">
-                            Page {currentPage} of {totalPages}
-                          </span>
-                          
-                          <Button
-                            variant="outline"
-                          size="sm"
-                            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                            disabled={currentPage >= totalPages}
-                          >
-                            Next
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                        </div>
-                      )}
-              </section>
-                  )}
-
-            {activeTab === 'brands' && (
+                  </div>
+                )}
+              </Section>
+            ),
+          },
+          {
+            value: 'brands',
+            label: 'Brands',
+            count: brandProCons.length,
+            content: (
               <BrandTab
                 brands={brandProCons}
                 setBrands={setBrandProCons}
                 visitId={visitId}
                 token={localStorage.getItem('authToken')}
-                fetchVisitDetail={async () => {
-                  if (visitId) {
-                    await fetchVisitDetail(visitId);
-                  }
-                }}
+                fetchVisitDetail={async () => { if (visitId) await fetchVisitDetail(visitId); }}
               />
-            )}
+            ),
+          },
+          {
+            value: 'requirements',
+            label: 'Requirements',
+            count: requirements.length,
+            content: <VisitTasksTab tasks={requirements} type="requirement" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.requirement} error={taskErrors.requirement} />,
+          },
+          {
+            value: 'complaints',
+            label: 'Complaints',
+            count: complaints.length,
+            content: <VisitTasksTab tasks={complaints} type="complaint" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.complaint} error={taskErrors.complaint} />,
+          },
+        ]}
+      />
 
-            {activeTab === 'requirements' && (
-              <VisitTasksTab tasks={requirements} type="requirement" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.requirement} error={taskErrors.requirement} />
-            )}
+      <FormSheet
+        open={isNoteModalVisible}
+        onOpenChange={(open) => { if (!open) requestCloseNoteModal(); }}
+        icon={MessageSquare}
+        title={isNoteEditMode ? 'Edit note' : 'Add note'}
+        description={`${visitDetail?.storeName || 'Visit'}${visitDetail?.visit_date ? ` · ${formatDay(visitDetail.visit_date)}` : ''}`}
+        footerNote={isNoteEditMode ? 'Keeps the original author; the previous text is saved as a revision.' : 'Saved to this visit under your account.'}
+        onSubmit={() => void saveNote()}
+        submitLabel={isNoteEditMode ? 'Update note' : 'Add note'}
+        submitting={isNoteSaving}
+        submitDisabled={!noteContent.trim()}
+      >
+        <FormField label="Note" required><Textarea id="visitNoteContent" rows={8} autoFocus value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="What happened on this visit…" /></FormField>
+      </FormSheet>
 
-            {activeTab === 'complaints' && (
-              <VisitTasksTab tasks={complaints} type="complaint" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.complaint} error={taskErrors.complaint} />
-            )}
-          </div>
-
-        </section>
-
-        {/* Right Panel */}
-        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3">
-          {hasSavedGift && (
-            <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-              <header className="border-b px-3 py-2.5">
-                <div className="flex items-center justify-between gap-3">
-                  <Heading as="h3" size="sm" weight="semibold" className="text-sm leading-5">
-                    Gift details
-                  </Heading>
-                  <Gift className="h-5 w-5 text-rose-500" aria-hidden="true" />
-                </div>
-              </header>
-              <CardContent className="space-y-2.5 p-3">
-                <dl className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border bg-muted/30 p-3">
-                    <dt className="text-xs font-medium text-muted-foreground">Gift name</dt>
-                    <dd className="mt-1 text-sm font-semibold text-foreground break-words">
-                      {visitDetail?.giftName?.trim() || 'Not recorded'}
-                    </dd>
-                  </div>
-                  <div className="rounded-lg border bg-muted/30 p-3">
-                    <dt className="text-xs font-medium text-muted-foreground">Quantity</dt>
-                    <dd className="mt-1 text-sm font-semibold text-foreground">
-                      {visitDetail?.giftQuantity ?? 'Not recorded'}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Remarks</p>
-                  <p className="mt-1 text-sm text-foreground whitespace-pre-wrap break-words">
-                    {visitDetail?.giftRemarks?.trim() || 'No remarks added'}
-                  </p>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">Gift image</p>
-                  {isGiftImageLoading ? (
-                    <Skeleton className="h-32 w-full rounded-lg" />
-                  ) : giftImage ? (
-                    <div className="overflow-hidden rounded-lg border">
-                      <div className="relative h-32 w-full bg-muted">
-                        <Image
-                          src={giftImage}
-                          alt={`${visitDetail?.giftName?.trim() || 'Gift'} image`}
-                          width={300}
-                          height={200}
-                          className="h-full w-full cursor-pointer object-cover transition-opacity hover:opacity-90"
-                          onClick={() => handleImageClick(giftImage)}
-                        />
-                      </div>
-                      <div className="p-2 md:p-3">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs md:text-sm"
-                          onClick={() => handleImageClick(giftImage)}
-                        >
-                          View Full Size
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed p-5 text-center">
-                      <ImageIcon className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground/60" />
-                      <Text tone="muted" className="text-sm">
-                        {giftImageError ? 'Gift image could not be loaded' : 'No gift image uploaded'}
-                      </Text>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-            <header className="border-b px-3 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold leading-5">Check-in images</h3>
-                {visitDetail?.checkinLatitude && visitDetail?.checkinLongitude && (
-                  <button type="button" onClick={handleOpenLocation} aria-label="View check-in location" title="View check-in location" className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                    <MapPin className="h-3.5 w-3.5" /> Map
-                  </button>
-                )}
-              </div>
-            </header>
-            <CardContent className="space-y-2.5 p-3">
-              {/* Check-in Images */}
-              {checkinImages.length > 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                  {checkinImages.map((image, index) => (
-                    <div key={index} className="min-w-0">
-                      <div className="relative aspect-video w-full overflow-hidden rounded-md bg-muted">
-                        <Image
-                          src={image}
-                          alt={`Check-in image ${index + 1}`}
-                          width={300}
-                          height={200}
-                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => handleImageClick(image)}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between gap-2 pt-1">
-                        <Heading as="h4" size="sm" weight="medium" className="text-xs">
-                          Image {index + 1}
-                        </Heading>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-1 text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() => handleImageClick(image)}
-                        >
-                          View full size
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md bg-muted/25 px-2 py-4 text-center">
-                  <ImageIcon className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground/60" />
-                  <Text tone="muted" className="text-xs">No check-in images</Text>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="gap-0 overflow-hidden rounded-lg border-border/80 py-0 shadow-none">
-            <header className="border-b px-3 py-2.5">
-              <Heading as="h3" size="sm" weight="semibold" className="text-sm leading-5">
-                Related records
-              </Heading>
-            </header>
-            <CardContent className="p-0">
-              <div className="divide-y">
-                <button type="button" onClick={() => setActiveTab('requirements')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Requirements</span>
-                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{requirements.length}</Badge>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
-                <button type="button" onClick={() => setActiveTab('complaints')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Complaints</span>
-                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{complaints.length}</Badge>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
-                <button type="button" onClick={() => setActiveTab('brands')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
-                  <Building className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Brands</span>
-                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{brandProCons.length}</Badge>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
-                <button type="button" onClick={() => setActiveTab('visits')} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40">
-                  <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 text-xs font-medium text-foreground">Previous visits</span>
-                  <Badge variant="secondary" className="min-w-6 justify-center px-1.5 text-[11px]">{storeVisits.length}</Badge>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-      </div>
-
-      {/* Modals */}
-      {/* Notes panel — right slide-over, same pattern as the task panel */}
-      {isNoteModalVisible && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/50" onClick={requestCloseNoteModal} />
-          <aside
-            className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-background shadow-xl"
-            aria-label={isNoteEditMode ? 'Edit note' : 'Add note'}
-          >
-            <div className="flex items-start justify-between gap-3 border-b px-4 py-3.5">
-              <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold">
-                  {isNoteEditMode ? 'Edit Note' : 'Add Note'}
-                </h2>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {visitDetail?.storeName || 'Visit'}
-                  {visitDetail?.visit_date ? ` · ${visitDetail.visit_date}` : ''}
-                </p>
-              </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Close panel" onClick={requestCloseNoteModal}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-4 py-4">
-              <Label htmlFor="visitNoteContent">Note</Label>
-              <textarea
-                id="visitNoteContent"
-                placeholder="Enter note content"
-                value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
-                rows={8}
-                autoFocus
-                className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {isNoteEditMode
-                  ? 'Updating keeps the original author and saves the previous text as a revision.'
-                  : 'Saved to this visit (VISIT_ACTIVITY) under your account.'}
-              </p>
-            </div>
-
-            <div className="flex gap-2 border-t px-4 py-3">
-              <Button variant="outline" onClick={requestCloseNoteModal} className="flex-1">
-                Cancel
-              </Button>
-              <Button onClick={saveNote} className="flex-1" disabled={isNoteSaving || !noteContent.trim()}>
-                {isNoteSaving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isNoteEditMode ? 'Updating…' : 'Adding…'}
-                  </>
-                ) : (
-                  isNoteEditMode ? 'Update' : 'Add'
-                )}
-              </Button>
-            </div>
-          </aside>
-        </div>
-      )}
-
-      <Dialog open={notePendingDelete != null} onOpenChange={(open) => {
-        if (!open) {
-          setNotePendingDelete(null);
-        }
-      }}>
+      <Dialog open={notePendingDelete != null} onOpenChange={(open) => { if (!open) setNotePendingDelete(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Note?</DialogTitle>
-            <DialogDescription>
-              This note will be removed permanently for this visit.
-            </DialogDescription>
+            <DialogTitle>Delete note?</DialogTitle>
+            <DialogDescription>This note will be removed permanently from this visit.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
-              {notePendingDelete?.content || 'Note content unavailable'}
-            </div>
-            <div className="flex flex-col sm:flex-row justify-end gap-2">
-              <Button variant="outline" onClick={() => setNotePendingDelete(null)} className="w-full sm:w-auto">
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={() => notePendingDelete && deleteNote(notePendingDelete.id)} className="w-full sm:w-auto">
-                Delete
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isCheckoutModalOpen} onOpenChange={(open) => {
-        if (isCheckingOut) return;
-        if (open) setIsCheckoutModalOpen(true);
-        else requestCloseCheckoutModal();
-      }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Check Out Visit</DialogTitle>
-            <DialogDescription>
-              Checkout will use your current location and the backend will set the checkout date and time.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="checkoutOutcome">Outcome — independent, does not mutate business status</Label>
-              <Select value={checkoutOutcome} onValueChange={setCheckoutOutcome} disabled={isCheckingOut}>
-                <SelectTrigger id="checkoutOutcome"><SelectValue placeholder="Select outcome" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SUCCESS">Success</SelectItem>
-                  <SelectItem value="INTERESTED">Interested</SelectItem>
-                  <SelectItem value="NO_PROGRESS">No Progress</SelectItem>
-                  <SelectItem value="FOLLOW_UP_REQUIRED">Follow Up Required</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Visit outcome is parallel activity; selecting it does not advance institution/project/retail status or pipeline.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="checkoutNextAction">Next action (independent)</Label>
-                <Input
-                  id="checkoutNextAction"
-                  placeholder="e.g. Schedule follow-up"
-                  value={checkoutNextAction}
-                  onChange={(event) => setCheckoutNextAction(event.target.value)}
-                  disabled={isCheckingOut}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="checkoutNextActionDate">Next action date</Label>
-                <Input
-                  id="checkoutNextActionDate"
-                  type="date"
-                  value={checkoutNextActionDate}
-                  onChange={(event) => setCheckoutNextActionDate(event.target.value)}
-                  disabled={isCheckingOut}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="checkoutFeedback">Feedback</Label>
-              <textarea
-                id="checkoutFeedback"
-                placeholder="Customer discussed new requirement"
-                value={checkoutFeedback}
-                onChange={(event) => setCheckoutFeedback(event.target.value)}
-                rows={4}
-                disabled={isCheckingOut}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              />
-            </div>
-            <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-              Allow browser location access when prompted. Checkout latitude and longitude will be sent with this request.
-            </div>
-            {checkoutError && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {checkoutError}
-              </div>
-            )}
+            <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">{notePendingDelete?.content || 'Note content unavailable'}</div>
             <div className="flex flex-col justify-end gap-2 sm:flex-row">
-              <Button
-                variant="outline"
-                onClick={requestCloseCheckoutModal}
-                disabled={isCheckingOut}
-                className="w-full sm:w-auto"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCheckoutVisit}
-                disabled={isCheckingOut || !checkoutOutcome.trim()}
-                className="w-full sm:w-auto"
-              >
-                {isCheckingOut ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Checking out…
-                  </>
-                ) : (
-                  <>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Check Out
-                  </>
-                )}
-              </Button>
+              <Button variant="outline" onClick={() => setNotePendingDelete(null)} className="w-full sm:w-auto">Cancel</Button>
+              <Button variant="destructive" onClick={() => notePendingDelete && deleteNote(notePendingDelete.id)} className="w-full sm:w-auto">Delete</Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Create task panel — one-page right slide-over for requirements & complaints */}
-      {taskPanel && (
-        <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => (taskPanel === 'requirement' ? requestCloseRequirementModal() : requestCloseComplaintModal())}
+      <FormSheet
+        open={isCheckoutModalOpen}
+        onOpenChange={(open) => { if (isCheckingOut) return; if (open) setIsCheckoutModalOpen(true); else requestCloseCheckoutModal(); }}
+        icon={LogOut}
+        title="Check out visit"
+        description={`${visitDetail?.storeName || 'Visit'} · checked in at ${fmtTime(visitDetail?.checkinTime) || '—'}`}
+        errors={checkoutError ? [checkoutError] : undefined}
+        footerNote="Uses your current location; allow location access when prompted."
+        onSubmit={() => void handleCheckoutVisit()}
+        submitLabel="Check out"
+        submitting={isCheckingOut}
+        submitDisabled={!checkoutOutcome.trim()}
+      >
+        <FormGroup title="Outcome" description="Recorded on the visit only; it doesn't change the account's status or pipeline." columns={1}>
+          <OptionCards
+            value={checkoutOutcome as 'SUCCESS' | 'INTERESTED' | 'NO_PROGRESS' | 'FOLLOW_UP_REQUIRED'}
+            onChange={setCheckoutOutcome}
+            options={[
+              { value: 'SUCCESS', label: 'Success', description: 'Order placed or objective achieved.' },
+              { value: 'INTERESTED', label: 'Interested', description: 'Positive response, no commitment yet.' },
+              { value: 'FOLLOW_UP_REQUIRED', label: 'Follow-up required', description: 'Needs another call or visit.' },
+              { value: 'NO_PROGRESS', label: 'No progress', description: 'Nothing moved forward this time.' },
+            ]}
           />
-          <aside className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-background shadow-xl" aria-label={taskPanel === 'requirement' ? 'Create requirement' : 'Create complaint'}>
-            <div className="flex items-start justify-between gap-3 border-b px-4 py-3.5">
-              <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold">
-                  {taskPanel === 'requirement' ? 'Create Requirement' : 'Create Complaint'}
-                </h2>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {visitDetail?.storeName || 'Visit'}
-                  {visitDetail ? ` · ${resolveEmployeeName(visitDetail.employeeName, visitDetail.employeeId)}` : ''}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                aria-label="Close panel"
-                onClick={() => (taskPanel === 'requirement' ? requestCloseRequirementModal() : requestCloseComplaintModal())}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+        </FormGroup>
+        <FormGroup title="Next action">
+          <FormField label="Next action"><Input id="checkoutNextAction" placeholder="e.g. Schedule follow-up" value={checkoutNextAction} onChange={(event) => setCheckoutNextAction(event.target.value)} disabled={isCheckingOut} /></FormField>
+          <FormField label="Date"><Input id="checkoutNextActionDate" type="date" value={checkoutNextActionDate} onChange={(event) => setCheckoutNextActionDate(event.target.value)} disabled={isCheckingOut} /></FormField>
+          <FormField label="Feedback" className="sm:col-span-2"><Textarea id="checkoutFeedback" rows={4} placeholder="e.g. Customer discussed a new requirement" value={checkoutFeedback} onChange={(event) => setCheckoutFeedback(event.target.value)} disabled={isCheckingOut} /></FormField>
+        </FormGroup>
+      </FormSheet>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-              <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Store</span>
-                  <span className="min-w-0 truncate font-medium">{visitDetail?.storeName || '—'}</span>
-                </div>
-                <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Assigned to</span>
-                  <span className="min-w-0 truncate font-medium">
-                    {visitDetail ? resolveEmployeeName(visitDetail.employeeName, visitDetail.employeeId) : '—'}
-                  </span>
-                </div>
-              </div>
+      <FormSheet
+        open={taskPanel != null}
+        onOpenChange={(open) => { if (!open) { if (taskPanel === 'requirement') requestCloseRequirementModal(); else requestCloseComplaintModal(); } }}
+        icon={taskPanel === 'complaint' ? AlertCircle : FileText}
+        title={taskPanel === 'complaint' ? 'Create complaint' : 'Create requirement'}
+        description={`${visitDetail?.storeName || 'Visit'} · assigned to ${employeeLabel}`}
+        errors={taskCreateError ? [taskCreateError] : undefined}
+        onSubmit={() => { if (taskPanel) void createTask(taskPanel); }}
+        submitLabel={taskPanel === 'complaint' ? 'Create complaint' : 'Create requirement'}
+        submitting={isCreatingTask}
+      >
+        {taskPanel && (() => {
+          const draft = taskPanel === 'requirement' ? newTask : complaintTask;
+          const update = (patch: Partial<NewTask>) => (taskPanel === 'requirement' ? setNewTask({ ...newTask, ...patch }) : setComplaintTask({ ...complaintTask, ...patch }));
+          return (
+            <FormGroup>
+              <FormField label="Title" required className="sm:col-span-2"><Input id="taskPanelTitle" placeholder={taskPanel === 'requirement' ? 'e.g. Needs 12mm TMT quote' : 'e.g. Delayed delivery'} value={draft.taskTitle} onChange={(e) => update({ taskTitle: e.target.value })} /></FormField>
+              <FormField label="Description" className="sm:col-span-2"><Textarea id="taskPanelDescription" rows={4} placeholder="Details the team needs to act on" value={draft.taskDesciption} onChange={(e) => update({ taskDesciption: e.target.value })} /></FormField>
+              <FormField label="Due date"><Input id="taskPanelDueDate" type="date" value={draft.dueDate} onChange={(e) => update({ dueDate: e.target.value })} /></FormField>
+              <FormField label="Priority"><Select value={draft.priority} onValueChange={(value) => update({ priority: value as Priority })}><SelectTrigger id="taskPanelPriority"><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></FormField>
+            </FormGroup>
+          );
+        })()}
+      </FormSheet>
 
-              <div className="space-y-2">
-                <Label htmlFor="taskPanelTitle">
-                  {taskPanel === 'requirement' ? 'Requirement Title' : 'Complaint Title'}
-                </Label>
-                <Input
-                  id="taskPanelTitle"
-                  placeholder={taskPanel === 'requirement' ? 'Enter requirement title' : 'Enter complaint title'}
-                  value={taskPanel === 'requirement' ? newTask.taskTitle : complaintTask.taskTitle}
-                  onChange={(e) => (taskPanel === 'requirement'
-                    ? setNewTask({ ...newTask, taskTitle: e.target.value })
-                    : setComplaintTask({ ...complaintTask, taskTitle: e.target.value }))}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="taskPanelDescription">Description</Label>
-                <Input
-                  id="taskPanelDescription"
-                  placeholder="Enter description"
-                  value={taskPanel === 'requirement' ? newTask.taskDesciption : complaintTask.taskDesciption}
-                  onChange={(e) => (taskPanel === 'requirement'
-                    ? setNewTask({ ...newTask, taskDesciption: e.target.value })
-                    : setComplaintTask({ ...complaintTask, taskDesciption: e.target.value }))}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="taskPanelDueDate">Due Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={`w-full justify-start px-2.5 text-left text-xs font-normal ${(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate) ? '' : 'text-muted-foreground'}`}
-                      >
-                        <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">
-                          {(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate)
-                            ? format(new Date(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate), 'MMM dd, yyyy')
-                            : 'Pick a date'}
-                        </span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarComponent
-                        mode="single"
-                        selected={(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate)
-                          ? new Date(taskPanel === 'requirement' ? newTask.dueDate : complaintTask.dueDate)
-                          : undefined}
-                        onSelect={(date) => {
-                          const value = date ? date.toISOString().split('T')[0] : '';
-                          if (taskPanel === 'requirement') setNewTask({ ...newTask, dueDate: value });
-                          else setComplaintTask({ ...complaintTask, dueDate: value });
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="taskPanelPriority">Priority</Label>
-                  <Select
-                    value={taskPanel === 'requirement' ? newTask.priority : complaintTask.priority}
-                    onValueChange={(value) => (taskPanel === 'requirement'
-                      ? setNewTask({ ...newTask, priority: value as Priority })
-                      : setComplaintTask({ ...complaintTask, priority: value as Priority }))}
-                  >
-                    <SelectTrigger id="taskPanelPriority" className="w-full text-xs">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {taskCreateError && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                  {taskCreateError}
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 border-t px-4 py-3">
-              <Button
-                variant="outline"
-                onClick={() => (taskPanel === 'requirement' ? requestCloseRequirementModal() : requestCloseComplaintModal())}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button onClick={() => taskPanel && createTask(taskPanel)} disabled={isCreatingTask} className="flex-1">
-                {isCreatingTask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create {taskPanel === 'requirement' ? 'Requirement' : 'Complaint'}
-              </Button>
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {/* Image Preview Modal */}
-      {previewVisible && previewImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" onClick={() => setPreviewVisible(false)}>
-          <div className="relative max-w-4xl max-h-4xl p-4">
-            <Image 
-              src={previewImage} 
-              alt="Preview Image" 
-              width={800}
-              height={600}
-              className="max-w-full max-h-full object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <button
-              className="absolute top-2 right-2 bg-white rounded-full p-2 hover:bg-gray-100"
-              onClick={() => setPreviewVisible(false)}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+      <Dialog open={previewVisible && Boolean(previewImage)} onOpenChange={setPreviewVisible}>
+        <DialogContent className="max-w-4xl border-0 bg-transparent p-0 shadow-none">
+          <DialogTitle className="sr-only">Image preview</DialogTitle>
+          {previewImage && <Image src={previewImage} alt="Preview" width={1200} height={900} className="max-h-[85vh] w-full rounded-lg object-contain" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
