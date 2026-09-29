@@ -281,14 +281,16 @@ export interface HeroMeta { icon: LucideIcon; label: React.ReactNode; title?: st
 export interface HeroNextStep { text: React.ReactNode; done: boolean; tone?: 'warning' | 'danger'; action?: React.ReactNode }
 
 /** Detail-page header card: identity, meta line, actions, KPI strip and a next-step bar. */
-export function DetailHero({ name, onBack, backLabel, badges, meta, description, actions, kpis, nextStep }: { name: string; onBack: () => void; backLabel: string; badges?: React.ReactNode; meta?: HeroMeta[]; description?: React.ReactNode; actions?: React.ReactNode; kpis?: React.ReactNode; nextStep?: HeroNextStep | null }) {
+export function DetailHero({ name, onBack, backLabel, badges, meta, description, actions, kpis, nextStep, imageUrl }: { name: string; onBack: () => void; backLabel: string; badges?: React.ReactNode; meta?: HeroMeta[]; description?: React.ReactNode; actions?: React.ReactNode; kpis?: React.ReactNode; nextStep?: HeroNextStep | null; imageUrl?: string | null }) {
   const stepTone = nextStep?.done ? 'success' : nextStep?.tone ?? 'warning';
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
       <div className="flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-3 sm:gap-4">
           <Button size="icon" variant="ghost" className="-ml-2 h-8 w-8 shrink-0 text-muted-foreground" onClick={onBack} aria-label={backLabel}><ArrowLeft className="h-4 w-4" /></Button>
-          <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground sm:flex" aria-hidden>{initials(name)}</span>
+          {imageUrl
+            ? <img src={imageUrl} alt={`${name} storefront`} className="hidden h-11 w-11 shrink-0 rounded-xl border object-cover sm:block" />
+            : <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground sm:flex" aria-hidden>{initials(name)}</span>}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="min-w-0 break-words text-xl font-semibold leading-tight tracking-tight">{name}</h1>

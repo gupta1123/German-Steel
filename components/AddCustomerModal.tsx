@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Crosshair,
+  ImagePlus,
   Loader2,
   Plus,
   Trash2,
@@ -26,6 +27,7 @@ import {
   RetailAPI,
   type CompetitorBrand,
   type RetailClientGroup,
+  type RetailDistrict,
   type RetailEmployee,
   type RetailPinCode,
   type RetailSalesRegion,
@@ -86,7 +88,12 @@ const INDIAN_STATES = [
   'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
 ] as const;
 
-const stateOptions: SearchableOption[] = INDIAN_STATES.map((s) => ({ value: s, label: s }));
+const fallbackStateOptions: SearchableOption[] = INDIAN_STATES.map((s) => ({ value: s, label: s }));
+
+// Restricted users only see their permitted regions (null permitted = unrestricted;
+// entries with unknown region are always kept since they cannot be excluded).
+const inPermittedRegion = (regionId: number | null | undefined, permitted: number[] | null): boolean =>
+  regionId == null || permitted == null || permitted.includes(regionId);
 
 const createContactDraft = (primaryContact = false): ContactDraft => ({
   key: typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -180,6 +187,9 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [groups, setGroups] = useState<RetailClientGroup[]>([]);
   const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const [pinCodes, setPinCodes] = useState<RetailPinCode[]>([]);
+  const [districts, setDistricts] = useState<RetailDistrict[]>([]);
+  // null = unrestricted (admins, or no regional assignment found — fails open).
+  const [permittedRegionIds, setPermittedRegionIds] = useState<number[] | null>(null);
   const [brands, setBrands] = useState<CompetitorBrand[]>([]);
   const [masterWarnings, setMasterWarnings] = useState<string[]>([]);
   const [isLoadingMasters, setIsLoadingMasters] = useState(false);
@@ -190,6 +200,11 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [hasUserChanges, setHasUserChanges] = useState(false);
   const [createdAccountId, setCreatedAccountId] = useState<number | null>(null);
   const [postCreateFailures, setPostCreateFailures] = useState<string[]>([]);
+  const [storeImageFile, setStoreImageFile] = useState<File | null>(null);
+  const storeImageInputRef = useRef<HTMLInputElement>(null);
+  const storeImagePreview = useMemo(() => (storeImageFile ? URL.createObjectURL(storeImageFile) : null), [storeImageFile]);
+
+  useEffect(() => () => { if (storeImagePreview) URL.revokeObjectURL(storeImagePreview); }, [storeImagePreview]);
   const wasOpenRef = useRef(false);
   const formSessionIdRef = useRef<string>('');
   const router = useRouter();
@@ -215,6 +230,8 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     setHasUserChanges(false);
     setCreatedAccountId(null);
     setPostCreateFailures([]);
+    setStoreImageFile(null);
+    if (storeImageInputRef.current) storeImageInputRef.current.value = '';
   };
 
   useEffect(() => {
@@ -239,11 +256,16 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
         return RetailAPI.getEmployees(token);
       };
 
-      const [employeeResult, groupResult, regionResult, pinResult] = await Promise.allSettled([
+      const [employeeResult, groupResult, regionResult, pinResult, districtResult, permittedResult] = await Promise.allSettled([
         employeeRequest(),
         RetailAPI.getClientGroups(token),
         RetailAPI.getSalesRegions(token),
         RetailAPI.getPinCodes(token),
+        RetailAPI.getDistricts(token, { active: true }),
+        RetailAPI.getPermittedRegionIds(token, {
+          employeeId: Number.isFinite(Number(userData?.employeeId ?? employeeId)) ? Number(userData?.employeeId ?? employeeId) : null,
+          isManager: isManagerRoleValue(userRole),
+        }),
       ]);
 
       if (cancelled) return;
@@ -260,6 +282,12 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
 
       if (pinResult.status === 'fulfilled') setPinCodes(pinResult.value.filter((pinCode) => pinCode.active !== false));
       else warnings.push('PIN master could not be loaded; the server will validate the PIN code when saved.');
+
+      if (districtResult.status === 'fulfilled') setDistricts(districtResult.value.filter((district) => district.active !== false));
+      else warnings.push('District master could not be loaded; type the district manually.');
+
+      if (permittedResult.status === 'fulfilled') setPermittedRegionIds(permittedResult.value);
+      else setPermittedRegionIds(null);
 
       try {
         const brandResult = await RetailAPI.getCompetitorBrands(token);
@@ -287,24 +315,83 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     setDraft((previous) => ({ ...previous, [field]: value }));
   };
 
+  const MAX_STORE_IMAGE_BYTES = 5 * 1024 * 1024;
+
+  const handleStoreImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file for the store photo.');
+      return;
+    }
+    if (file.size > MAX_STORE_IMAGE_BYTES) {
+      toast.error('Store photo must be 5 MB or smaller.');
+      return;
+    }
+    touch();
+    setStoreImageFile(file);
+  };
+
+  const clearStoreImage = () => {
+    touch();
+    setStoreImageFile(null);
+    if (storeImageInputRef.current) storeImageInputRef.current.value = '';
+  };
+
   const matchedPinCode = useMemo(() => {
     const pin = draft.pinCode.trim();
     return pin ? pinCodes.find((item) => item.pinCode === pin) ?? null : null;
   }, [draft.pinCode, pinCodes]);
 
+  const selectedDistrictRecord = useMemo(
+    () => districts.find((district) => district.name === draft.addressDistrict.trim()) ?? null,
+    [districts, draft.addressDistrict],
+  );
+
   useEffect(() => {
-    const derivedRegionId = matchedPinCode?.regionId == null ? '' : String(matchedPinCode.regionId);
+    // PIN match wins; otherwise fall back to the selected district's region.
+    const resolvedRegionId = matchedPinCode?.regionId ?? selectedDistrictRecord?.regionId ?? null;
+    const derivedRegionId = resolvedRegionId == null ? '' : String(resolvedRegionId);
     setDraft((previous) => previous.regionId === derivedRegionId
       ? previous
       : { ...previous, regionId: derivedRegionId });
-  }, [matchedPinCode]);
+  }, [matchedPinCode, selectedDistrictRecord]);
 
   const derivedRegionName = useMemo(() => {
-    if (!matchedPinCode) return '';
-    return matchedPinCode.regionName
-      || regions.find((region) => region.id === matchedPinCode.regionId)?.name
-      || (matchedPinCode.regionId == null ? '' : `Region #${matchedPinCode.regionId}`);
-  }, [matchedPinCode, regions]);
+    if (matchedPinCode) {
+      return matchedPinCode.regionName
+        || regions.find((region) => region.id === matchedPinCode.regionId)?.name
+        || (matchedPinCode.regionId == null ? '' : `Region #${matchedPinCode.regionId}`);
+    }
+    if (selectedDistrictRecord?.regionId != null) {
+      return selectedDistrictRecord.regionName
+        || regions.find((region) => region.id === selectedDistrictRecord.regionId)?.name
+        || `Region #${selectedDistrictRecord.regionId}`;
+    }
+    return '';
+  }, [matchedPinCode, regions, selectedDistrictRecord]);
+
+  const districtOptions: SearchableOption[] = useMemo(() => {
+    const pool = permittedRegionIds == null
+      ? districts
+      : districts.filter((district) => inPermittedRegion(district.regionId, permittedRegionIds));
+    const seen = new Set<string>();
+    return pool.flatMap((district) => {
+      if (seen.has(district.name)) return [];
+      seen.add(district.name);
+      return [{ value: district.name, label: district.regionName ? `${district.name} · ${district.regionName}` : district.name }];
+    }).sort((a, b) => a.label.localeCompare(b.label));
+  }, [districts, permittedRegionIds]);
+
+  const pinCodeOptions: SearchableOption[] = useMemo(() => {
+    const pool = permittedRegionIds == null
+      ? pinCodes
+      : pinCodes.filter((pinCode) => inPermittedRegion(pinCode.regionId, permittedRegionIds));
+    return pool.map((pinCode) => ({ value: pinCode.pinCode, label: pinCode.regionName ? `${pinCode.pinCode} · ${pinCode.regionName}` : pinCode.pinCode }));
+  }, [pinCodes, permittedRegionIds]);
+
+  const isDerivedRegionPermitted = draft.regionId === '' || permittedRegionIds == null || permittedRegionIds.includes(Number(draft.regionId));
 
   const employeeOptions = useMemo<SearchableOption[]>(() => employees
     .map((employee) => {
@@ -316,12 +403,28 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     })
     .sort((left, right) => left.label.localeCompare(right.label)), [employees]);
 
+  // The primary salesperson cannot also be picked as the secondary.
+  const secondaryEmployeeOptions = useMemo(
+    () => employeeOptions.filter((option) => option.value !== draft.ownerEmployeeId),
+    [employeeOptions, draft.ownerEmployeeId],
+  );
+
   const groupOptions = useMemo<SearchableOption[]>(() => groups
     .map((group) => ({
       value: String(group.id),
       label: `${group.groupName}${group.groupType ? ` - ${group.groupType.replaceAll('_', ' ')}` : ''}`,
     }))
     .sort((left, right) => left.label.localeCompare(right.label)), [groups]);
+
+  // State dropdown is sourced from backend sales regions (GET /api/common/regions),
+  // falling back to the built-in catalogue when regions fail to load.
+  const stateOptions: SearchableOption[] = useMemo(() => {
+    if (regions.length > 0) {
+      return regions.map((region) => ({ value: region.name, label: region.name }))
+        .sort((left, right) => left.label.localeCompare(right.label));
+    }
+    return fallbackStateOptions;
+  }, [regions]);
 
   const updateContact = (key: string, field: keyof Omit<ContactDraft, 'key'>, value: string | boolean) => {
     touch();
@@ -420,6 +523,9 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     if (pinCodes.length > 0 && !matchedPinCode) {
       accountErrors.push('Choose an active PIN code from the PIN master.');
     }
+    if (!isDerivedRegionPermitted) {
+      accountErrors.push('The selected location is outside your permitted sales regions.');
+    }
     const contactErrors = validateContacts(contacts);
     const allErrors = [...accountErrors, ...contactErrors];
     if (!token) allErrors.unshift('Your login session is missing. Sign in again before saving.');
@@ -465,6 +571,22 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
         { ...buildRetailAccountPayload(draft), clientGroupId: groupId },
         token,
       );
+
+      if (draft.secondaryEmployeeId) {
+        try {
+          await RetailAPI.assignAccountEmployee(accountId, Number(draft.secondaryEmployeeId), 'SECONDARY', token);
+        } catch (error) {
+          failures.push(`Secondary employee: ${getErrorMessage(error, 'could not be assigned')}`);
+        }
+      }
+
+      if (storeImageFile) {
+        try {
+          await RetailAPI.uploadStoreImage(accountId, storeImageFile, token);
+        } catch (error) {
+          failures.push(`Store photo: ${getErrorMessage(error, 'could not be uploaded')}`);
+        }
+      }
 
       for (const contact of contacts.filter(isContactStarted)) {
         const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(' ');
@@ -532,6 +654,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   };
 
   const selectedOwner = employeeOptions.find((option) => option.value === draft.ownerEmployeeId)?.label || 'Not selected';
+  const selectedSecondary = employeeOptions.find((option) => option.value === draft.secondaryEmployeeId)?.label || 'None';
   const selectedGroup = groupOptions.find((option) => option.value === draft.clientGroupId)?.label
     || (draft.accountName.trim() ? `${draft.accountName.trim()} - Standalone (auto)` : 'Auto-standalone on save');
   const selectedBrands = brands.filter((brand) => selectedBrandIds.includes(brand.id));
@@ -578,6 +701,30 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
             )}
 
             <TabsContent value="account" className="m-0 space-y-5">
+              <div className="flex items-center gap-4 rounded-lg border border-dashed border-border p-3">
+                {storeImagePreview ? (
+                  <img src={storeImagePreview} alt="Store photo preview" className="h-16 w-16 shrink-0 rounded-lg border object-cover" />
+                ) : (
+                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground" aria-hidden>
+                    <ImagePlus className="h-6 w-6" />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Store photo <span className="font-normal text-muted-foreground">(optional)</span></p>
+                  <p className="truncate text-xs text-muted-foreground">{storeImageFile ? storeImageFile.name : 'No photo selected yet.'}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => storeImageInputRef.current?.click()}>
+                      {storeImageFile ? 'Replace' : 'Select photo'}
+                    </Button>
+                    {storeImageFile && (
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={clearStoreImage}>
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5" />Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <input ref={storeImageInputRef} type="file" accept="image/*" className="hidden" aria-label="Store photo" onChange={handleStoreImageSelect} />
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Client Firm Name" required>
                   <Input value={draft.accountName} onChange={(event) => updateDraft('accountName', event.target.value)} placeholder="e.g. Shree Steel Dadar Branch" />
@@ -599,7 +746,11 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                     triggerId="retail-owner"
                     value={draft.ownerEmployeeId}
                     options={employeeOptions}
-                    onSelect={(option) => updateDraft('ownerEmployeeId', option?.value ?? '')}
+                    onSelect={(option) => {
+                      const ownerId = option?.value ?? '';
+                      updateDraft('ownerEmployeeId', ownerId);
+                      if (ownerId && ownerId === draft.secondaryEmployeeId) updateDraft('secondaryEmployeeId', '');
+                    }}
                     placeholder="Select a salesperson"
                     searchPlaceholder="Search employees..."
                     emptyMessage="No employees available"
@@ -607,6 +758,21 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                     triggerClassName="w-full"
                     contentClassName="w-[var(--radix-popover-trigger-width)]"
                     required
+                  />
+                </Field>
+                <Field label="Secondary Assigned Employee" hint="Optional. Must be different from the assigned salesperson.">
+                  <SearchableSelect
+                    triggerId="retail-secondary-employee"
+                    value={draft.secondaryEmployeeId}
+                    options={secondaryEmployeeOptions}
+                    onSelect={(option) => updateDraft('secondaryEmployeeId', option?.value ?? '')}
+                    placeholder="No secondary employee"
+                    searchPlaceholder="Search employees..."
+                    emptyMessage="No employees available"
+                    loading={isLoadingMasters && employeeOptions.length === 0}
+                    allowClear
+                    triggerClassName="w-full"
+                    contentClassName="w-[var(--radix-popover-trigger-width)]"
                   />
                 </Field>
                 <Field label="Client Group" hint="Leave empty to auto-create a Standalone group named after this firm. Select a Family / Corporate group to link branches.">
@@ -632,7 +798,34 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                 <Field label="Village / Area" required><Input value={draft.addressVillageArea} onChange={(event) => updateDraft('addressVillageArea', event.target.value)} /></Field>
                 <Field label="Taluka" required><Input value={draft.addressTaluka} onChange={(event) => updateDraft('addressTaluka', event.target.value)} /></Field>
                 <Field label="City" required><Input value={draft.addressCity} onChange={(event) => updateDraft('addressCity', event.target.value)} /></Field>
-                <Field label="District" required><Input value={draft.addressDistrict} onChange={(event) => updateDraft('addressDistrict', event.target.value)} /></Field>
+                <Field label="District" required>
+                  {districts.length > 0 ? (
+                    <SearchableSelect
+                      triggerId="retail-district"
+                      value={draft.addressDistrict || undefined}
+                      options={districtOptions}
+                      onSelect={(option) => {
+                        const name = option?.value ?? '';
+                        const record = districts.find((district) => district.name === name) ?? null;
+                        touch();
+                        setDraft((previous) => ({
+                          ...previous,
+                          addressDistrict: name,
+                          addressState: previous.addressState.trim() || record?.stateName || previous.addressState,
+                        }));
+                      }}
+                      placeholder="Select district"
+                      searchPlaceholder="Search districts..."
+                      emptyMessage="No matching district"
+                      loading={isLoadingMasters && districts.length === 0}
+                      triggerClassName="w-full"
+                      contentClassName="w-[var(--radix-popover-trigger-width)]"
+                      required
+                    />
+                  ) : (
+                    <Input value={draft.addressDistrict} onChange={(event) => updateDraft('addressDistrict', event.target.value)} placeholder="District master unavailable — type manually" />
+                  )}
+                </Field>
                 <Field label="State" required>
                   <SearchableSelect
                     triggerId="retail-state"
@@ -648,17 +841,33 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                   />
                 </Field>
                 <Field label="PIN Code" required>
-                  <Input
-                    value={draft.pinCode}
-                    onChange={(event) => updateDraft('pinCode', event.target.value.replace(/\D/g, '').slice(0, 6))}
-                    inputMode="numeric"
-                    list="retail-pin-codes"
-                    placeholder="400001"
-                  />
-                  <datalist id="retail-pin-codes">{pinCodes.map((pinCode) => <option key={pinCode.id} value={pinCode.pinCode} />)}</datalist>
+                  {pinCodes.length > 0 ? (
+                    <SearchableSelect
+                      triggerId="retail-pin-code"
+                      value={draft.pinCode || undefined}
+                      options={pinCodeOptions}
+                      onSelect={(option) => updateDraft('pinCode', option?.value ?? '')}
+                      placeholder="Select PIN code"
+                      searchPlaceholder="Search PIN codes..."
+                      emptyMessage="No matching PIN code"
+                      triggerClassName="w-full"
+                      contentClassName="w-[var(--radix-popover-trigger-width)]"
+                      required
+                    />
+                  ) : (
+                    <Input
+                      value={draft.pinCode}
+                      onChange={(event) => updateDraft('pinCode', event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      placeholder="400001"
+                    />
+                  )}
                 </Field>
                 <Field label="Sales Region">
-                  <Input value={derivedRegionName} readOnly placeholder={draft.pinCode ? 'No matching PIN found' : 'Enter PIN code first'} />
+                  <Input value={derivedRegionName} readOnly placeholder={draft.pinCode || draft.addressDistrict ? 'No matching region found' : 'Select district or enter PIN code first'} />
+                  {!isDerivedRegionPermitted && (
+                    <p className="mt-1 text-xs text-destructive">This location is outside your permitted sales regions.</p>
+                  )}
                 </Field>
                 <div className="hidden sm:block" />
                 <Field label="Outlet Latitude" required>
@@ -810,6 +1019,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                       <div><span className="text-muted-foreground">Type</span><p className="font-medium mt-0.5">{draft.clientType === 'DEALER' ? 'Dealer' : 'Distributor'}</p></div>
                       <div><span className="text-muted-foreground">GSTIN</span><p className="font-medium mt-0.5 font-mono">{draft.gstNumber || '—'}</p></div>
                       <div><span className="text-muted-foreground">Owner</span><p className="font-medium mt-0.5">{selectedOwner}</p></div>
+                      <div><span className="text-muted-foreground">Secondary</span><p className="font-medium mt-0.5">{selectedSecondary}</p></div>
                       <div><span className="text-muted-foreground">Group</span><p className="font-medium mt-0.5">{selectedGroup}</p></div>
                       <div><span className="text-muted-foreground">Status</span><p className="font-medium mt-0.5">Prospect</p></div>
                     </div>

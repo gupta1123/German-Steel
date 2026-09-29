@@ -97,7 +97,12 @@ export default function InstitutionDetailPage() {
   const [masterContacts, setMasterContacts] = useState<{ id: number; firstName: string; lastName: string; mobile: string; email: string }[]>([]);
   const [docType, setDocType] = useState<InstitutionDocumentType>('CREDENTIALS_PROFILE');
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docApprovalDate, setDocApprovalDate] = useState('');
+  const [docExpiryDate, setDocExpiryDate] = useState('');
   const [docOpen, setDocOpen] = useState(false);
+  const [docToEdit, setDocToEdit] = useState<InstitutionDocument | null>(null);
+  const [editDocApprovalDate, setEditDocApprovalDate] = useState('');
+  const [editDocExpiryDate, setEditDocExpiryDate] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
@@ -126,6 +131,7 @@ export default function InstitutionDetailPage() {
   const [advContactMobile, setAdvContactMobile] = useState('');
   const [advContactDesignation, setAdvContactDesignation] = useState('');
   const [advCredFile, setAdvCredFile] = useState<File | null>(null);
+  const [advSubmitMethod, setAdvSubmitMethod] = useState<'EMAIL' | 'HARDCOPY' | 'STAMPED_PDF'>('EMAIL');
 
   const openAdvance = (toStatus: EmpanelmentStatus) => {
     setAdvanceForm({ toStatus, remarks: '', decisionByEmployeeId: institution?.assignedEmployeeId ? String(institution.assignedEmployeeId) : '' });
@@ -143,6 +149,7 @@ export default function InstitutionDetailPage() {
     setAdvContactMobile('');
     setAdvContactDesignation('');
     setAdvCredFile(null);
+    setAdvSubmitMethod('EMAIL');
     setAdvanceErrors([]);
     setAdvanceOpen(true);
   };
@@ -183,15 +190,36 @@ export default function InstitutionDetailPage() {
   const uploadDoc = async () => {
     if (!token || !institution) return;
     if (!docFile) { toast.error('Choose a file to upload.'); return }
+    if (docApprovalDate && docExpiryDate && docExpiryDate < docApprovalDate) { toast.error('Expiry date cannot be before approval date.'); return }
     setIsUploading(true);
     try {
-      const docId = await InstitutionsAPI.createDocument({ documentType: docType, institutionId, fileName: docFile.name }, token);
+      const docId = await InstitutionsAPI.createDocument({ documentType: docType, institutionId, fileName: docFile.name, approvalDate: docApprovalDate || null, expiryDate: docExpiryDate || null }, token);
       await InstitutionsAPI.uploadDocumentFile(docId, docFile, token);
       toast.success('Document uploaded.');
       setDocFile(null);
+      setDocApprovalDate('');
+      setDocExpiryDate('');
       setDocOpen(false);
       await reloadDocs();
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to upload document.')) } finally { setIsUploading(false) }
+  };
+
+  const openDocEdit = (doc: InstitutionDocument) => {
+    setDocToEdit(doc);
+    setEditDocApprovalDate(doc.approvalDate?.slice(0, 10) ?? '');
+    setEditDocExpiryDate(doc.expiryDate?.slice(0, 10) ?? '');
+  };
+
+  const saveDocDates = async () => {
+    if (!token || !docToEdit) return;
+    if (editDocApprovalDate && editDocExpiryDate && editDocExpiryDate < editDocApprovalDate) { toast.error('Expiry date cannot be before approval date.'); return; }
+    setBusy(true);
+    try {
+      await InstitutionsAPI.updateDocument(docToEdit.id, { approvalDate: editDocApprovalDate || null, expiryDate: editDocExpiryDate || null }, token);
+      toast.success('Document dates updated.');
+      setDocToEdit(null);
+      await reloadDocs();
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to update document.')); } finally { setBusy(false) }
   };
 
   const planVisit = async () => {
@@ -229,11 +257,12 @@ export default function InstitutionDetailPage() {
   const checklistFor = (target: EmpanelmentStatus) => {
     if (target === 'CREDENTIALS_SUBMITTED') {
       const contactDone = contacts.length > 0 || (advContactName.trim() !== '' && advContactLastName.trim() !== '' && advContactMobile.replace(/\D/g, '').length === 10 && advContactDesignation.trim() !== '');
-      const docDone = hasCredDoc || advCredFile != null;
+      // Proof of submission: a file is only needed for Stamped PDF (or when no proof doc exists yet).
+      const proofDone = hasCredDoc || advSubmitMethod === 'EMAIL' || advSubmitMethod === 'HARDCOPY' || (advSubmitMethod === 'STAMPED_PDF' && advCredFile != null);
       const dateDone = !!(advAppDate || institution?.applicationDate);
       return [
         { key: 'contact', label: 'Receiving contact', done: contactDone, action: 'Fill below' },
-        { key: 'doc', label: 'Credentials profile attached', done: docDone, action: 'Pick file below' },
+        { key: 'doc', label: 'Proof of submission', done: proofDone, action: advSubmitMethod === 'STAMPED_PDF' && !hasCredDoc ? 'Pick file below' : 'Choose method below' },
         { key: 'date', label: 'Application date set', done: dateDone, action: 'Pick date below' },
       ];
     }
@@ -512,8 +541,8 @@ export default function InstitutionDetailPage() {
           ownerContactId = masterId;
           await reloadContacts();
         }
-        if (!hasCredDoc) {
-          if (!advCredFile) throw new Error('Attach the credentials profile file to submit.');
+        if (!hasCredDoc && advSubmitMethod === 'STAMPED_PDF') {
+          if (!advCredFile) throw new Error('Attach the stamped PDF to submit.');
           const docId = await InstitutionsAPI.createDocument({ documentType: 'CREDENTIALS_PROFILE', institutionId, fileName: advCredFile.name }, token);
           await InstitutionsAPI.uploadDocumentFile(docId, advCredFile, token);
           await reloadDocs();
@@ -583,11 +612,15 @@ export default function InstitutionDetailPage() {
         }, token);
         await reloadInstitution();
       }
+      // Record the proof-of-submission method in the history comment (no dedicated backend field exists).
+      const proofLabel = advanceForm.toStatus === 'CREDENTIALS_SUBMITTED'
+        ? { EMAIL: 'Email', HARDCOPY: 'Hardcopy', STAMPED_PDF: 'Stamped PDF' }[advSubmitMethod]
+        : null;
       await InstitutionsAPI.advanceStage(institutionId, {
         nextStage: advanceForm.toStatus,
         responsibleEmployeeId: advanceForm.decisionByEmployeeId ? Number(advanceForm.decisionByEmployeeId) : null,
         entryDate: new Date().toISOString().slice(0, 10),
-        outcomeComment: advanceForm.remarks.trim(),
+        outcomeComment: proofLabel ? `Proof of submission: ${proofLabel}. ${advanceForm.remarks.trim()}` : advanceForm.remarks.trim(),
       }, token);
       toast.success(`Stage advanced to ${humanize(advanceForm.toStatus)}.`);
       setAdvanceOpen(false);
@@ -1032,19 +1065,23 @@ export default function InstitutionDetailPage() {
               <Section description={`${documents.length} ${documents.length === 1 ? 'document' : 'documents'}${documents.some((doc) => !doc.fileAttached) ? ` · ${documents.filter((doc) => !doc.fileAttached).length} missing file` : ''}`} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => setDocOpen(true)}><Upload className="mr-1.5 h-3.5 w-3.5" />Upload</Button>}>
                 {documents.length === 0 ? <EmptyState compact title="No documents yet. Upload the credentials profile to get started." /> : (
                   <ul className="divide-y">
-                    {documents.map((doc) => (
+                    {documents.map((doc) => {
+                      const expired = !!doc.expiryDate && dayKey(doc.expiryDate) < today();
+                      return (
                       <li key={doc.id} className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/30">
                         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div className="min-w-0 flex-1 leading-tight">
-                          <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium" title={doc.fileName}>{doc.fileName}</p>{doc.versionNumber != null && <Pill>v{doc.versionNumber}</Pill>}{!doc.fileAttached && <Pill tone="danger">No file</Pill>}</div>
-                          <p className="truncate text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.expiryDate ? ` · expires ${formatDay(doc.expiryDate)}` : ''}</p>
+                          <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium" title={doc.fileName}>{doc.fileName}</p>{doc.versionNumber != null && <Pill>v{doc.versionNumber}</Pill>}{!doc.fileAttached && <Pill tone="danger">No file</Pill>}{expired && <Pill tone="danger">Expired</Pill>}</div>
+                          <p className="truncate text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.approvalDate ? ` · approved ${formatDay(doc.approvalDate)}` : ''}{doc.expiryDate ? ` · expires ${formatDay(doc.expiryDate)}` : ''}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openDocEdit(doc)} aria-label={`Edit dates for ${doc.fileName}`} title="Edit approval/expiry dates"><Edit3 className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </Section>
@@ -1147,7 +1184,7 @@ export default function InstitutionDetailPage() {
           <FormField label="Remarks" required><Textarea rows={3} value={advanceForm.remarks} onChange={(e) => setAdvanceForm({ ...advanceForm, remarks: e.target.value })} placeholder="Why is the stage changing?" /></FormField>
         </FormGroup>
         {advanceForm.toStatus === 'CREDENTIALS_SUBMITTED' && (
-          <FormGroup title="Credentials package" description="Everything submitted to the department in one go.">
+          <FormGroup title="Proof of submission" description="How the credentials were submitted to the department.">
             {contacts.length === 0 ? <>
               <FormField label="Receiving contact first name" required><Input value={advContactName} onChange={(e) => setAdvContactName(e.target.value)} placeholder="e.g. Suresh" /></FormField>
               <FormField label="Last name" required><Input value={advContactLastName} onChange={(e) => setAdvContactLastName(e.target.value)} placeholder="e.g. Patil" /></FormField>
@@ -1156,7 +1193,8 @@ export default function InstitutionDetailPage() {
             </> : (
               <FormField label="File holder (stage owner)" className="sm:col-span-2"><Select value={advOwnerId} onValueChange={setAdvOwnerId}><SelectTrigger><SelectValue placeholder="Choose contact" /></SelectTrigger><SelectContent>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></FormField>
             )}
-            {!hasCredDoc && <FormField label="Credentials file" required className="sm:col-span-2"><FilePicker file={advCredFile} onChange={setAdvCredFile} /></FormField>}
+            <FormField label="Submission method" required className="sm:col-span-2"><Select value={advSubmitMethod} onValueChange={(v) => setAdvSubmitMethod(v as 'EMAIL' | 'HARDCOPY' | 'STAMPED_PDF')}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EMAIL">Email</SelectItem><SelectItem value="HARDCOPY">Hardcopy</SelectItem><SelectItem value="STAMPED_PDF">Stamped PDF</SelectItem></SelectContent></Select></FormField>
+            {!hasCredDoc && advSubmitMethod === 'STAMPED_PDF' && <FormField label="Stamped PDF file" required hint="A file is only required for Stamped PDF." className="sm:col-span-2"><FilePicker file={advCredFile} onChange={setAdvCredFile} /></FormField>}
             <FormField label="Application date" required className="sm:col-span-2"><Input type="date" value={advAppDate} onChange={(e) => setAdvAppDate(e.target.value)} /></FormField>
           </FormGroup>
         )}
@@ -1283,7 +1321,7 @@ export default function InstitutionDetailPage() {
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
           <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
-          <FormField label="Description"><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="Optional agenda or context" /></FormField>
+          <FormField label="Instructions" hint="Optional instructions for the assigned employee."><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="e.g. Carry the empanelment letter copy for verification" /></FormField>
           <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
         </FormGroup>
       </FormSheet>
@@ -1302,8 +1340,24 @@ export default function InstitutionDetailPage() {
         <FormGroup columns={1}>
           <FormField label="Document type" required><Select value={docType} onValueChange={(v) => setDocType(v as InstitutionDocumentType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CREDENTIALS_PROFILE">Credentials profile</SelectItem><SelectItem value="TECHNICAL_VISIT_REPORT">Technical visit report</SelectItem><SelectItem value="EMPANELMENT_APPROVAL_LETTER_SCAN">Approval letter scan</SelectItem><SelectItem value="APPROVED_VENDOR_LISTING_PROOF">Vendor listing proof</SelectItem><SelectItem value="RENEWAL_APPLICATION">Renewal application</SelectItem></SelectContent></Select></FormField>
           <FormField label="File" required><FilePicker file={docFile} onChange={setDocFile} /></FormField>
+          <FormField label="Approval date" hint="Optional."><Input type="date" value={docApprovalDate} onChange={(e) => setDocApprovalDate(e.target.value)} /></FormField>
+          <FormField label="Expiry date" hint="Optional. Expired documents are highlighted in the list."><Input type="date" value={docExpiryDate} min={docApprovalDate || undefined} onChange={(e) => setDocExpiryDate(e.target.value)} /></FormField>
         </FormGroup>
       </FormSheet>
+
+      <Dialog open={docToEdit !== null} onOpenChange={(open) => { if (!busy && !open) setDocToEdit(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit document dates</DialogTitle><DialogDescription>{docToEdit?.fileName}</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <FormField label="Approval date" hint="Optional."><Input type="date" value={editDocApprovalDate} onChange={(e) => setEditDocApprovalDate(e.target.value)} /></FormField>
+            <FormField label="Expiry date" hint="Optional."><Input type="date" value={editDocExpiryDate} min={editDocApprovalDate || undefined} onChange={(e) => setEditDocExpiryDate(e.target.value)} /></FormField>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDocToEdit(null)} disabled={busy}>Cancel</Button>
+            <Button onClick={() => void saveDocDates()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save dates</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <FormSheet
         open={submitNc != null}

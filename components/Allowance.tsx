@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DollarSign, Truck, Loader2, ChevronLeft, ChevronRight, Search, RotateCcw, ChevronsUpDown, Check } from "lucide-react";
+import { DollarSign, Truck, Bus, Building2, Loader2, ChevronLeft, ChevronRight, Search, RotateCcw, ChevronsUpDown, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from '@/components/auth-provider';
 import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
@@ -513,6 +513,20 @@ const Allowance: React.FC = () => {
                                                         <span className="font-semibold">{formatRatePerKm(travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0)}</span>
                                                     )}
                                                 </div>
+                                                <div className="flex items-center justify-between" title="Fixed company rate — not editable">
+                                                    <div className="flex items-center space-x-3">
+                                                        <Bus className="h-4 w-4 text-muted-foreground" />
+                                                        <span className="font-medium">Public Transport:</span>
+                                                    </div>
+                                                    <span className="font-semibold text-muted-foreground">{formatRatePerKm(0)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between" title="Fixed company rate — not editable">
+                                                    <div className="flex items-center space-x-3">
+                                                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                                                        <span className="font-medium">Company Transport:</span>
+                                                    </div>
+                                                    <span className="font-semibold text-muted-foreground">{formatRatePerKm(0)}</span>
+                                                </div>
                                             </div>
                                             <div className="mt-5">
                                                 {editMode[employee.id] ? (
@@ -548,16 +562,18 @@ const Allowance: React.FC = () => {
                             <div className="hidden min-w-0 overflow-x-auto md:block">
                                         <Table className="table-fixed text-xs font-poppins">
                                             <colgroup>
-                                                <col className="w-[24%]" />
+                                                <col className="w-[20%]" />
+                                                <col className="w-[10%]" />
                                                 <col className="w-[12%]" />
-                                                <col className="w-[15%]" />
-                                                <col className="w-[18%]" />
-                                                <col className="w-[18%]" />
                                                 <col className="w-[13%]" />
+                                                <col className="w-[13%]" />
+                                                <col className="w-[11%]" />
+                                                <col className="w-[12%]" />
+                                                <col className="w-[9%]" />
                                             </colgroup>
                                             <TableHeader>
                                                 <TableRow>
-                                                    {['Employee', 'DA', 'Salary', 'Car Rate (per km)', 'Bike Rate (per km)', 'Action'].map((heading) => (
+                                                    {['Employee', 'DA', 'Salary', 'Car Rate (per km)', 'Bike Rate (per km)', 'Public Transport', 'Company Transport', 'Action'].map((heading) => (
                                                         <TableHead key={heading} className="overflow-hidden text-ellipsis whitespace-nowrap" title={heading}>
                                                             {heading}
                                                         </TableHead>
@@ -568,7 +584,7 @@ const Allowance: React.FC = () => {
                                                 {isLoading ? (
                                                     Array.from({ length: 3 }, (_, rowIndex) => (
                                                         <TableRow key={`allowance-loading-${rowIndex}`}>
-                                                            {Array.from({ length: 6 }, (_, cellIndex) => (
+                                                            {Array.from({ length: 8 }, (_, cellIndex) => (
                                                                 <TableCell key={cellIndex}>
                                                                     <Skeleton className="h-4 w-full max-w-24" />
                                                                 </TableCell>
@@ -577,7 +593,7 @@ const Allowance: React.FC = () => {
                                                     ))
                                                 ) : currentRows.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                                                        <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                                                             No employees match these filters.
                                                         </TableCell>
                                                     </TableRow>
@@ -641,6 +657,12 @@ const Allowance: React.FC = () => {
                                                             ) : (
                                                                 <Ellipsis value={formatRatePerKm(travelRates.find(rate => rate.employeeId === employee.id)?.bikeRatePerKm ?? 0)} />
                                                             )}
+                                                        </TableCell>
+                                                        <TableCell title="Fixed company rate — not editable">
+                                                            <Ellipsis value={formatRatePerKm(0)} />
+                                                        </TableCell>
+                                                        <TableCell title="Fixed company rate — not editable">
+                                                            <Ellipsis value={formatRatePerKm(0)} />
                                                         </TableCell>
                                                         <TableCell>
                                                             {editMode[employee.id] ? (

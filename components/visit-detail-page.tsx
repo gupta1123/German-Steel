@@ -1824,7 +1824,7 @@ export default function VisitDetailPage() {
           ...(storeDetails?.city ? [{ icon: MapPin, label: formatCityLabel(storeDetails.city) }] : []),
           { icon: Hash, label: visitDetail?.id ?? visitId },
         ]}
-        description={visitDetail?.purpose ? <><span className="font-medium text-foreground">{visitDetail.purpose}</span>{visitDetail.description ? ` · ${visitDetail.description}` : ''}</> : undefined}
+        description={visitDetail?.purpose ? <span className="font-medium text-foreground">{visitDetail.purpose}</span> : undefined}
         actions={<>
           {canCheckoutVisit && <Button size="sm" className="h-8" onClick={openCheckoutModal} disabled={isCheckingOut}>{isCheckingOut ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <LogOut className="mr-1.5 h-3.5 w-3.5" />}Check out</Button>}
           <Button variant="outline" size="sm" className="h-8" onClick={addNote}><MessageSquare className="mr-1.5 h-3.5 w-3.5" />Add note</Button>
@@ -1915,6 +1915,7 @@ export default function VisitDetailPage() {
                 </Section>
                 <Section icon={ClipboardList} title="Visit details">
                   <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    {visitDetail?.description ? <Info className="sm:col-span-2" label="Instructions" value={visitDetail.description} /> : null}
                     <Info label="Check-in" value={visitDetail?.checkinDate ? `${formatDay(visitDetail.checkinDate)}, ${fmtTime(visitDetail.checkinTime)}` : 'Not checked in'} />
                     <Info label="Check-out" value={visitDetail?.checkoutDate ? `${formatDay(visitDetail.checkoutDate)}, ${fmtTime(visitDetail.checkoutTime)}` : 'Not checked out'} />
                     <Info label="Outcome" value={visitDetail?.outcome ? formatActivityValue(visitDetail.outcome) : 'Not recorded'} />

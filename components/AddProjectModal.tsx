@@ -143,6 +143,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
   const [draft, setDraft] = useState<ProjectDraft>(createEmptyDraft);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [regionNames, setRegionNames] = useState<string[]>([]);
   const [isLoadingMasters, setIsLoadingMasters] = useState(false);
   const [masterLoadError, setMasterLoadError] = useState<string | null>(null);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
@@ -188,6 +189,10 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
     }).finally(() => {
       if (!cancelled) setIsLoadingMasters(false);
     });
+    // State dropdown source: backend sales regions (independent — failures keep the built-in list).
+    RetailAPI.getSalesRegions(token)
+      .then((list) => { if (!cancelled && list.length > 0) setRegionNames(list.map((r) => r.name)); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [isOpen, token]);
 
@@ -268,6 +273,11 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
     employees.map((e) => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` }))
       .sort((a, b) => a.label.localeCompare(b.label)),
     [employees]);
+
+  // State dropdown is sourced from backend sales regions, falling back to the built-in list.
+  const stateOptions = useMemo<string[]>(() =>
+    regionNames.length > 0 ? [...regionNames].sort((a, b) => a.localeCompare(b)) : [...STATES],
+    [regionNames]);
 
   const handleSubmit = async () => {
     const errors = validateDraft(draft);
@@ -405,7 +415,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder={isLoadingMasters ? 'Loading…' : 'Select state'} />
                     </SelectTrigger>
-                    <SelectContent>{STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                    <SelectContent>{stateOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
 

@@ -53,7 +53,9 @@ export default function MoreNavSheet({
     };
   }, [isOpen]);
 
-  // Get all available navigation items
+  // Get all available navigation items (deduped by href — Overview and
+  // Settings are hardcoded below AND present in sidebarCategories, which
+  // previously produced duplicate React keys like `/dashboard/settings`).
   const getAllNavItems = () => {
     const items: Array<{
       name: string;
@@ -62,16 +64,21 @@ export default function MoreNavSheet({
     }> = [
       { name: "Overview", href: "/dashboard", icon: Home }
     ];
+    const seen = new Set(items.map((item) => item.href));
 
     // Add Settings for non-managers
-    if (!isManager) {
+    if (!isManager && !seen.has("/dashboard/settings")) {
+      seen.add("/dashboard/settings");
       items.push({ name: "Settings", href: "/dashboard/settings", icon: Settings });
     }
 
     // Add items from categories
     sidebarCategories.forEach(category => {
       category.items.forEach(item => {
-        if (!item.disabled) items.push(item);
+        if (!item.disabled && !seen.has(item.href)) {
+          seen.add(item.href);
+          items.push(item);
+        }
       });
     });
 

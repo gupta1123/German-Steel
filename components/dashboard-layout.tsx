@@ -328,7 +328,10 @@ export default function DashboardLayout({
         <Topbar heading={heading} subheading={subheading} backHref={backHref} onBack={onBack} viewRole={viewRole} />
         
         {/* Page content */}
-        <main className="flex min-w-0 flex-1 flex-col gap-4 p-3 lg:gap-6 lg:p-4 pb-24 md:pb-6">
+        {/* pb-32 on mobile: clears the fixed bottom nav (~73px base, ~107px+ with
+            wrapped labels + home-indicator safe area) so page-bottom controls
+            (e.g. Employees pagination, Approvals approve/reject) stay tappable. */}
+        <main className="flex min-w-0 flex-1 flex-col gap-4 p-3 lg:gap-6 lg:p-4 pb-32 md:pb-6">
           {children}
         </main>
       </div>

@@ -94,6 +94,7 @@ export default function EmployeeExpenseCard({ employee, showExpenses, onToggleEx
   };
 
   const totals = calculateTotals();
+  const hasSelection = selectedExpenseIds.length > 0;
 
   return (
     <Card className="w-full hover:shadow-md transition-shadow">
@@ -232,7 +233,8 @@ export default function EmployeeExpenseCard({ employee, showExpenses, onToggleEx
             {expenses.some(expense => expense.status === "pending") && (
               <div className="flex gap-2 pt-2">
                 <Button
-                  disabled={busy}
+                  disabled={busy || !hasSelection}
+                  title={hasSelection ? undefined : "Select at least one expense to enable bulk actions"}
                   variant="outline"
                   size="sm"
                   className="flex-1"
@@ -247,7 +249,8 @@ export default function EmployeeExpenseCard({ employee, showExpenses, onToggleEx
                   Approve All
                 </Button>
                 <Button
-                  disabled={busy}
+                  disabled={busy || !hasSelection}
+                  title={hasSelection ? undefined : "Select at least one expense to enable bulk actions"}
                   variant="outline"
                   size="sm"
                   className="flex-1"

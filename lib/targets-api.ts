@@ -21,6 +21,17 @@ export type {
   StoreDto,
 };
 
+export type EmployeeKpiMetric = 'SALES_MT' | 'NEW_APPROVALS';
+
+export interface EmployeeKpiProgress {
+  metric: string;
+  targetValue: number;
+  achievedValue: number;
+  remainingValue: number;
+  achievementPercent: number;
+  targetId?: number | null;
+}
+
 export class TargetsApiError extends Error {
   status: number;
 
@@ -217,6 +228,7 @@ const normalizeTarget = (value: unknown): SalesTargetDto | null => {
     id,
     employeeId: employeeId ?? 0,
     employeeName: toTitleCase(stringOf(item.employeeName)),
+    metric: stringOf(item.metric).toUpperCase() || null,
     storeId: effectiveStoreId,
     storeName: toTitleCase(stringOf(item.storeName, item.accountName, item.clientAccountName)),
     storeCity: toTitleCase(stringOf(item.storeCity, item.addressCity)) || null,
@@ -238,10 +250,10 @@ const normalizeTarget = (value: unknown): SalesTargetDto | null => {
 
 const buildTargetQuery = (params: SalesTargetSearchParams) => {
   const query = new URLSearchParams();
-  // Guide 5.15: GET /api/hr/targets?targetType=&metric=SALES_MT&year=&month=&employeeId=&clientAccountId=&page=&size=
+  // Guide 5.15: GET /api/hr/targets?targetType=&metric=&year=&month=&employeeId=&clientAccountId=&page=&size=
   if (params.targetType) query.set("targetType", params.targetType);
-  // Default metric for sales targets
-  query.set("metric", "SALES_MT");
+  // Metric is optional: omit to list every KPI (sales + approvals); StoreTargets callers pass SALES_MT explicitly.
+  if (params.metric) query.set("metric", params.metric);
   if (params.year != null) query.set("year", String(params.year));
   if (params.month != null) query.set("month", String(params.month));
   if (params.employeeId != null) query.set("employeeId", String(params.employeeId));
@@ -276,7 +288,7 @@ const toCreatePayload = (payload: SalesTargetCreatePayload): Record<string, unkn
   const newTargetType = hasStore ? "RETAIL_ACCOUNT" : targetType === "DAILY" ? "DAILY" : "EMPLOYEE";
   return {
     targetType: newTargetType,
-    metric: "SALES_MT",
+    metric: payload.metric ?? "SALES_MT",
     year: payload.year,
     month: payload.month,
     targetValue: payload.targetTons,
@@ -433,5 +445,39 @@ export const targetsApi = {
       }
       throw error;
     }
+  },
+
+  /**
+   * Backend-calculated monthly KPI progress per employee.
+   * GET /api/hr/targets/monthly-employee-kpis?employeeId=&year=&month=
+   */
+  async getMonthlyEmployeeKpis(token: string, params: { employeeId: number; year: number; month: number }): Promise<EmployeeKpiProgress[]> {
+    const query = new URLSearchParams({
+      employeeId: String(params.employeeId),
+      year: String(params.year),
+      month: String(params.month),
+    });
+    const response = await request(`/api/hr/targets/monthly-employee-kpis?${query}`, token);
+    const rows = pageItems(response);
+    return rows.flatMap((value) => {
+      const item = recordOf(value);
+      if (!item) return [];
+      const metric = stringOf(item.metric, item.metricName, item.kpi, item.kpiName).toUpperCase();
+      if (!metric) return [];
+      const targetValue = numberOf(item.targetValue, item.target, item.targetTons) ?? 0;
+      const achievedValue = numberOf(item.achievedValue, item.achieved, item.fulfilledTons, item.effectiveFulfilledTons, item.salesTons) ?? 0;
+      const remainingValue = numberOf(item.remainingValue, item.remaining, item.pendingTons, item.pending)
+        ?? Math.max(0, targetValue - achievedValue);
+      const achievementPercent = numberOf(item.achievementPercent, item.percent, item.achievement)
+        ?? (targetValue > 0 ? (achievedValue / targetValue) * 100 : 0);
+      return [{
+        metric,
+        targetValue,
+        achievedValue,
+        remainingValue,
+        achievementPercent,
+        targetId: numberOf(item.targetId, item.id),
+      }];
+    });
   },
 };

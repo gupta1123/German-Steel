@@ -6,6 +6,8 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { getErrorMessage } from '@/lib/api-error';
+import { useAuth } from '@/components/auth-provider';
+import { getCorrectedRoleFlags } from '@/lib/auth';
 import {
   InstitutionsAPI,
   type InstitutionCreatePayload,
@@ -96,6 +98,13 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const [regions, setRegions] = useState<{ id: number; name: string }[]>([]);
   const [parents, setParents] = useState<{ id: number; institutionName: string }[]>([]);
+  // null = unrestricted (admins, or no regional assignment found — fails open).
+  const [permittedRegionIds, setPermittedRegionIds] = useState<number[] | null>(null);
+  const { userRole, userData, currentUser, teamId, correctedRoleFlags } = useAuth();
+  const roleFlags = useMemo(
+    () => getCorrectedRoleFlags(userRole, currentUser, correctedRoleFlags, teamId),
+    [userRole, currentUser, correctedRoleFlags, teamId],
+  );
   const [isLoadingMasters, setIsLoadingMasters] = useState(false);
   const [masterWarnings, setMasterWarnings] = useState<string[]>([]);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
@@ -138,6 +147,14 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
         if (!cancelled) setRegions(regs.map((r) => ({ id: r.id, name: r.name })));
       } catch { if (!cancelled) warnings.push('Sales regions could not be loaded.'); }
       try {
+        const { RetailAPI } = await import('@/lib/retail-api');
+        const permitted = await RetailAPI.getPermittedRegionIds(token, {
+          employeeId: userData?.employeeId ?? null,
+          isManager: roleFlags.isManager,
+        });
+        if (!cancelled) setPermittedRegionIds(permitted);
+      } catch { if (!cancelled) setPermittedRegionIds(null); }
+      try {
         const page = await InstitutionsAPI.getInstitutions(token, { page: 0, size: 100, active: true });
         if (!cancelled) setParents(page.content.map((i) => ({ id: i.id, institutionName: i.institutionName })));
       } catch { if (!cancelled) warnings.push('Parent institutions could not be loaded.'); }
@@ -145,7 +162,7 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
     };
     void load();
     return () => { cancelled = true; };
-  }, [isOpen, token]);
+  }, [isOpen, token, roleFlags.isManager, userData?.employeeId]);
 
   const touch = () => { setHasUserChanges(true); setSubmitErrors([]); };
   const updateDraft = <K extends keyof InstitutionDraft>(field: K, value: InstitutionDraft[K]) => { touch(); setDraft((prev) => ({ ...prev, [field]: value })); };
@@ -155,19 +172,28 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
       .sort((a, b) => a.label.localeCompare(b.label)),
     [employees]);
 
+  // Restricted users only see their permitted regions (null = unrestricted).
   const regionOptions = useMemo<SearchableOption[]>(() =>
-    regions.map((r) => ({ value: String(r.id), label: r.name })).sort((a, b) => a.label.localeCompare(b.label)),
-    [regions]);
+    (permittedRegionIds == null ? regions : regions.filter((r) => permittedRegionIds.includes(r.id)))
+      .map((r) => ({ value: String(r.id), label: r.name })).sort((a, b) => a.label.localeCompare(b.label)),
+    [regions, permittedRegionIds]);
 
   const parentOptions = useMemo<SearchableOption[]>(() =>
     parents.map((p) => ({ value: String(p.id), label: p.institutionName })).sort((a, b) => a.label.localeCompare(b.label)),
     [parents]);
 
+  // State dropdown is sourced from backend sales regions (GET /api/common/regions
+  // via InstitutionsAPI.getRegions), falling back to the built-in catalogue.
   const stateOptions = useMemo<SearchableOption[]>(() =>
-    INDIAN_STATES.map((s) => ({ value: s, label: s })), []);
+    regions.length > 0
+      ? regions.map((r) => ({ value: r.name, label: r.name })).sort((a, b) => a.label.localeCompare(b.label))
+      : INDIAN_STATES.map((s) => ({ value: s, label: s })), [regions]);
 
   const handleSubmit = async () => {
     const errors = validateDraft(draft);
+    if (permittedRegionIds != null && draft.regionId && !permittedRegionIds.includes(Number(draft.regionId))) {
+      errors.push('The selected sales region is outside your permitted regions.');
+    }
     if (!token) errors.unshift('Your login session is missing. Sign in again.');
     if (errors.length) { setSubmitErrors(errors); return; }
 

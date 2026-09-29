@@ -100,6 +100,9 @@ export default function ProjectDetailPage() {
   const [notes, setNotes] = useState<ProjectNote[]>([]);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [docToEdit, setDocToEdit] = useState<ProjectDocument | null>(null);
+  const [editDocApprovalDate, setEditDocApprovalDate] = useState('');
+  const [editDocExpiryDate, setEditDocExpiryDate] = useState('');
   const [visits, setVisits] = useState<CommonVisitRow[]>([]);
   const [sales, setSales] = useState<ProjectSale[]>([]);
   const [saleOpen, setSaleOpen] = useState(false);
@@ -141,6 +144,7 @@ export default function ProjectDetailPage() {
   const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
 
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [contactToRemove, setContactToRemove] = useState<ProjectContact | null>(null);
 
   const [partyOpen, setPartyOpen] = useState(false);
   const [editingParty, setEditingParty] = useState<ProjectParty | null>(null);
@@ -298,6 +302,25 @@ export default function ProjectDetailPage() {
     try { setContacts(await ProjectsAPI.getContacts(projectId, token)); }
     catch (error) { toast.error(getErrorMessage(error, 'Unable to reload contacts.')) }
   }, [token, projectId]);
+
+  const reloadDocs = useCallback(async () => {
+    if (!token || !Number.isFinite(projectId)) return;
+    try { setDocuments(await ProjectsAPI.getDocuments(projectId, token)); }
+    catch (error) { toast.error(getErrorMessage(error, 'Unable to reload documents.')) }
+  }, [token, projectId]);
+
+  // Master person records go stale after an edit — refresh them silently alongside the links.
+  const reloadContactMasters = useCallback(async () => {
+    if (!token) return;
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
+      const response = await fetch(`${base}/api/common/contacts?page=0&size=50`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      if (!response.ok) return;
+      const data: unknown = await response.json();
+      const arr: unknown[] = Array.isArray(data) ? data : Array.isArray((data as { content?: unknown }).content) ? (data as { content: unknown[] }).content : Array.isArray((data as { data?: unknown }).data) ? (data as { data: unknown[] }).data : [];
+      setContactMasters(arr);
+    } catch { /* non-blocking: links already refreshed */ }
+  }, [token]);
 
   const reloadNotes = useCallback(async () => {
     if (!token || !Number.isFinite(projectId)) return;
@@ -538,6 +561,17 @@ export default function ProjectDetailPage() {
     try { await ProjectsAPI.deactivateProjectParty(party.id, token); toast.success('Party removed.'); try { setParties((await ProjectsAPI.getProjectParties(projectId, token)).content); } catch { await load(); } } catch (error) { toast.error(getErrorMessage(error, 'Unable to remove party.')); } finally { setBusy(false) }
   };
 
+  const confirmRemoveContact = async () => {
+    if (!token || !contactToRemove) return;
+    setBusy(true);
+    try {
+      await ProjectsAPI.deleteContact(contactToRemove.id, token);
+      toast.success('Contact removed.');
+      setContactToRemove(null);
+      await reloadContacts();
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to remove contact.')); } finally { setBusy(false) }
+  };
+
   const saveContact = async () => {
     if (!token || !project) return;
     if (!contactForm.firstName.trim() || !contactForm.designation.trim() || contactForm.mobile.replace(/\D/g, '').length !== 10) {
@@ -558,7 +592,7 @@ export default function ProjectDetailPage() {
       setContactOpen(false);
       setEditingContact(null);
       setContactForm(emptyContactForm);
-      await reloadContacts();
+      await Promise.all([reloadContacts(), reloadContactMasters()]);
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to add contact.')); } finally { setBusy(false); }
   };
 
@@ -594,6 +628,24 @@ export default function ProjectDetailPage() {
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to create task.')); } finally { setBusy(false); }
   };
 
+  const openDocEdit = (doc: ProjectDocument) => {
+    setDocToEdit(doc);
+    setEditDocApprovalDate(doc.approvalDate?.slice(0, 10) ?? '');
+    setEditDocExpiryDate(doc.expiryDate?.slice(0, 10) ?? '');
+  };
+
+  const saveDocDates = async () => {
+    if (!token || !docToEdit) return;
+    if (editDocApprovalDate && editDocExpiryDate && editDocExpiryDate < editDocApprovalDate) { toast.error('Expiry date cannot be before approval date.'); return; }
+    setBusy(true);
+    try {
+      await ProjectsAPI.updateDocument(docToEdit.id, { approvalDate: editDocApprovalDate || null, expiryDate: editDocExpiryDate || null }, token);
+      toast.success('Document dates updated.');
+      setDocToEdit(null);
+      await reloadDocs();
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to update document.')); } finally { setBusy(false) }
+  };
+
   const removeTask = async (task: ProjectTask) => {
     if (!token || !window.confirm(`Delete task "${task.title}"?`)) return;
     setBusy(true);
@@ -616,10 +668,14 @@ export default function ProjectDetailPage() {
     const masterName = master ? [master.firstName ?? master.first_name, master.lastName ?? master.last_name].filter(Boolean).join(' ').trim() : '';
     const employeeMatch = employees.find((e) => e.id === contact.contactInfluenceRegisterId);
     const fallbackName = employeeMatch ? [employeeMatch.firstName, employeeMatch.lastName].filter(Boolean).join(' ') : null;
-    const name = masterName || [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim() || fallbackName || `Contact #${contact.contactInfluenceRegisterId || contact.id}`;
+    // Prefer the freshly saved link row over the master record (masters can lag one save behind).
+    const linkName = [contact.firstName, contact.lastName].filter((part) => part && part !== '—').join(' ').trim();
+    const name = linkName || masterName || fallbackName || `Contact #${contact.contactInfluenceRegisterId || contact.id}`;
     const party = parties.find((item) => item.id === contact.projectPartyId) ?? null;
     return { master, name, party, mobile: contact.mobile && contact.mobile !== '—' ? contact.mobile : null, email: contact.email && contact.email !== '—' ? contact.email : null };
   };
+  // Organisation selected in the contact dialog (contractor/consultant are organisations, not people).
+  const selectedContactParty = contactForm.projectPartyId ? parties.find((item) => String(item.id) === contactForm.projectPartyId) ?? null : null;
 
   const openEdit = () => { setEditDraft({ projectName: project.projectName, institutionId: project.institutionId == null ? '' : String(project.institutionId), locationText: project.locationText, state: project.state, locationLatitude: '', locationLongitude: '', projectType: project.projectType, estimatedTmtMt: project.estimatedTmtMt == null ? '' : String(project.estimatedTmtMt), startDate: project.startDate ?? '', completionDate: project.completionDate ?? '', sourceApprovalStatus: project.sourceApprovalStatus, approvalLetterReference: project.approvalLetterReference ?? '', assignedEmployeeId: project.assignedEmployeeId == null ? '' : String(project.assignedEmployeeId), active: project.active }); setEditErrors([]); setEditOpen(true); };
   const openAdvance = (toStatus?: ProjectStage) => { setAdvanceForm({ toStatus: toStatus ?? allowedNextStatuses[0], remarks: '', decisionByEmployeeId: project.assignedEmployeeId ? String(project.assignedEmployeeId) : '' }); setAdvanceErrors([]); setAdvanceOpen(true); };
@@ -893,7 +949,7 @@ export default function ProjectDetailPage() {
                             <span className="hidden truncate text-xs lg:block" title={partyLabel}>{partyLabel}</span>
                             <span className="hidden text-xs tabular-nums lg:block">{view.mobile ? <a href={`tel:${view.mobile}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3 w-3 text-muted-foreground" />{view.mobile}</a> : <span className="text-muted-foreground">—</span>}</span>
                             <span className="hidden min-w-0 text-xs lg:block">{view.email ? <a href={`mailto:${view.email}`} className="flex min-w-0 items-center gap-1.5 hover:underline" title={view.email}><Mail className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{view.email}</span></a> : <span className="text-muted-foreground">—</span>}</span>
-                            <div className="flex items-center justify-end"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${view.name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button></div>
+                            <div className="flex items-center justify-end gap-0.5"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${view.name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setContactToRemove(contact)} disabled={busy} aria-label={`Remove ${view.name}`} title="Remove contact"><Trash2 className="h-3.5 w-3.5" /></Button></div>
                           </li>
                         );
                       })}
@@ -921,19 +977,23 @@ export default function ProjectDetailPage() {
               <Section description={`${documents.length} ${documents.length === 1 ? 'document' : 'documents'}`} bodyClassName="p-0">
                 {documents.length === 0 ? <EmptyState compact title="No documents yet." /> : (
                   <ul className="divide-y">
-                    {documents.map((doc) => (
+                    {documents.map((doc) => {
+                      const expired = !!doc.expiryDate && dayKey(doc.expiryDate) < today();
+                      return (
                       <li key={doc.id} className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/30">
                         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div className="min-w-0 flex-1 leading-tight">
-                          <p className="truncate text-sm font-medium" title={doc.fileName}>{doc.fileName}</p>
-                          <p className="truncate text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.uploadedAt ? ` · ${formatDay(doc.uploadedAt)}` : ''}</p>
+                          <div className="flex min-w-0 items-center gap-1.5"><p className="truncate text-sm font-medium" title={doc.fileName}>{doc.fileName}</p>{expired && <Pill tone="danger">Expired</Pill>}</div>
+                          <p className="truncate text-[11px] text-muted-foreground">{humanize(doc.documentType)}{doc.approvalDate ? ` · approved ${formatDay(doc.approvalDate)}` : ''}{doc.expiryDate ? ` · expires ${formatDay(doc.expiryDate)}` : ''}{doc.uploadedAt ? ` · ${formatDay(doc.uploadedAt)}` : ''}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openDocEdit(doc)} aria-label={`Edit dates for ${doc.fileName}`} title="Edit approval/expiry dates"><Edit3 className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </Section>
@@ -1065,7 +1125,7 @@ export default function ProjectDetailPage() {
         <FormGroup title="Role on this project">
           <FormField label="Designation" required><Input placeholder="e.g. Site engineer" value={contactForm.designation} onChange={(e) => setContactForm({ ...contactForm, designation: e.target.value })} /></FormField>
           <FormField label="Department / function"><Input placeholder="e.g. Procurement" value={contactForm.departmentFunction} onChange={(e) => setContactForm({ ...contactForm, departmentFunction: e.target.value })} /></FormField>
-          <FormField label="Party / organisation"><Select value={contactForm.projectPartyId || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, projectPartyId: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Project-level contact" /></SelectTrigger><SelectContent><SelectItem value="none">Project-level contact (no party)</SelectItem>{parties.filter((party) => party.active).map((party) => <SelectItem key={party.id} value={String(party.id)}>{PARTY_LABEL[party.partyRole] ?? humanize(party.partyRole)} · {partyName(party)}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Party / organisation" hint={selectedContactParty && selectedContactParty.partyRole !== 'OWNER_CLIENT' ? `Contact of ${partyName(selectedContactParty)} — recorded as a person within that organisation.` : undefined}><Select value={contactForm.projectPartyId || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, projectPartyId: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Project-level contact" /></SelectTrigger><SelectContent><SelectItem value="none">Project-level contact (no party)</SelectItem>{parties.filter((party) => party.active).map((party) => <SelectItem key={party.id} value={String(party.id)}>{PARTY_LABEL[party.partyRole] ?? humanize(party.partyRole)} · {partyName(party)}</SelectItem>)}</SelectContent></Select></FormField>
           <FormField label="Influence level"><Select value={contactForm.influenceLevel || 'none'} onValueChange={(value) => setContactForm({ ...contactForm, influenceLevel: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Not specified" /></SelectTrigger><SelectContent><SelectItem value="none">Not specified</SelectItem><SelectItem value="DECISION_MAKER">Decision maker</SelectItem><SelectItem value="RECOMMENDER">Recommender</SelectItem><SelectItem value="GATEKEEPER">Gatekeeper</SelectItem><SelectItem value="TECHNICAL_EVALUATOR">Technical evaluator</SelectItem></SelectContent></Select></FormField>
         </FormGroup>
       </FormSheet>
@@ -1125,7 +1185,7 @@ export default function ProjectDetailPage() {
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
           <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
-          <FormField label="Description"><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="Optional agenda or context" /></FormField>
+          <FormField label="Instructions" hint="Optional instructions for the assigned employee."><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="e.g. Photograph site progress and note material stock" /></FormField>
           <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
         </FormGroup>
       </FormSheet>
@@ -1207,6 +1267,35 @@ export default function ProjectDetailPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</Button>
             <Button variant="destructive" onClick={() => void deactivate()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Deactivate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={contactToRemove !== null} onOpenChange={(open) => { if (!busy && !open) setContactToRemove(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Remove contact?</DialogTitle><DialogDescription>This contact will no longer be linked to {project.projectName}.</DialogDescription></DialogHeader>
+          {contactToRemove && (
+            <div className="rounded-lg border bg-muted/40 p-3 font-medium">
+              {[contactToRemove.firstName, contactToRemove.lastName].filter(Boolean).join(' ').trim() || 'This contact'}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContactToRemove(null)} disabled={busy}>Cancel</Button>
+            <Button variant="destructive" onClick={() => void confirmRemoveContact()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Remove</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={docToEdit !== null} onOpenChange={(open) => { if (!busy && !open) setDocToEdit(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit document dates</DialogTitle><DialogDescription>{docToEdit?.fileName}</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <FormField label="Approval date" hint="Optional."><Input type="date" value={editDocApprovalDate} onChange={(e) => setEditDocApprovalDate(e.target.value)} /></FormField>
+            <FormField label="Expiry date" hint="Optional."><Input type="date" value={editDocExpiryDate} min={editDocApprovalDate || undefined} onChange={(e) => setEditDocExpiryDate(e.target.value)} /></FormField>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDocToEdit(null)} disabled={busy}>Cancel</Button>
+            <Button onClick={() => void saveDocDates()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save dates</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -9,6 +9,8 @@ export interface RetailAccountDraft {
   clientGroupId: string;
   accountStatus: RetailAccountCreatePayload['accountStatus'];
   ownerEmployeeId: string;
+  /** Optional; saved via the account-employees endpoint, not the account payload. */
+  secondaryEmployeeId: string;
   addressVillageArea: string;
   addressTaluka: string;
   addressCity: string;
@@ -35,6 +37,7 @@ export const createEmptyRetailAccountDraft = (employeeId?: number | null): Retai
   clientGroupId: '',
   accountStatus: 'PROSPECT',
   ownerEmployeeId: employeeId == null ? '' : String(employeeId),
+  secondaryEmployeeId: '',
   addressVillageArea: '',
   addressTaluka: '',
   addressCity: '',
@@ -61,6 +64,7 @@ export const createRetailAccountDraft = (account: RetailAccount): RetailAccountD
   clientGroupId: account.clientGroupId == null ? '' : String(account.clientGroupId),
   accountStatus: account.accountStatus,
   ownerEmployeeId: account.ownerEmployeeId ? String(account.ownerEmployeeId) : '',
+  secondaryEmployeeId: account.secondaryEmployeeId == null ? '' : String(account.secondaryEmployeeId),
   addressVillageArea: account.addressVillageArea,
   addressTaluka: account.addressTaluka,
   addressCity: account.addressCity,
@@ -103,6 +107,10 @@ export const validateRetailAccountDraft = (draft: RetailAccountDraft): string[] 
   requiredFields.forEach(([value, label]) => {
     if (!value.trim()) errors.push(`${label} is required.`);
   });
+
+  if (draft.secondaryEmployeeId && draft.secondaryEmployeeId === draft.ownerEmployeeId) {
+    errors.push('Secondary employee must be different from the primary salesperson.');
+  }
 
   if (draft.gstNumber.trim() && !GSTIN_PATTERN.test(draft.gstNumber.trim().toUpperCase())) {
     errors.push('GST number must be a valid 15-character GSTIN.');

@@ -134,6 +134,8 @@ export interface ProjectDocument {
   fileUrl: string | null;
   mimeType: string | null;
   uploadedAt: string | null;
+  approvalDate: string | null;
+  expiryDate: string | null;
 }
 
 export interface ProjectParty {
@@ -437,6 +439,8 @@ const normalizeNcRegister = (value: unknown): ProjectNcRegister | null => {
 
 const normalizeContact = (value: unknown): ProjectContact | null => {
   const item = recordOf(value); if (!item) return null;
+  // The row's own `id` is the contact-link id used by PUT/DELETE
+  // /api/projects/contacts/{contactLinkId} (same precedence as institutions).
   const id = numberOf(item.id, item.contactLinkId, item.contact_id, item.linkId, nested(item, 'contact')?.id, nested(item, 'contactInfluenceRegister')?.id); if (id == null) return null;
   const contact = nested(item, 'contact', 'contactInfluenceRegister', 'contactMaster', 'contactMaster', 'data', 'contactInfluenceRegister') ?? item;
   const party = nested(item, 'party') ?? item;
@@ -495,11 +499,13 @@ const normalizeDocument = (value: unknown): ProjectDocument | null => {
   const doc = nested(item, 'document', 'data') ?? item;
   return {
     id,
-    documentType: stringOf(item.documentType, item.type, doc?.documentType) || 'â€”',
-    fileName: stringOf(item.fileName, item.name, doc?.fileName) || 'â€”',
+    documentType: stringOf(item.documentType, item.type, doc?.documentType) || '—',
+    fileName: stringOf(item.fileName, item.name, doc?.fileName) || '—',
     fileUrl: stringOf(item.fileUrl, item.url, doc?.fileUrl) || null,
     mimeType: stringOf(item.mimeType, item.contentType, doc?.mimeType) || null,
     uploadedAt: stringOf(item.uploadedAt, item.createdAt, doc?.uploadedAt) || null,
+    approvalDate: stringOf(item.approvalDate, doc?.approvalDate) || null,
+    expiryDate: stringOf(item.expiryDate, doc?.expiryDate) || null,
   };
 };
 
@@ -644,6 +650,9 @@ export const ProjectsAPI = {
   async updateContact(contactId: number, payload: ProjectContactCreatePayload, token: string): Promise<void> {
     await request(`/api/projects/contacts/${contactId}`, token, { method: 'PUT', body: JSON.stringify(payload) });
   },
+  async deleteContact(contactId: number, token: string): Promise<void> {
+    await request(`/api/projects/contacts/${contactId}`, token, { method: 'DELETE' });
+  },
   async getNotes(projectId: number, token: string): Promise<ProjectNote[]> {
     try {
       const res = await request(`/api/common/projects/${projectId}/notes?page=0&size=200`, token);
@@ -705,6 +714,9 @@ export const ProjectsAPI = {
       if (error instanceof ProjectsApiError && [404, 405].includes(error.status)) return [];
       throw error;
     }
+  },
+  async updateDocument(documentId: number, payload: { approvalDate?: string | null; expiryDate?: string | null }, token: string): Promise<void> {
+    await request(`/api/common/documents/${documentId}`, token, { method: 'PUT', body: JSON.stringify({ approvalDate: payload.approvalDate ?? null, expiryDate: payload.expiryDate ?? null }) });
   },
   async getNcDocuments(ncId: number, token: string): Promise<ProjectDocument[]> {
     try {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { format, subDays, differenceInDays } from 'date-fns';
+import { format, subDays, differenceInDays, startOfMonth } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { RetailAPI } from '@/lib/retail-api';
@@ -64,19 +64,26 @@ const getEmployeeName = (employee: Employee): string => (
     || `Employee ${employee.id}`
 );
 
-const statusFromApi = (status: SharedTaskStatus): string => ({
-    OPEN: 'Assigned',
-    IN_PROGRESS: 'Work In Progress',
-    COMPLETED: 'Complete',
-    CANCELLED: 'Cancelled',
-}[status]);
+// Exact backend statuses — used verbatim in state, filters, and API calls.
+const TASK_STATUSES = [
+    { value: 'OPEN', label: 'Open' },
+    { value: 'IN_PROGRESS', label: 'In Progress' },
+    { value: 'COMPLETED', label: 'Completed' },
+    { value: 'CANCELLED', label: 'Cancelled' },
+] as const;
 
-const statusToApi = (status: string): SharedTaskStatus => ({
-    Assigned: 'OPEN',
-    'Work In Progress': 'IN_PROGRESS',
-    Complete: 'COMPLETED',
-    Cancelled: 'CANCELLED',
-}[status] as SharedTaskStatus | undefined) ?? 'OPEN';
+const normalizeTaskStatus = (status: unknown): SharedTaskStatus => {
+    const normalized = String(status ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+    if (normalized === 'ASSIGNED') return 'OPEN';
+    if (normalized === 'WORK_IN_PROGRESS') return 'IN_PROGRESS';
+    if (normalized === 'COMPLETE') return 'COMPLETED';
+    return (['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] as string[]).includes(normalized)
+        ? (normalized as SharedTaskStatus)
+        : 'OPEN';
+};
+
+const statusLabel = (status: string): string =>
+    TASK_STATUSES.find((option) => option.value === status)?.label ?? status;
 
 const priorityToApi = (priority: string): SharedTaskPriority => {
     const normalized = priority.toUpperCase();
@@ -93,7 +100,7 @@ const toComplaintTask = (task: SharedTask): Task => ({
     assignedToId: task.assignedToEmployeeId ?? 0,
     assignedToName: task.assignedToEmployeeName || 'Unknown',
     assignedById: task.assignedByEmployeeId ?? 0,
-    status: statusFromApi(task.status),
+    status: normalizeTaskStatus(task.status),
     priority: task.priority.toLowerCase(),
     category: 'Complaint',
     storeId: task.clientAccountId ?? 0,
@@ -113,7 +120,7 @@ const Complaints = () => {
         assignedToId: 0,
         assignedToName: '',
         assignedById: 0,
-        status: 'Assigned',
+        status: 'OPEN',
         priority: 'low',
         category: 'Complaint',
         storeId: 0,
@@ -122,7 +129,9 @@ const Complaints = () => {
         taskType: 'complaint'
     });
     const router = useGuardedRouter();
-    const FILTER_STATE_KEY = 'complaints.filters.v1';
+    // Bumped to v2: v1 persisted the old today-only default (startDate == endDate == today),
+    // which the hydration effect would restore over the new month-to-date default.
+    const FILTER_STATE_KEY = 'complaints.filters.v2';
     const [isFiltersHydrated, setIsFiltersHydrated] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
@@ -138,7 +147,7 @@ const Complaints = () => {
         priority: 'all',
         status: 'all',
         search: '',
-        startDate: format(new Date(), 'yyyy-MM-dd'),
+        startDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
         endDate: format(new Date(), 'yyyy-MM-dd')
     });
     const [isLoading, setIsLoading] = useState(true);
@@ -185,7 +194,7 @@ const Complaints = () => {
     // Which form is awaiting discard confirmation (form is hidden meanwhile, state preserved)
     const [confirmTarget, setConfirmTarget] = useState<'create' | 'status' | null>(null);
 
-    const statusOptions = ['Assigned', 'Work In Progress', 'Complete', 'Cancelled'] as const;
+    const statusOptions = TASK_STATUSES.map((option) => option.value);
 
     const { token, userRole, userData, currentUser, teamId, correctedRoleFlags } = useAuth();
     const roleFlags = useMemo(
@@ -358,6 +367,8 @@ const Complaints = () => {
     // Hydrate filters on mount before fetching
     useEffect(() => {
         try {
+            // Drop the stale v1 entry that persisted the old today-only default.
+            sessionStorage.removeItem('complaints.filters.v1');
             const raw = sessionStorage.getItem(FILTER_STATE_KEY);
             if (raw) {
                 const saved = JSON.parse(raw);
@@ -367,6 +378,8 @@ const Complaints = () => {
                     for (const key of ['employee', 'priority', 'status'] as const) {
                         if (!merged[key] || merged[key] === '') merged[key] = 'all';
                     }
+                    // Migrate legacy UI status labels to exact backend statuses
+                    if (merged.status && merged.status !== 'all') merged.status = normalizeTaskStatus(merged.status);
                     return merged;
                 });
                 if (typeof saved?.currentPage === 'number') setCurrentPage(saved.currentPage);
@@ -594,7 +607,7 @@ const Complaints = () => {
         }
         
         try {
-            await tasksApi.update(taskToUpdate, { status: statusToApi(selectedStatus) }, token);
+            await tasksApi.update(taskToUpdate, { status: normalizeTaskStatus(selectedStatus) }, token);
             setTasks((prevTasks) =>
                 prevTasks.map((task) =>
                     task.id === taskToUpdate ? { ...task, status: selectedStatus } : task
@@ -627,7 +640,7 @@ const Complaints = () => {
                 taskId,
                 field === 'priority'
                     ? { priority: priorityToApi(value) }
-                    : { status: statusToApi(value) },
+                    : { status: normalizeTaskStatus(value) },
                 token,
             );
 
@@ -729,7 +742,7 @@ const Complaints = () => {
             assignedToId: 0,
             assignedToName: '',
             assignedById: 0,
-            status: 'Assigned',
+            status: 'OPEN',
             priority: 'low',
             category: 'Complaint',
             storeId: 0,
@@ -748,15 +761,14 @@ const Complaints = () => {
     }, [filteredTasks]);
 
     const getStatusInfo = (status: string): { icon: React.ReactNode; color: string } => {
-        switch (status.toLowerCase()) {
-            case 'assigned':
+        switch (normalizeTaskStatus(status)) {
+            case 'OPEN':
                 return { icon: <Clock className="w-4 h-4" />, color: 'bg-purple-100 text-purple-800' };
-            case 'work in progress':
+            case 'IN_PROGRESS':
                 return { icon: <Loader className="w-4 h-4 animate-spin" />, color: 'bg-blue-100 text-blue-800' };
-            case 'complete':
+            case 'COMPLETED':
                 return { icon: <CheckCircle className="w-4 h-4" />, color: 'bg-green-100 text-green-800' };
-            case 'cancelled':
-                return { icon: <AlertTriangle className="w-4 h-4" />, color: 'bg-gray-100 text-gray-800' };
+            case 'CANCELLED':
             default:
                 return { icon: <AlertTriangle className="w-4 h-4" />, color: 'bg-gray-100 text-gray-800' };
         }
@@ -803,11 +815,10 @@ const Complaints = () => {
                             <SelectValue placeholder="Filter by status" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Open Statuses</SelectItem>
-                            <SelectItem value="Assigned">Assigned</SelectItem>
-                            <SelectItem value="Work In Progress">Work In Progress</SelectItem>
-                            <SelectItem value="Complete">Complete</SelectItem>
-                            <SelectItem value="Cancelled">Cancelled</SelectItem>
+                            <SelectItem value="all">All Statuses</SelectItem>
+                            {TASK_STATUSES.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1005,7 +1016,7 @@ const Complaints = () => {
                                         triggerClassName="w-full"
                                     />
                                 </div>
-                                {newTask.assignedToId && newTask.dueDate && (
+                                {newTask.assignedToId > 0 && newTask.dueDate !== '' && (
                                     <p className="text-xs text-muted-foreground">
                                         {dueTasksLoading ? 'Checking due tasks...' : dueTasks.length > 0 ? `${dueTasks.length} task(s) already due for this employee on ${newTask.dueDate}` : 'No tasks due on this date for selected employee'}
                                     </p>
@@ -1044,7 +1055,7 @@ const Complaints = () => {
                                             </CardTitle>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="-mr-2 -mt-1 h-7 w-7 shrink-0 text-muted-foreground">
+                                                    <Button variant="ghost" size="icon" className="-mr-2 -mt-1 h-7 w-7 shrink-0 text-muted-foreground" aria-label={`Actions for ${task.taskTitle || 'complaint'}`} title="Complaint actions">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
@@ -1120,7 +1131,7 @@ const Complaints = () => {
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {statusOptions.map((status) => (
-                                                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                                                            <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
@@ -1217,12 +1228,12 @@ const Complaints = () => {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <p className="text-xs capitalize text-muted-foreground">Current Status</p>
-                                    <Badge variant="secondary" className="text-xs">
-                                        {selectedTask.status}
-                                    </Badge>
-                                </div>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-xs capitalize text-muted-foreground">Current Status</p>
+                                        <Badge variant="secondary" className="text-xs">
+                                            {statusLabel(selectedTask.status)}
+                                        </Badge>
+                                    </div>
                             </div>
 
                             <div className="space-y-2">
@@ -1234,7 +1245,7 @@ const Complaints = () => {
                                     <SelectContent>
                                         {statusOptions.map((status) => (
                                             <SelectItem key={status} value={status}>
-                                                {status}
+                                                {statusLabel(status)}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
@@ -1330,11 +1341,10 @@ const Complaints = () => {
                                     <SelectValue placeholder="Filter by status" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All Open Statuses</SelectItem>
-                                    <SelectItem value="Assigned">Assigned</SelectItem>
-                                    <SelectItem value="Work In Progress">Work In Progress</SelectItem>
-                                    <SelectItem value="Complete">Complete</SelectItem>
-                                    <SelectItem value="Cancelled">Cancelled</SelectItem>
+                                    <SelectItem value="all">All Statuses</SelectItem>
+                                    {TASK_STATUSES.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>

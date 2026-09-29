@@ -589,6 +589,8 @@ export interface DailyBreakdownDto {
 
 export type SalesTargetType = 'MONTHLY' | 'DAILY';
 
+export type SalesTargetMetric = 'SALES_MT' | 'NEW_APPROVALS';
+
 export interface SalesTargetDto {
   id: number;
   employeeId: number;
@@ -598,6 +600,7 @@ export interface SalesTargetDto {
   storeCity?: string | null;
   storeState?: string | null;
   targetType: SalesTargetType;
+  metric?: string | null;
   month?: number | null;
   year?: number | null;
   targetDate?: string | null;
@@ -613,13 +616,15 @@ export interface SalesTargetDto {
 
 export interface SalesTargetCreatePayload {
   employeeId: number;
-  storeId: number;
+  // Optional: omitted for employee-scope KPI targets (no store).
+  storeId?: number | null;
   targetType: SalesTargetType;
   targetTons: number;
   remarks?: string;
   month?: number;
   year?: number;
   targetDate?: string;
+  metric?: string;
 }
 
 export interface SalesTargetEditPayload {
@@ -632,6 +637,7 @@ export interface SalesTargetSearchParams {
   employeeId?: number;
   storeId?: number;
   targetType?: SalesTargetType;
+  metric?: string;
   month?: number;
   year?: number;
   startDate?: string;

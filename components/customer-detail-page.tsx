@@ -53,6 +53,8 @@ const emptyTask = (): TaskForm => ({ title: '', description: '', employeeId: '',
 const emptyMonthlySales = (): MonthlySalesForm => ({ declaredMonthlySalesMt: '', changeReason: '' });
 const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : '—';
 const showDate = (value: string) => value ? new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleString('en-IN', value.length === 10 ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+// Radix Select cannot use '' as an item value, so "no secondary" needs a sentinel.
+const NO_SECONDARY = 'none';
 const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
 
 
@@ -105,7 +107,11 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
 
   const loadAccount = useCallback(async () => {
     if (!token || !Number.isFinite(accountId)) return null;
-    const found = await RetailAPI.getAccountById(accountId, token);
+    let found = await RetailAPI.getAccountById(accountId, token);
+    if (found && found.secondaryEmployeeId == null) {
+      const secondary = (await RetailAPI.getAccountEmployees(accountId, token)).find((entry) => entry.assignmentRole === 'SECONDARY');
+      if (secondary) found = { ...found, secondaryEmployeeId: secondary.employeeId, secondaryEmployeeName: secondary.employeeName };
+    }
     setAccount(found);
     return found;
   }, [accountId, token]);
@@ -284,7 +290,14 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     if (errors.length) { setEditErrors(errors); return }
     setBusy(true);
     try {
+      const currentSecondaryId = account?.secondaryEmployeeId ?? null;
+      const nextSecondaryId = editDraft.secondaryEmployeeId ? Number(editDraft.secondaryEmployeeId) : null;
+      const nextOwnerId = Number(editDraft.ownerEmployeeId);
+      // Promoting the current secondary to primary: release the secondary slot first.
+      const releaseSecondaryFirst = currentSecondaryId != null && currentSecondaryId === nextOwnerId;
+      if (releaseSecondaryFirst) await RetailAPI.removeAccountEmployee(accountId, currentSecondaryId, token);
       await RetailAPI.updateAccount(accountId, buildRetailAccountPayload(editDraft), token);
+      await RetailAPI.setSecondaryEmployee(accountId, releaseSecondaryFirst ? null : currentSecondaryId, nextSecondaryId, token);
       toast.success('Customer account updated.');
       setEditOpen(false);
       await loadAccount();
@@ -494,6 +507,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   if (!Number.isFinite(accountId) || !account) return <Card><CardHeader><CardTitle>Customer not found</CardTitle><CardDescription>The account was not returned by the new paginated retail-accounts endpoint.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => router.push('/dashboard/customers')}><ArrowLeft className="mr-2 h-4 w-4" />Back to customers</Button></CardContent></Card>;
 
   const ownerName = account.ownerEmployeeName || employeeName(account.ownerEmployeeId);
+  const secondaryName = account.secondaryEmployeeId == null ? '' : account.secondaryEmployeeName || employeeName(account.secondaryEmployeeId);
   const openVisitForm = () => { setVisitForm({ ...emptyVisit(), employeeId: String(account.ownerEmployeeId || '') }); setVisitOpen(true) };
   const openMonthlySales = () => { setMonthlySalesForm({ declaredMonthlySalesMt: account.declaredMonthlySalesMt == null ? '' : String(account.declaredMonthlySalesMt), changeReason: '' }); setMonthlySalesOpen(true) };
   const statusTone: Tone = account.accountStatus === 'ACTIVE' ? 'success' : account.accountStatus === 'PROSPECT' ? 'info' : account.accountStatus === 'LOST' ? 'danger' : 'warning';
@@ -519,6 +533,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     <div className="detail-page space-y-4 font-poppins text-xs">
       <DetailHero
         name={account.accountName}
+        imageUrl={account.storeImageUrl ?? null}
         onBack={() => router.push('/dashboard/customers')}
         backLabel="Back to customers"
         badges={<>
@@ -531,7 +546,8 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
           { icon: Hash, label: account.id },
           ...(account.gstNumber ? [{ icon: FileText, label: account.gstNumber, mono: true }] : []),
           ...(account.addressCity || account.addressState ? [{ icon: MapPin, label: [account.addressCity, account.addressState].filter(Boolean).join(', ') }] : []),
-          { icon: User, label: ownerName, title: 'Account owner' },
+          { icon: User, label: ownerName, title: 'Primary assigned employee' },
+          ...(secondaryName ? [{ icon: Users, label: secondaryName, title: 'Secondary assigned employee' }] : []),
           { icon: Users, label: resolvedGroupName, title: 'Client group' },
           { icon: MapPinned, label: resolvedRegionName, title: 'Region' },
           { icon: Tag, label: `Tier ${account.clientTier}`, title: 'Client tier' },
@@ -571,6 +587,12 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
                 <div className="grid gap-4 lg:grid-cols-2">
                 <Section icon={Activity} title="Activity" className="lg:row-span-2" bodyClassName="p-0" action={<Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => void openTask()}><Plus className="mr-1 h-3.5 w-3.5" />Task</Button>}>
                   <ActivityTimeline upcoming={upNext} recent={recentActivity} viewAllHref="#tasks" />
+                </Section>
+                <Section icon={Users} title="Assigned employees">
+                  <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Info label="Primary employee" value={ownerName} />
+                    <Info label="Secondary employee" value={secondaryName || 'Not assigned'} />
+                  </dl>
                 </Section>
                 <Section icon={MapPin} title="Outlet and network">
                   <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
@@ -785,7 +807,8 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
             <FormField label="GSTIN" required><Input className="font-mono uppercase" value={editDraft.gstNumber} onChange={(event) => setEditDraft({ ...editDraft, gstNumber: event.target.value.toUpperCase().slice(0, 15) })} /></FormField>
             <FormField label="Client type"><Select value={editDraft.clientType} onValueChange={(value) => setEditDraft({ ...editDraft, clientType: value as RetailAccountDraft['clientType'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select></FormField>
             <FormField label="Account status"><Select value={editDraft.accountStatus} onValueChange={(value) => setEditDraft({ ...editDraft, accountStatus: value as RetailAccountDraft['accountStatus'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select></FormField>
-            <FormField label="Owner"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => setEditDraft({ ...editDraft, ownerEmployeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Primary employee"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => setEditDraft({ ...editDraft, ownerEmployeeId: value, secondaryEmployeeId: value === editDraft.secondaryEmployeeId ? '' : editDraft.secondaryEmployeeId })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Secondary employee" hint="Optional. Must differ from the primary employee."><Select value={editDraft.secondaryEmployeeId || NO_SECONDARY} onValueChange={(value) => setEditDraft({ ...editDraft, secondaryEmployeeId: value === NO_SECONDARY ? '' : value })}><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger><SelectContent><SelectItem value={NO_SECONDARY}>None</SelectItem>{employees.filter((employee) => String(employee.id) !== editDraft.ownerEmployeeId).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
             <FormField label="Client group" required className="sm:col-span-2"><Select value={editDraft.clientGroupId} onValueChange={(value) => setEditDraft({ ...editDraft, clientGroupId: value })}><SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger><SelectContent>{groups.filter((g) => g.active !== false).map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.groupName}</SelectItem>)}</SelectContent></Select></FormField>
           </FormGroup>
           <FormGroup title="Outlet address">
@@ -869,7 +892,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
           <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
-          <FormField label="Description"><Textarea rows={3} value={visitForm.description} onChange={(event) => setVisitForm({ ...visitForm, description: event.target.value })} placeholder="Optional agenda or context" /></FormField>
+          <FormField label="Instructions" hint="Optional instructions for the assigned employee."><Textarea rows={3} value={visitForm.description} onChange={(event) => setVisitForm({ ...visitForm, description: event.target.value })} placeholder="e.g. Collect the cheque and photograph the display" /></FormField>
           <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
         </FormGroup>
       </FormSheet>

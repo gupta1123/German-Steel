@@ -16,6 +16,8 @@ export type RetailClientGroupType = 'STANDALONE' | 'FAMILY_GROUP' | 'CORPORATE_G
 export interface RetailClientGroupPayload { groupName: string; groupType: RetailClientGroupType; notes?: string | null; active?: boolean }
 export interface RetailSalesRegion { id: number; name: string; code?: string | null; active?: boolean }
 export interface RetailPinCode { id: number; pinCode: string; regionId: number | null; regionName: string; active?: boolean }
+export interface RetailDistrict { id: number | null; name: string; regionId?: number | null; regionName?: string | null; stateName?: string | null; code?: string | null; active?: boolean }
+export interface RetailDistrictFilters { regionId?: number; q?: string; active?: boolean; page?: number; size?: number }
 export interface RetailEmployee { id: number; employeeCode: string; firstName: string; lastName: string; role: string; mobile: string; email: string; active?: boolean }
 export interface CompetitorBrand { id: number; name: string }
 export interface RetailPricing { id: number; competitorBrandId: number; brandName: string; pricePerTon: number; city: string; district: string | null; state: string; pinCode: string; regionId: number | null; regionCode: string | null; regionName: string | null; observationDate: string; remarks: string | null; createdByEmployeeId: number | null; createdByEmployeeName: string; createdAt: string; active: boolean }
@@ -57,7 +59,10 @@ export interface RetailAccount extends RetailAccountCreatePayload {
   id: number;
   clientGroupName: string;
   ownerEmployeeName: string;
+  secondaryEmployeeId: number | null;
+  secondaryEmployeeName: string;
   regionName: string;
+  storeImageUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -167,10 +172,37 @@ const extractCreatedId = (value: unknown, keys: string[]): number => {
 };
 const json = (method: 'POST' | 'PUT', body?: unknown): RequestInit => ({ method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 
+export type RetailAssignmentRole = 'PRIMARY' | 'SECONDARY';
+export interface RetailAccountEmployee { employeeId: number; employeeName: string; assignmentRole: RetailAssignmentRole }
+
+const personName = (item: Record<string, unknown> | null, ...names: unknown[]): string =>
+  toTitleCase(stringOf(...names, item?.fullName, item?.name, [stringOf(item?.firstName), stringOf(item?.lastName)].filter(Boolean).join(' ')));
+
+const normalizeAccountEmployee = (value: unknown): RetailAccountEmployee | null => {
+  const item = recordOf(value); if (!item) return null;
+  const employee = nested(item, 'employee');
+  const employeeId = numberOf(item.employeeId, employee?.id, employee?.employeeId); if (employeeId == null) return null;
+  const role = stringOf(item.assignmentRole, item.role).toUpperCase();
+  if (item.active === false) return null;
+  return { employeeId, employeeName: personName(employee, item.employeeName), assignmentRole: role === 'SECONDARY' ? 'SECONDARY' : 'PRIMARY' };
+};
+
+// The secondary assignment may arrive flat (secondaryEmployeeId) or inside an
+// assignment list, depending on the endpoint that produced the account.
+const secondaryFromAccount = (item: Record<string, unknown>): { id: number | null; name: string } => {
+  const secondary = nested(item, 'secondaryEmployee');
+  const flatId = numberOf(item.secondaryEmployeeId, secondary?.id, secondary?.employeeId);
+  if (flatId != null) return { id: flatId, name: personName(secondary, item.secondaryEmployeeName) };
+  const list = [item.employees, item.assignedEmployees, item.employeeAssignments, item.assignments].find(Array.isArray) as unknown[] | undefined;
+  const match = (list ?? []).map(normalizeAccountEmployee).find((entry) => entry?.assignmentRole === 'SECONDARY');
+  return match ? { id: match.employeeId, name: match.employeeName } : { id: null, name: '' };
+};
+
 const normalizeAccount = (value: unknown): RetailAccount | null => {
   const item = recordOf(value); if (!item) return null;
   const id = numberOf(item.id, item.accountId, item.clientAccountId); if (id == null) return null;
   const owner = nested(item, 'ownerEmployee', 'owner', 'employee'); const group = nested(item, 'clientGroup', 'group'); const region = nested(item, 'region', 'salesRegion');
+  const secondary = secondaryFromAccount(item);
   const status = stringOf(item.accountStatus, item.status).toUpperCase(); const clientType = stringOf(item.clientType, item.type).toUpperCase(); const sector = stringOf(item.focusSector).toUpperCase(); const tier = stringOf(item.clientTier, item.tier).toUpperCase(); const networkStatus = stringOf(item.networkStatus).toUpperCase();
   return {
     id, accountName: toTitleCase(stringOf(item.accountName, item.name, item.storeName)) || `Customer #${id}`,
@@ -179,10 +211,11 @@ const normalizeAccount = (value: unknown): RetailAccount | null => {
     accountStatus: (['PROSPECT', 'ACTIVE', 'DORMANT', 'LOST'].includes(status) ? status : 'PROSPECT') as RetailAccountStatus,
     ownerEmployeeId: numberOf(item.ownerEmployeeId, item.employeeId, owner?.id) ?? 0,
     ownerEmployeeName: toTitleCase(stringOf(item.ownerEmployeeName, item.ownerName, owner?.fullName, [stringOf(owner?.firstName), stringOf(owner?.lastName)].filter(Boolean).join(' '))),
+    secondaryEmployeeId: secondary.id, secondaryEmployeeName: secondary.name,
     addressVillageArea: stringOf(item.addressVillageArea, item.villageArea, item.addressLine1), addressTaluka: stringOf(item.addressTaluka, item.taluka, item.subDistrict), addressCity: stringOf(item.addressCity, item.city), addressDistrict: stringOf(item.addressDistrict, item.district), addressState: stringOf(item.addressState, item.state), pinCode: stringOf(item.pinCode, item.pincode),
     regionId: numberOf(item.regionId, item.salesRegionId, region?.id) ?? undefined, regionName: stringOf(item.regionName, item.salesRegionName, region?.name), outletLatitude: numberOf(item.outletLatitude, item.latitude) ?? 0, outletLongitude: numberOf(item.outletLongitude, item.longitude) ?? 0,
     declaredMonthlySalesMt: numberOf(item.declaredMonthlySalesMt, item.monthlySales), focusSector: (['RETAIL', 'GOVERNMENT_PROJECTS', 'DEVELOPER_PROJECTS', 'ALL_SECTORS'].includes(sector) ? sector : 'RETAIL') as RetailFocusSector,
-    creditTermsDays: numberOf(item.creditTermsDays) ?? 0, creditLimitAmount: numberOf(item.creditLimitAmount) ?? 0, clientTier: (['A', 'B', 'C'].includes(tier) ? tier : 'B') as 'A' | 'B' | 'C', networkMember: booleanOf(false, item.networkMember), networkOnboardingDate: stringOf(item.networkOnboardingDate) || null, networkStatus: (['ACTIVE', 'INACTIVE'].includes(networkStatus) ? networkStatus : null) as 'ACTIVE' | 'INACTIVE' | null, active: booleanOf(true, item.active), createdAt: stringOf(item.createdAt, item.createdDate), updatedAt: stringOf(item.updatedAt, item.modifiedDate),
+    creditTermsDays: numberOf(item.creditTermsDays) ?? 0, creditLimitAmount: numberOf(item.creditLimitAmount) ?? 0, clientTier: (['A', 'B', 'C'].includes(tier) ? tier : 'B') as 'A' | 'B' | 'C',     networkMember: booleanOf(false, item.networkMember), networkOnboardingDate: stringOf(item.networkOnboardingDate) || null, networkStatus: (['ACTIVE', 'INACTIVE'].includes(networkStatus) ? networkStatus : null) as 'ACTIVE' | 'INACTIVE' | null, active: booleanOf(true, item.active), storeImageUrl: stringOf(item.storeImageUrl, item.storeImage, item.imageUrl, item.photoUrl, item.outletImageUrl) || null, createdAt: stringOf(item.createdAt, item.createdDate), updatedAt: stringOf(item.updatedAt, item.modifiedDate),
   };
 };
 
@@ -232,6 +265,69 @@ export const RetailAPI = {
   async getPinCodes(token: string): Promise<RetailPinCode[]> {
     const response = await getWithDocumentedFallback(['/api/common/pincodes', '/api/common/pin-codes?page=0&size=500'], token);
     return pageItems(response).flatMap((value) => { const item = recordOf(value); const region = nested(item, 'region', 'salesRegion'); const pinCode = stringOf(item?.pinCode, item?.pincode, item?.code); const rawId = numberOf(item?.id, item?.pinCodeId, item?.pincodeId); return !pinCode ? [] : [{ id: rawId ?? Number(pinCode), pinCode, regionId: numberOf(item?.regionId, item?.salesRegionId, region?.id), regionName: stringOf(item?.regionName, item?.salesRegionName, region?.name, region?.regionName), active: typeof item?.active === 'boolean' ? item.active : undefined }] });
+  },
+  /**
+   * District master browser.
+   * GET /api/common/districts?page=&size=&regionId=&q=&active= (paginated through all pages).
+   */
+  async getDistricts(token: string, filters: RetailDistrictFilters = {}): Promise<RetailDistrict[]> {
+    const normalize = (value: unknown): RetailDistrict | null => {
+      if (typeof value === 'string' && value.trim()) return { id: null, name: value.trim() };
+      const item = recordOf(value); if (!item) return null;
+      const region = nested(item, 'region', 'salesRegion');
+      const name = stringOf(item?.name, item?.districtName, item?.district);
+      if (!name) return null;
+      return {
+        id: numberOf(item?.id, item?.districtId),
+        name,
+        regionId: numberOf(item?.regionId, item?.salesRegionId, region?.id),
+        regionName: stringOf(item?.regionName, item?.salesRegionName, region?.name) || null,
+        stateName: stringOf(item?.stateName, item?.state) || null,
+        code: stringOf(item?.code, item?.districtCode) || null,
+        active: typeof item?.active === 'boolean' ? item.active : undefined,
+      };
+    };
+    const size = filters.size ?? 100;
+    const buildPath = (page: number) => `/api/common/districts${queryString({ page, size, regionId: filters.regionId, q: filters.q, active: filters.active })}`;
+    const first = await request(buildPath(filters.page ?? 0), token);
+    const firstItems = pageItems(first).flatMap((value) => { const d = normalize(value); return d ? [d] : []; });
+    if (filters.page !== undefined) return firstItems;
+    const outer = recordOf(first); const data = recordOf(outer?.data);
+    const source = data && (Array.isArray(data.content) || 'totalElements' in data) ? data : outer;
+    const totalPages = numberOf(source?.totalPages) ?? 1;
+    if (totalPages <= 1) return firstItems;
+    const rest = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, index) => request(buildPath(index + 1), token)),
+    );
+    return [firstItems, ...rest.map((response) => pageItems(response).flatMap((value) => { const d = normalize(value); return d ? [d] : []; }))].flat();
+  },
+  /**
+   * Permitted sales-region ids for a restricted (manager) user: union of the
+   * employee's own regionIds and the regions of teams they manage.
+   * Returns null for unrestricted callers (admins) and fails open to null
+   * when nothing is assigned, so record forms never brick.
+   */
+  async getPermittedRegionIds(token: string, options: { employeeId?: number | null; isManager: boolean }): Promise<number[] | null> {
+    if (!options.isManager) return null;
+    try {
+      const { teamsApi } = await import('./teams-api');
+      const ids = new Set<number>();
+      if (options.employeeId != null) {
+        try {
+          const employee = await teamsApi.getEmployeeById(token, options.employeeId);
+          employee.regionIds.forEach((id) => ids.add(id));
+        } catch { /* fall through to teams below */ }
+      }
+      try {
+        const teams = await teamsApi.getTeams(token);
+        teams
+          .filter((team) => options.employeeId != null && team.officeManagerId === options.employeeId)
+          .forEach((team) => team.regionIds.forEach((id) => ids.add(id)));
+      } catch { /* employee regions above may suffice */ }
+      return ids.size > 0 ? [...ids] : null;
+    } catch {
+      return null;
+    }
   },
   async createSalesRegion(payload: { code: string; name: string; centerLatitude?: number | null; centerLongitude?: number | null; active?: boolean }, token: string): Promise<number> {
     return extractCreatedId(await request('/api/common/regions', token, json('POST', payload)), ['id', 'regionId', 'salesRegionId']);
@@ -299,7 +395,40 @@ export const RetailAPI = {
     }
   },
   async createAccount(payload: RetailAccountCreatePayload, token: string): Promise<number> { return extractCreatedId(await request('/api/retail/accounts', token, json('POST', payload)), ['id', 'accountId', 'clientAccountId']) },
+  async uploadStoreImage(accountId: number, file: File, token: string): Promise<unknown> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    // Multipart upload — do not set Content-Type; the browser adds the boundary.
+    const response = await fetch(`${RETAIL_API_BASE_URL}/api/retail/accounts/${accountId}/store-image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!response.ok) throw new RetailApiError(await getApiErrorMessage(response, `Upload failed (${response.status})`), response.status);
+    return readResponseBody(response);
+  },
   async updateAccount(accountId: number, payload: RetailAccountCreatePayload, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}`, token, json('PUT', payload)) },
+  /** Best-effort: returns [] when the listing is unavailable. */
+  async getAccountEmployees(accountId: number, token: string): Promise<RetailAccountEmployee[]> {
+    try {
+      const response = await request(`/api/retail/accounts/${accountId}/employees`, token);
+      return pageItems(response).flatMap((value) => { const entry = normalizeAccountEmployee(value); return entry ? [entry] : [] });
+    } catch {
+      return [];
+    }
+  },
+  async assignAccountEmployee(accountId: number, employeeId: number, assignmentRole: RetailAssignmentRole, token: string): Promise<void> {
+    await request(`/api/retail/accounts/${accountId}/employees`, token, json('POST', { employeeId, assignmentRole }));
+  },
+  async removeAccountEmployee(accountId: number, employeeId: number, token: string): Promise<void> {
+    await request(`/api/retail/accounts/${accountId}/employees/${employeeId}`, token, { method: 'DELETE' });
+  },
+  /** Swaps the secondary assignment: DELETE the old one, then POST the new one. */
+  async setSecondaryEmployee(accountId: number, currentEmployeeId: number | null, nextEmployeeId: number | null, token: string): Promise<void> {
+    if (currentEmployeeId === nextEmployeeId) return;
+    if (currentEmployeeId != null) await RetailAPI.removeAccountEmployee(accountId, currentEmployeeId, token);
+    if (nextEmployeeId != null) await RetailAPI.assignAccountEmployee(accountId, nextEmployeeId, 'SECONDARY', token);
+  },
   async deleteAccount(accountId: number, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}`, token, { method: 'DELETE' }) },
   async updateMonthlySales(accountId: number, declaredMonthlySalesMt: number, changeReason: string, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}/monthly-sales`, token, json('PUT', { declaredMonthlySalesMt, changeReason })) },
   async createMasterContact(payload: MasterContactCreatePayload, token: string): Promise<number> { return extractCreatedId(await request('/api/common/contacts', token, json('POST', payload)), ['id', 'contactId', 'contactInfluenceRegisterId']) },

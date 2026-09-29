@@ -1,18 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, CalendarIcon, ChevronLeft, ChevronRight, Edit3, Loader2, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth-provider';
 import { getErrorMessage } from '@/lib/api-error';
-import { RetailAPI, type CompetitorBrand, type RetailEmployee, type RetailPricing, type RetailPricingPayload, type RetailPricingSummary } from '@/lib/retail-api';
+import { RetailAPI, type CompetitorBrand, type RetailDistrict, type RetailEmployee, type RetailPinCode, type RetailPricing, type RetailPricingPayload, type RetailPricingSummary, type RetailSalesRegion } from '@/lib/retail-api';
+import { getCorrectedRoleFlags } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,7 +26,11 @@ const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'curren
 const emptyForm = (): RetailPricingPayload => ({ competitorBrandId: 0, pricePerTon: 0, city: '', district: '', state: '', pinCode: '', observationDate: today(), remarks: null });
 
 export default function PricingPage() {
-  const { token } = useAuth();
+  const { token, userRole, userData, currentUser, teamId, correctedRoleFlags } = useAuth();
+  const roleFlags = useMemo(
+    () => getCorrectedRoleFlags(userRole, currentUser, correctedRoleFlags, teamId),
+    [userRole, currentUser, correctedRoleFlags, teamId],
+  );
   const [rows, setRows] = useState<RetailPricing[]>([]);
   const [summary, setSummary] = useState<RetailPricingSummary[]>([]);
   const [brands, setBrands] = useState<CompetitorBrand[]>([]);
@@ -35,6 +40,9 @@ export default function PricingPage() {
   const [page, setPage] = useState(0); const [totalPages, setTotalPages] = useState(1); const [totalElements, setTotalElements] = useState(0);
   const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false); const [editing, setEditing] = useState<RetailPricing | null>(null); const [form, setForm] = useState<RetailPricingPayload>(emptyForm());
+  const [districtMasters, setDistrictMasters] = useState<RetailDistrict[]>([]); const [pinCodeMasters, setPinCodeMasters] = useState<RetailPinCode[]>([]); const [stateMasters, setStateMasters] = useState<RetailSalesRegion[]>([]);
+  // null = unrestricted (admins, or no regional assignment found — fails open).
+  const [permittedRegionIds, setPermittedRegionIds] = useState<number[] | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return; setLoading(true);
@@ -47,16 +55,72 @@ export default function PricingPage() {
     finally { setLoading(false); }
   }, [token, page, selectedDate, selectedCity, employeeId]);
 
-  useEffect(() => { if (!token) return; void Promise.all([RetailAPI.getCompetitorBrands(token).then(setBrands), RetailAPI.getEmployees(token).then(setEmployees), RetailAPI.getPricing(token, { page: 0, size: 200 }).then((result) => setCities(Array.from(new Set(result.content.map((row) => row.city).filter(Boolean))).sort()))]); }, [token]);
+  useEffect(() => { if (!token) return; void Promise.all([RetailAPI.getCompetitorBrands(token).then(setBrands), RetailAPI.getEmployees(token).then(setEmployees), RetailAPI.getPricing(token, { page: 0, size: 200 }).then((result) => setCities(Array.from(new Set(result.content.map((row) => row.city).filter(Boolean))).sort()))]); RetailAPI.getDistricts(token, { active: true }).then(setDistrictMasters).catch(() => {}); RetailAPI.getSalesRegions(token).then((list) => { const active = list.filter((r) => r.active !== false); if (active.length > 0) setStateMasters(active); }).catch(() => {}); RetailAPI.getPinCodes(token).then((list) => setPinCodeMasters(list.filter((pin) => pin.active !== false))).catch(() => {}); RetailAPI.getPermittedRegionIds(token, { employeeId: userData?.employeeId ?? null, isManager: roleFlags.isManager }).then(setPermittedRegionIds).catch(() => setPermittedRegionIds(null)); }, [token, roleFlags.isManager, userData?.employeeId]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setPage(0); }, [selectedDate, selectedCity, employeeId]);
 
   const openCreate = () => { setEditing(null); setForm({ ...emptyForm(), competitorBrandId: brands[0]?.id || 0 }); setSheetOpen(true); };
   const openEdit = (row: RetailPricing) => { setEditing(row); setForm({ competitorBrandId: row.competitorBrandId, pricePerTon: row.pricePerTon, city: row.city, district: row.district || '', state: row.state, pinCode: row.pinCode, observationDate: row.observationDate, remarks: row.remarks }); setSheetOpen(true); };
+  const isPinValid = form.pinCode === '' || /^\d{6}$/.test(form.pinCode);
+  const pricingStateOptions = useMemo(() => stateMasters.map((r) => ({ value: r.name, label: r.name })).sort((a, b) => a.label.localeCompare(b.label)), [stateMasters]);
+  const useStateDropdown = stateMasters.length > 0 && (form.state === '' || pricingStateOptions.some((o) => o.value === form.state));
+  // The state field holds a sales-region name: scope districts/PINs to that region.
+  // Restricted users only see permitted regions; entries with unknown region are always kept.
+  const selectedPricingRegion = useMemo(
+    () => stateMasters.find((r) => r.name === form.state.trim()) ?? null,
+    [stateMasters, form.state],
+  );
+  const scopeToSelectedRegion = useCallback(<T extends { regionId?: number | null; regionName?: string | null }>(items: T[]): T[] => {
+    if (!selectedPricingRegion) return items;
+    const scoped = items.filter((item) => {
+      if (item.regionId != null) return item.regionId === selectedPricingRegion.id;
+      if (item.regionName) return item.regionName === selectedPricingRegion.name;
+      return true;
+    });
+    return scoped.length > 0 ? scoped : items;
+  }, [selectedPricingRegion]);
+  const pricingDistrictOptions = useMemo(() => {
+    const permitted = permittedRegionIds == null
+      ? districtMasters
+      : districtMasters.filter((d) => d.regionId == null || permittedRegionIds.includes(d.regionId));
+    const pool = scopeToSelectedRegion(permitted);
+    const seen = new Set<string>();
+    return pool.flatMap((d) => {
+      if (seen.has(d.name)) return [];
+      seen.add(d.name);
+      return [{ value: d.name, label: d.regionName ? `${d.name} · ${d.regionName}` : d.name }];
+    }).sort((a, b) => a.label.localeCompare(b.label));
+  }, [districtMasters, permittedRegionIds, scopeToSelectedRegion]);
+  const pricingPinOptions = useMemo(() => {
+    const permitted = permittedRegionIds == null
+      ? pinCodeMasters
+      : pinCodeMasters.filter((p) => p.regionId == null || permittedRegionIds.includes(p.regionId));
+    const pool = scopeToSelectedRegion(permitted);
+    return pool.map((p) => ({ value: p.pinCode, label: p.regionName ? `${p.pinCode} · ${p.regionName}` : p.pinCode }));
+  }, [pinCodeMasters, permittedRegionIds, scopeToSelectedRegion]);
+  const useDistrictDropdown = districtMasters.length > 0 && (form.district === '' || pricingDistrictOptions.some((o) => o.value === form.district));
+  const usePinDropdown = pinCodeMasters.length > 0 && (form.pinCode === '' || pinCodeMasters.some((p) => p.pinCode === form.pinCode));
+  const hasStateSelected = form.state.trim() !== '';
+  // Hide the PIN field when the selected state has no mapped PINs (and none is set).
+  const regionPinCount = useMemo(() => {
+    if (!selectedPricingRegion || pinCodeMasters.length === 0) return -1;
+    const base = permittedRegionIds == null
+      ? pinCodeMasters
+      : pinCodeMasters.filter((p) => p.regionId == null || permittedRegionIds.includes(p.regionId));
+    return base.filter((p) => (p.regionId != null && p.regionId === selectedPricingRegion.id) || (p.regionId == null && p.regionName != null && p.regionName === selectedPricingRegion.name)).length;
+  }, [selectedPricingRegion, pinCodeMasters, permittedRegionIds]);
+  const hidePinField = usePinDropdown && !!selectedPricingRegion && form.pinCode === '' && regionPinCount === 0;
+  const isOutOfScope = (regionId: number | null | undefined): boolean =>
+    regionId != null && permittedRegionIds != null && !permittedRegionIds.includes(regionId);
+  const isFormValid = Boolean(form.competitorBrandId) && form.pricePerTon > 0 && form.city.trim() !== '' && form.state.trim() !== '' && isPinValid && form.observationDate !== '' && form.observationDate <= today();
   const save = async () => {
     if (!token) return;
-    if (!form.competitorBrandId || form.pricePerTon <= 0 || !form.city.trim() || !form.district.trim() || !form.state.trim() || !/^\d{6}$/.test(form.pinCode) || !form.observationDate) { toast.error('Brand, positive price, city, district, state, 6-digit PIN code and date are required.'); return; }
+    if (!form.competitorBrandId || form.pricePerTon <= 0 || !form.city.trim() || !form.state.trim() || !form.observationDate) { toast.error('Brand, positive price, city, state and date are required.'); return; }
+    if (form.pinCode !== '' && !/^\d{6}$/.test(form.pinCode)) { toast.error('PIN code must be 6 digits, or leave it empty.'); return; }
     if (form.observationDate > today()) { toast.error('Observation date cannot be in the future.'); return; }
+    const districtRegion = districtMasters.find((d) => d.name === form.district.trim())?.regionId;
+    const pinRegion = pinCodeMasters.find((p) => p.pinCode === form.pinCode)?.regionId;
+    if (isOutOfScope(districtRegion) || isOutOfScope(pinRegion)) { toast.error('The selected market is outside your permitted sales regions.'); return; }
     setSaving(true);
     try { if (editing) await RetailAPI.updatePricing(editing.id, form, token); else await RetailAPI.createPricing(form, token); toast.success(editing ? 'Pricing updated.' : 'Pricing recorded.'); setSheetOpen(false); await load(); }
     catch (error) { toast.error(getErrorMessage(error, 'Unable to save pricing.')); }
@@ -77,11 +141,19 @@ export default function PricingPage() {
     </div>
     <div className="flex items-center justify-end gap-2"><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" />Previous</Button><span className="text-xs text-muted-foreground">Page {page + 1} of {totalPages}</span><Button variant="outline" size="sm" disabled={page + 1 >= totalPages || loading} onClick={() => setPage((value) => value + 1)}>Next<ChevronRight className="h-4 w-4" /></Button></div>
 
-    <Sheet open={sheetOpen} onOpenChange={(open) => !saving && setSheetOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-xl"><SheetHeader className="border-b pb-4"><SheetTitle>{editing ? 'Edit pricing observation' : 'Record pricing observation'}</SheetTitle></SheetHeader><div className="grid min-h-0 flex-1 gap-4 overflow-y-auto py-4 sm:grid-cols-2">
-      <div className="sm:col-span-2"><Label>Competitor brand *</Label><Select value={form.competitorBrandId ? String(form.competitorBrandId) : ''} onValueChange={(value) => setForm({ ...form, competitorBrandId: Number(value) })}><SelectTrigger className="mt-1"><SelectValue placeholder="Select brand" /></SelectTrigger><SelectContent>{brands.map((brand) => <SelectItem key={brand.id} value={String(brand.id)}>{brand.name}</SelectItem>)}</SelectContent></Select></div>
-      <div><Label>Price per MT *</Label><Input type="number" min="0.01" step="0.01" value={form.pricePerTon || ''} onChange={(e) => setForm({ ...form, pricePerTon: Number(e.target.value) })} className="mt-1" /></div><div><Label>Observation date *</Label><Input type="date" max={today()} value={form.observationDate} onChange={(e) => setForm({ ...form, observationDate: e.target.value })} className="mt-1" /></div>
-      <div><Label>City *</Label><Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="mt-1" /></div><div><Label>District *</Label><Input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} className="mt-1" /></div><div><Label>State *</Label><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="mt-1" /></div><div><Label>PIN code *</Label><Input inputMode="numeric" maxLength={6} value={form.pinCode} onChange={(e) => setForm({ ...form, pinCode: e.target.value.replace(/\D/g, '').slice(0, 6) })} className="mt-1" /></div>
-      <div className="sm:col-span-2"><Label>Remarks</Label><Textarea value={form.remarks || ''} onChange={(e) => setForm({ ...form, remarks: e.target.value || null })} className="mt-1" /></div>
-    </div><SheetFooter className="border-t pt-4"><Button variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button onClick={() => void save()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Save changes' : 'Record price'}</Button></SheetFooter></SheetContent></Sheet>
+    <Sheet open={sheetOpen} onOpenChange={(open) => !saving && setSheetOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-xl"><SheetHeader className="border-b pb-4"><SheetTitle>{editing ? 'Edit pricing observation' : 'Record pricing observation'}</SheetTitle><SheetDescription>{editing ? 'Update the competitor price observation details.' : 'Fill in the brand, price, market and date to record a new competitor price observation.'}</SheetDescription></SheetHeader><form onSubmit={(e) => { e.preventDefault(); void save(); }} className="flex min-h-0 flex-1 flex-col"><div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto py-4 sm:grid-cols-2">
+      <div className="sm:col-span-2"><Label htmlFor="pricing-brand">Competitor brand *</Label><Select value={form.competitorBrandId ? String(form.competitorBrandId) : ''} onValueChange={(value) => setForm({ ...form, competitorBrandId: Number(value) })}><SelectTrigger id="pricing-brand" aria-required="true" aria-invalid={!form.competitorBrandId} className={`mt-1${!form.competitorBrandId ? ' border-destructive' : ''}`}><SelectValue placeholder="Select brand" /></SelectTrigger><SelectContent>{brands.map((brand) => <SelectItem key={brand.id} value={String(brand.id)}>{brand.name}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label htmlFor="pricing-price">Price per MT *</Label><Input id="pricing-price" type="number" min="0.01" step="0.01" required aria-invalid={form.pricePerTon <= 0} value={form.pricePerTon || ''} onChange={(e) => setForm({ ...form, pricePerTon: Number(e.target.value) })} className="mt-1" /></div><div><Label htmlFor="pricing-date">Observation date *</Label><Input id="pricing-date" type="date" max={today()} required aria-invalid={!form.observationDate} value={form.observationDate} onChange={(e) => setForm({ ...form, observationDate: e.target.value })} className="mt-1" /></div>
+      <div><Label htmlFor="pricing-city">City *</Label><Input id="pricing-city" required aria-invalid={!form.city.trim()} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="mt-1" /></div><div><Label htmlFor="pricing-state">State *</Label>{useStateDropdown ? <SearchableSelect value={form.state || undefined} options={pricingStateOptions} onSelect={(option) => {
+                      const name = option?.value ?? '';
+                      const regionId = stateMasters.find((r) => r.name === name)?.id ?? null;
+                      setForm((prev) => {
+                        const keepDistrict = !name || !prev.district || regionId == null || districtMasters.some((d) => d.name === prev.district && (d.regionId == null || d.regionId === regionId));
+                        const keepPin = !name || !prev.pinCode || regionId == null || pinCodeMasters.some((p) => p.pinCode === prev.pinCode && (p.regionId == null || p.regionId === regionId));
+                        return { ...prev, state: name, district: keepDistrict ? prev.district : '', pinCode: keepPin ? prev.pinCode : '' };
+                      });
+                    }} placeholder="Select state" searchPlaceholder="Search states..." emptyMessage="No matching state" required triggerClassName="mt-1 w-full" contentClassName="w-[var(--radix-popover-trigger-width)]" /> : <Input id="pricing-state" required aria-invalid={!form.state.trim()} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="mt-1" />}</div><div><Label htmlFor="pricing-district">District</Label>{useDistrictDropdown ? <SearchableSelect value={form.district || undefined} options={pricingDistrictOptions} onSelect={(option) => setForm({ ...form, district: option?.value ?? '' })} disabled={!hasStateSelected} placeholder={!hasStateSelected ? 'Select state first' : 'Select district'} searchPlaceholder="Search districts..." emptyMessage="No matching district" triggerClassName="mt-1 w-full" contentClassName="w-[var(--radix-popover-trigger-width)]" /> : <Input id="pricing-district" value={form.district} disabled={!hasStateSelected} onChange={(e) => setForm({ ...form, district: e.target.value })} className="mt-1" placeholder={!hasStateSelected ? 'Select state first' : undefined} />}</div>{hidePinField ? null : <div><Label htmlFor="pricing-pin">PIN code</Label>{usePinDropdown ? <SearchableSelect value={form.pinCode || undefined} options={pricingPinOptions} onSelect={(option) => setForm({ ...form, pinCode: option?.value ?? '' })} disabled={!hasStateSelected} placeholder={!hasStateSelected ? 'Select state first' : 'Select PIN code'} searchPlaceholder="Search PIN codes..." emptyMessage="No matching PIN code" triggerClassName="mt-1 w-full" contentClassName="w-[var(--radix-popover-trigger-width)]" /> : <Input id="pricing-pin" inputMode="numeric" maxLength={6} aria-invalid={!isPinValid} value={form.pinCode} disabled={!hasStateSelected} onChange={(e) => setForm({ ...form, pinCode: e.target.value.replace(/\D/g, '').slice(0, 6) })} className="mt-1" placeholder={!hasStateSelected ? 'Select state first' : 'Optional'} />}</div>}
+      <div className="sm:col-span-2"><Label htmlFor="pricing-remarks">Remarks</Label><Textarea id="pricing-remarks" value={form.remarks || ''} onChange={(e) => setForm({ ...form, remarks: e.target.value || null })} className="mt-1" /></div>
+    </div><SheetFooter className="border-t pt-4"><Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="submit" disabled={saving || !isFormValid} title={!isFormValid ? 'Fill all mandatory fields to enable saving' : undefined}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Save changes' : 'Record price'}</Button></SheetFooter></form></SheetContent></Sheet>
   </div>;
 }

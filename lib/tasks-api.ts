@@ -126,6 +126,16 @@ const normalizePriority = (value: unknown): SharedTaskPriority => {
   return 'MEDIUM';
 };
 
+/** Exact backend statuses for requirements/complaints, with legacy UI labels tolerated. */
+const normalizeTaskStatusParam = (status: string): SharedTaskStatus => {
+  const s = String(status).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'assigned' || s === 'open') return 'OPEN';
+  if (s === 'work_in_progress' || s === 'in_progress') return 'IN_PROGRESS';
+  if (s === 'complete' || s === 'completed') return 'COMPLETED';
+  if (s === 'cancelled' || s === 'canceled') return 'CANCELLED';
+  return 'OPEN';
+};
+
 const normalizeTask = (value: unknown): SharedTask | null => {
   const item = recordOf(value);
   if (!item) return null;
@@ -224,13 +234,8 @@ export const tasksApi = {
       params.assignedToEmployeeId = opts.assignedToEmployeeId;
     }
     if (opts.status && opts.status !== '' && opts.status !== 'all') {
-      // Map UI status to API status: Assigned->OPEN, Work In Progress->IN_PROGRESS, etc.
-      const s = String(opts.status).toLowerCase();
-      if (s === 'assigned') params.status = 'OPEN';
-      else if (s === 'work in progress') params.status = 'IN_PROGRESS';
-      else if (s === 'complete') params.status = 'COMPLETED';
-      else if (s === 'cancelled') params.status = 'CANCELLED';
-      else params.status = String(opts.status).toUpperCase();
+      // Exact backend statuses: OPEN, IN_PROGRESS, COMPLETED, CANCELLED (legacy UI labels tolerated).
+      params.status = normalizeTaskStatusParam(opts.status);
     }
     if (opts.priority && opts.priority !== '' && opts.priority !== 'all') {
       params.priority = String(opts.priority).toUpperCase();
@@ -262,12 +267,8 @@ export const tasksApi = {
       params.assignedToEmployeeId = opts.assignedToEmployeeId;
     }
     if (opts.status && opts.status !== '' && opts.status !== 'all') {
-      const s = String(opts.status).toLowerCase();
-      if (s === 'assigned') params.status = 'OPEN';
-      else if (s === 'work in progress') params.status = 'IN_PROGRESS';
-      else if (s === 'complete') params.status = 'COMPLETED';
-      else if (s === 'cancelled') params.status = 'CANCELLED';
-      else params.status = String(opts.status).toUpperCase();
+      // Exact backend statuses: OPEN, IN_PROGRESS, COMPLETED, CANCELLED (legacy UI labels tolerated).
+      params.status = normalizeTaskStatusParam(opts.status);
     }
     if (opts.priority && opts.priority !== '' && opts.priority !== 'all') {
       params.priority = String(opts.priority).toUpperCase();

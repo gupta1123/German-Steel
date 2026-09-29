@@ -23,6 +23,15 @@ type DocumentRow = {
   institutionId: number | null; projectId: number | null; ncRegisterId: number | null;
   fileName: string; mimeType: string | null; fileSizeBytes: number | null; fileAttached: boolean; active: boolean;
   uploadedAt: string | null; uploadedByEmployeeName: string | null; versionNumber: number | null;
+  approvalDate: string | null; expiryDate: string | null;
+};
+
+const stringOf = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value.trim() : null;
+const isExpired = (expiry: string | null): boolean => !!expiry && expiry.slice(0, 10) < new Date().toISOString().slice(0, 10);
+const formatDay = (value: string | null): string | null => {
+  if (!value) return null;
+  const date = new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-IN', { dateStyle: 'medium' });
 };
 
 export default function DocumentsPage() {
@@ -52,7 +61,10 @@ export default function DocumentsPage() {
       const response = await fetch(`${API_BASE}/api/common/documents?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) throw new Error(await response.text());
       const body = await response.json();
-      setDocuments(Array.isArray(body.content) ? body.content : []);
+      setDocuments((Array.isArray(body.content) ? body.content : []).map((row: unknown) => {
+        const record = row as Record<string, unknown>;
+        return { ...(row as object), approvalDate: stringOf(record.approvalDate), expiryDate: stringOf(record.expiryDate) } as DocumentRow;
+      }));
       setTotalElements(Number(body.totalElements || 0));
       setTotalPages(Math.max(1, Number(body.totalPages || 1)));
     } catch (error) {
@@ -121,7 +133,7 @@ export default function DocumentsPage() {
               <TableCell><div className="flex min-w-0 items-center gap-2"><div className="rounded-md bg-primary/10 p-1.5"><FileText className="h-4 w-4 text-primary" /></div><div className="min-w-0"><p className="truncate font-medium" title={document.fileName}>{document.fileName}</p><p className="truncate text-[11px] text-muted-foreground">{document.mimeType || 'Type unavailable'}{document.fileSizeBytes ? ` · ${Math.ceil(document.fileSizeBytes / 1024)} KB` : ''}</p></div></div></TableCell>
               <TableCell><Badge variant="secondary" className="max-w-full truncate text-[10px]">{humanize(document.documentType)}</Badge></TableCell>
               <TableCell><div className="truncate font-medium" title={document.parentName || undefined}>{href ? <Link href={href} className="hover:underline">{document.parentName || `${humanize(document.parentType)} #${document.parentId}`}</Link> : document.parentName || `${humanize(document.parentType)} #${document.parentId}`}</div><p className="text-[11px] text-muted-foreground">{humanize(document.parentType)} · #{document.parentId}</p></TableCell>
-              <TableCell>v{document.versionNumber || 1}<div className="mt-1"><Badge variant={document.fileAttached ? 'default' : 'outline'} className="text-[10px]">{document.fileAttached ? 'Attached' : 'Missing'}</Badge></div></TableCell>
+              <TableCell>v{document.versionNumber || 1}<div className="mt-1 flex flex-wrap gap-1"><Badge variant={document.fileAttached ? 'default' : 'outline'} className="text-[10px]">{document.fileAttached ? 'Attached' : 'Missing'}</Badge>{isExpired(document.expiryDate) && <Badge variant="destructive" className="text-[10px]">Expired</Badge>}</div></TableCell>
               <TableCell><p>{document.uploadedAt ? new Date(document.uploadedAt).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—'}</p><p className="truncate text-[11px] text-muted-foreground">{document.uploadedByEmployeeName || 'Unknown uploader'}</p></TableCell>
               <TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" className="h-8 w-8" disabled={!document.fileAttached || fileLoading} onClick={() => void view(document)} title="Preview"><Eye className="h-4 w-4" /></Button><Button size="icon" variant="ghost" className="h-8 w-8" disabled={!document.fileAttached || fileLoading} onClick={() => void download(document)} title="Download"><Download className="h-4 w-4" /></Button></div></TableCell>
             </TableRow>;
@@ -132,7 +144,7 @@ export default function DocumentsPage() {
         <span className="text-xs text-muted-foreground">10 rows per page</span>
         <div className="flex items-center gap-2"><Button variant="outline" size="sm" className="h-8" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0 || loading}><ChevronLeft className="h-4 w-4" />Previous</Button><span className="text-xs text-muted-foreground">Page {page + 1} of {totalPages}</span><Button variant="outline" size="sm" className="h-8" onClick={() => setPage((current) => current + 1)} disabled={page + 1 >= totalPages || loading}>Next<ChevronRight className="h-4 w-4" /></Button></div>
       </div>
-      <Dialog open={!!selected} onOpenChange={(open) => { if (!open) { setSelected(null); setPreviewUrl(null); } }}><DialogContent className="max-w-4xl"><DialogHeader><DialogTitle className="truncate pr-8">{selected?.fileName}</DialogTitle></DialogHeader>{selected && !selected.fileAttached ? <p className="py-8 text-center text-sm text-muted-foreground">The document record exists, but no file is attached.</p> : fileLoading ? <div className="flex h-[55vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div> : previewUrl ? <iframe src={previewUrl} className="h-[65vh] w-full rounded-lg border" title={selected?.fileName} /> : <p className="py-8 text-center text-sm text-muted-foreground">Preview unavailable.</p>}</DialogContent></Dialog>
+      <Dialog open={!!selected} onOpenChange={(open) => { if (!open) { setSelected(null); setPreviewUrl(null); } }}><DialogContent className="max-w-4xl"><DialogHeader><DialogTitle className="truncate pr-8">{selected?.fileName}</DialogTitle>{selected && (selected.approvalDate || selected.expiryDate) && <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground"><span>Approved: {formatDay(selected.approvalDate) ?? '—'}</span><span className={isExpired(selected.expiryDate) ? 'font-medium text-destructive' : undefined}>Expires: {formatDay(selected.expiryDate) ?? '—'}</span>{isExpired(selected.expiryDate) && <Badge variant="destructive" className="text-[10px]">Expired</Badge>}</p>}</DialogHeader>{selected && !selected.fileAttached ? <p className="py-8 text-center text-sm text-muted-foreground">The document record exists, but no file is attached.</p> : fileLoading ? <div className="flex h-[55vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div> : previewUrl ? <iframe src={previewUrl} className="h-[65vh] w-full rounded-lg border" title={selected?.fileName} /> : <p className="py-8 text-center text-sm text-muted-foreground">Preview unavailable.</p>}</DialogContent></Dialog>
     </div>
   );
 }

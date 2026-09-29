@@ -1,3 +1,5 @@
+import { getApiErrorMessage } from '@/lib/api-error';
+
 const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const LOGIN_ENDPOINT = `${API_BASE_URL}/api/auth/login`;
 const CURRENT_USER_ENDPOINT = `${API_BASE_URL}/api/auth/me`;
@@ -254,17 +256,35 @@ const normalizeProfile = (raw: unknown, username: string, fallbackRole: string) 
   return { userRoleData, currentUser, teamId, primaryRole };
 };
 
+export const LOGIN_NETWORK_ERROR_MESSAGE =
+  'Unable to reach the server. Please check your internet connection and try again.';
+export const LOGIN_SERVER_ERROR_MESSAGE =
+  'The server is temporarily unavailable. Please try again in a few minutes.';
+export const LOGIN_PROFILE_ERROR_MESSAGE =
+  'We could not load your account details. Please try signing in again.';
+
+// fetch() rejects with a TypeError ("Failed to fetch", "Load failed",
+// "NetworkError when attempting to fetch resource") when the request never
+// reaches the server, e.g. offline, CORS, or blocked mixed content.
+const fetchOrNetworkError = async (input: string, init: RequestInit): Promise<Response> => {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new Error(LOGIN_NETWORK_ERROR_MESSAGE);
+  }
+};
+
 export const authService = {
   login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
-    const response = await fetch(LOGIN_ENDPOINT, {
+    const response = await fetchOrNetworkError(LOGIN_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
     });
     if (!response.ok) {
-      const body = (await response.text()).trim();
       if ([401, 403].includes(response.status)) throw new Error('Invalid credentials');
-      throw new Error(body || `Login failed (${response.status})`);
+      if (response.status >= 500) throw new Error(LOGIN_SERVER_ERROR_MESSAGE);
+      throw new Error(await getApiErrorMessage(response, 'Login failed. Please try again.'));
     }
 
     const login = parseTokenResponse(await response.text());
@@ -272,7 +292,7 @@ export const authService = {
     tokenManager.setToken(login.token);
 
     try {
-      const profileResponse = await fetch(CURRENT_USER_ENDPOINT, {
+      const profileResponse = await fetchOrNetworkError(CURRENT_USER_ENDPOINT, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${login.token}` },
       });
@@ -292,8 +312,9 @@ export const authService = {
       return { token: login.token, role: profile.primaryRole };
     } catch (error) {
       tokenManager.removeToken();
-      if (error instanceof Error && error.message === FIELD_OFFICER_WEB_ACCESS_MESSAGE) throw error;
-      throw new Error(`Login succeeded, but the new profile endpoint could not be loaded: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Profile request failed after login:', error);
+      if (error instanceof Error && [FIELD_OFFICER_WEB_ACCESS_MESSAGE, LOGIN_NETWORK_ERROR_MESSAGE].includes(error.message)) throw error;
+      throw new Error(LOGIN_PROFILE_ERROR_MESSAGE);
     }
   },
   logout: async (): Promise<void> => { tokenManager.removeToken() },

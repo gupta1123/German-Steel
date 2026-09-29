@@ -414,6 +414,7 @@ export interface InstitutionDocument {
   documentType: string;
   fileName: string;
   versionNumber: number | null;
+  approvalDate: string | null;
   expiryDate: string | null;
   fileAttached: boolean;
   fileUrl: string | null;
@@ -431,9 +432,10 @@ const normalizeDocument = (value: unknown): InstitutionDocument | null => {
   const id = numberOf(item.id); if (id == null) return null;
   return {
     id,
-    documentType: stringOf(item.documentType, item.type) || 'â€”',
+    documentType: stringOf(item.documentType, item.type) || '—',
     fileName: stringOf(item.fileName, item.name) || `Document #${id}`,
     versionNumber: numberOf(item.versionNumber),
+    approvalDate: stringOf(item.approvalDate) || null,
     expiryDate: stringOf(item.expiryDate) || null,
     fileAttached: typeof item.fileAttached === 'boolean' ? item.fileAttached : true,
     fileUrl: stringOf(item.fileUrl) || null,
@@ -647,15 +649,23 @@ export const InstitutionsAPI = {
       throw error;
     }
   },
-  async createDocument(payload: { documentType: InstitutionDocumentType; institutionId: number; fileName: string }, token: string): Promise<number> {
+  async createDocument(payload: { documentType: InstitutionDocumentType; institutionId: number; fileName: string; approvalDate?: string | null; expiryDate?: string | null }, token: string): Promise<number> {
     const body = await request('/api/common/documents', token, json('POST', {
       documentType: payload.documentType,
       parentType: 'INSTITUTION',
       institutionId: payload.institutionId,
       fileName: payload.fileName,
+      approvalDate: payload.approvalDate ?? null,
+      expiryDate: payload.expiryDate ?? null,
       active: true,
     }));
     return extractCreatedId(body);
+  },
+  async updateDocument(documentId: number, payload: { approvalDate?: string | null; expiryDate?: string | null }, token: string): Promise<void> {
+    await request(`/api/common/documents/${documentId}`, token, json('PUT', {
+      approvalDate: payload.approvalDate ?? null,
+      expiryDate: payload.expiryDate ?? null,
+    }));
   },
   async uploadDocumentFile(documentId: number, file: File, token: string): Promise<void> {
     const form = new FormData();
