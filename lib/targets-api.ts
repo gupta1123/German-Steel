@@ -243,7 +243,7 @@ const normalizeTarget = (value: unknown): SalesTargetDto | null => {
     effectiveFulfilledTons,
     pendingTons: numberOf(item.pendingTons) ?? Math.max(0, targetTons - effectiveFulfilledTons),
     achievementPercent: numberOf(item.achievementPercent, item.achievement_percent) ?? (targetTons > 0 ? effectiveFulfilledTons / targetTons * 100 : 0),
-    status: stringOf(item.status) || (item.active === false ? "INACTIVE" : "PENDING"),
+    status: item.active === false ? "INACTIVE" : stringOf(item.status) || "PENDING",
     remarks: stringOf(item.remarks, item.notes) || null,
   };
 };
@@ -251,7 +251,12 @@ const normalizeTarget = (value: unknown): SalesTargetDto | null => {
 const buildTargetQuery = (params: SalesTargetSearchParams) => {
   const query = new URLSearchParams();
   // Guide 5.15: GET /api/hr/targets?targetType=&metric=&year=&month=&employeeId=&clientAccountId=&page=&size=
-  if (params.targetType) query.set("targetType", params.targetType);
+  if (params.targetType) {
+    const apiTargetType = params.targetType === "MONTHLY"
+      ? (params.storeId != null ? "RETAIL_ACCOUNT" : "EMPLOYEE")
+      : params.targetType;
+    query.set("targetType", apiTargetType);
+  }
   // Metric is optional: omit to list every KPI (sales + approvals); StoreTargets callers pass SALES_MT explicitly.
   if (params.metric) query.set("metric", params.metric);
   if (params.year != null) query.set("year", String(params.year));
@@ -283,7 +288,7 @@ const toCreatePayload = (payload: SalesTargetCreatePayload): Record<string, unkn
   // This keeps StoreTargets UI working while respecting "exactly one scope" rule.
   const hasStore = payload.storeId != null;
   const hasEmployee = payload.employeeId != null;
-  const targetType = payload.targetType === "DAILY" ? "DAILY" : "MONTHLY";
+  const targetType = payload.targetType;
   // New API expects EMPLOYEE / TEAM / REGION / RETAIL_ACCOUNT. Map MONTHLY store targets to RETAIL_ACCOUNT.
   const newTargetType = hasStore ? "RETAIL_ACCOUNT" : targetType === "DAILY" ? "DAILY" : "EMPLOYEE";
   return {
@@ -294,17 +299,9 @@ const toCreatePayload = (payload: SalesTargetCreatePayload): Record<string, unkn
     targetValue: payload.targetTons,
     // Only one scope id
     ...(hasStore ? { clientAccountId: payload.storeId } : hasEmployee ? { employeeId: payload.employeeId } : {}),
-    // Preserve employee ownership when creating retail account targets via additional field if backend supports it
-    // Do not send both when strict, but keep fallback for old backends.
-    ...(!hasStore && hasEmployee ? {} : {}),
     active: true,
-    notes: payload.remarks ?? null,
-    // Keep legacy fields for backward compatibility with old backend
-    employeeId: payload.employeeId,
-    storeId: payload.storeId,
-    targetTons: payload.targetTons,
-    remarks: payload.remarks,
-    targetDate: payload.targetDate,
+    ...(payload.remarks ? { notes: payload.remarks } : {}),
+    ...(payload.targetDate ? { targetDate: payload.targetDate } : {}),
   };
 };
 
@@ -345,7 +342,11 @@ export const targetsApi = {
         return normalized.filter((t) => t.employeeId === params.employeeId && t.storeId === params.storeId);
       }
       return normalized.filter((t) => {
-        if (params.targetType && t.targetType !== params.targetType) return false;
+        const requestedTypeMatches = !params.targetType
+          || t.targetType === params.targetType
+          || (params.targetType === "EMPLOYEE" && t.targetType === "MONTHLY" && t.storeId === 0)
+          || (params.targetType === "RETAIL_ACCOUNT" && t.targetType === "MONTHLY" && t.storeId !== 0);
+        if (!requestedTypeMatches) return false;
         if (params.month != null && t.month !== params.month) return false;
         if (params.year != null && t.year !== params.year) return false;
         return true;
@@ -411,11 +412,9 @@ export const targetsApi = {
       const body: Record<string, unknown> = {};
       if (payload.targetTons != null) {
         body.targetValue = payload.targetTons;
-        body.targetTons = payload.targetTons; // legacy fallback
       }
       if (payload.remarks != null) {
         body.notes = payload.remarks;
-        body.remarks = payload.remarks;
       }
       if (Object.keys(body).length === 0) return null;
       const response = await request(`/api/hr/targets/${id}`, token, {
@@ -458,7 +457,9 @@ export const targetsApi = {
       month: String(params.month),
     });
     const response = await request(`/api/hr/targets/monthly-employee-kpis?${query}`, token);
-    const rows = pageItems(response);
+    const listedRows = pageItems(response);
+    const singleRow = sourceRecord(response);
+    const rows = listedRows.length > 0 ? listedRows : singleRow ? [singleRow] : [];
     return rows.flatMap((value) => {
       const item = recordOf(value);
       if (!item) return [];

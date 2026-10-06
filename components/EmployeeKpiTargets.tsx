@@ -23,11 +23,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select2';
 
 const KPI_OPTIONS: { value: EmployeeKpiMetric; label: string; unit: string }[] = [
-  { value: 'SALES_MT', label: 'Sales', unit: 'MT' },
-  { value: 'NEW_APPROVALS', label: 'New approvals', unit: 'approvals' },
+  { value: 'SALES_MT', label: 'Sales amount', unit: 'MT' },
+  { value: 'NEW_APPROVALS', label: 'Institution & project approvals', unit: 'approvals' },
 ];
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const QUARTERS = [
+  { value: 1, label: 'Q1', months: 'Jan–Mar' },
+  { value: 2, label: 'Q2', months: 'Apr–Jun' },
+  { value: 3, label: 'Q3', months: 'Jul–Sep' },
+  { value: 4, label: 'Q4', months: 'Oct–Dec' },
+] as const;
+
+const monthsForQuarter = (quarter: number): number[] => {
+  const firstMonth = (quarter - 1) * 3 + 1;
+  return [firstMonth, firstMonth + 1, firstMonth + 2];
+};
+
+const quarterEndMonth = (quarter: number): number => quarter * 3;
+
+const quarterLabel = (quarter: number, year: number): string => {
+  const definition = QUARTERS.find((option) => option.value === quarter);
+  return `${definition?.label ?? `Q${quarter}`} (${definition?.months ?? ''}) ${year}`;
+};
 
 const kpiMeta = (metric: string): { label: string; unit: string } =>
   KPI_OPTIONS.find((option) => option.value === metric)
@@ -51,10 +68,11 @@ export default function EmployeeKpiTargets() {
   const [employees, setEmployees] = useState<EmployeeUserDto[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(true);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [quarter, setQuarter] = useState(Math.floor(now.getMonth() / 3) + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [targets, setTargets] = useState<SalesTargetDto[]>([]);
   const [kpis, setKpis] = useState<EmployeeKpiProgress[]>([]);
+  const [progressComplete, setProgressComplete] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -95,25 +113,52 @@ export default function EmployeeKpiTargets() {
     if (!token || !selectedEmployeeId) {
       setTargets([]);
       setKpis([]);
+      setProgressComplete(true);
       return;
     }
     setIsLoading(true);
     setLoadError(null);
     try {
       const employeeId = Number(selectedEmployeeId);
-      const [targetsResult, kpisResult] = await Promise.allSettled([
-        targetsApi.searchSalesTargets(token, { targetType: 'MONTHLY', employeeId, year, month }),
-        targetsApi.getMonthlyEmployeeKpis(token, { employeeId, year, month }),
+      const quarterMonths = monthsForQuarter(quarter);
+      const [targetsResult, ...monthlyKpiResults] = await Promise.allSettled([
+        targetsApi.searchSalesTargets(token, {
+          targetType: 'EMPLOYEE',
+          employeeId,
+          year,
+          month: quarterEndMonth(quarter),
+        }),
+        ...quarterMonths.map((month) => targetsApi.getMonthlyEmployeeKpis(token, { employeeId, year, month })),
       ]);
-      // searchSalesTargets may return legacy MONTHLY/DAILY targetTypes; keep employee-scope rows only.
       if (targetsResult.status === 'fulfilled') {
-        setTargets(targetsResult.value.filter((target) => target.employeeId === employeeId && (target.storeId === 0 || target.storeId == null)));
+        setTargets(targetsResult.value.filter((target) => (
+          target.employeeId === employeeId
+          && (target.storeId === 0 || target.storeId == null)
+          && target.status.toUpperCase() !== 'INACTIVE'
+        )));
       } else {
         throw targetsResult.reason;
       }
-      setKpis(kpisResult.status === 'fulfilled' ? kpisResult.value : []);
-      if (kpisResult.status === 'rejected') {
-        toast.warning('Targets loaded, but live progress is unavailable.');
+
+      const complete = monthlyKpiResults.every((result) => result.status === 'fulfilled');
+      setProgressComplete(complete);
+      if (complete) {
+        const monthlyRows = monthlyKpiResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
+        setKpis(KPI_OPTIONS.map((option) => {
+          const rows = monthlyRows.filter((row) => row.metric.toUpperCase() === option.value);
+          const achievedValue = rows.reduce((sum, row) => sum + row.achievedValue, 0);
+          return {
+            metric: option.value,
+            targetValue: 0,
+            achievedValue,
+            remainingValue: 0,
+            achievementPercent: 0,
+          };
+        }));
+      } else {
+        setKpis([]);
+        const failedCount = monthlyKpiResults.filter((result) => result.status === 'rejected').length;
+        toast.warning(`Targets loaded, but achieved progress is unavailable for ${failedCount} month${failedCount === 1 ? '' : 's'} in this quarter.`);
       }
     } catch (error) {
       setTargets([]);
@@ -122,7 +167,7 @@ export default function EmployeeKpiTargets() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, selectedEmployeeId, year, month]);
+  }, [token, selectedEmployeeId, year, quarter]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -152,9 +197,13 @@ export default function EmployeeKpiTargets() {
       setFormError('Enter a target value greater than zero.');
       return;
     }
-    // Prevent duplicates for the same employee, month and KPI.
+    if (formMetric === 'NEW_APPROVALS' && !Number.isInteger(value)) {
+      setFormError('Approval targets must be a whole number.');
+      return;
+    }
+    // A quarter is stored as one target record on its ending month (3, 6, 9 or 12).
     if (!editingTarget && targets.some((target) => (target.metric ?? 'SALES_MT').toUpperCase() === formMetric)) {
-      setFormError(`A ${kpiMeta(formMetric).label.toLowerCase()} target already exists for this employee and month. Edit it instead.`);
+      setFormError(`A ${kpiMeta(formMetric).label.toLowerCase()} target already exists for this employee and quarter. Edit it instead.`);
       return;
     }
     setIsSaving(true);
@@ -166,9 +215,9 @@ export default function EmployeeKpiTargets() {
       } else {
         await targetsApi.createSalesTarget(token, {
           employeeId: Number(selectedEmployeeId),
-          targetType: 'MONTHLY',
+          targetType: 'EMPLOYEE',
           targetTons: value,
-          month,
+          month: quarterEndMonth(quarter),
           year,
           metric: formMetric,
         });
@@ -189,7 +238,7 @@ export default function EmployeeKpiTargets() {
   const deactivate = async (target: SalesTargetDto) => {
     if (!token) return;
     const meta = kpiMeta(target.metric ?? 'SALES_MT');
-    if (!window.confirm(`Deactivate the ${meta.label.toLowerCase()} target for ${MONTHS[month - 1]} ${year}?`)) return;
+    if (!window.confirm(`Deactivate the ${meta.label.toLowerCase()} target for ${quarterLabel(quarter, year)}?`)) return;
     try {
       await targetsApi.deleteSalesTarget(token, target.id);
       toast.success('Target deactivated.');
@@ -218,10 +267,10 @@ export default function EmployeeKpiTargets() {
         </div>
         <div className="grid grid-cols-2 gap-3 lg:flex">
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Month</Label>
-            <Select value={String(month)} onValueChange={(value) => setMonth(Number(value))}>
+            <Label className="text-xs font-medium">Quarter</Label>
+            <Select value={String(quarter)} onValueChange={(value) => setQuarter(Number(value))}>
               <SelectTrigger className="h-9 w-full text-sm shadow-none lg:w-[150px]"><SelectValue /></SelectTrigger>
-              <SelectContent>{MONTHS.map((label, index) => <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>)}</SelectContent>
+              <SelectContent>{QUARTERS.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label} · {option.months}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
@@ -235,7 +284,7 @@ export default function EmployeeKpiTargets() {
       </div>
 
       {!selectedEmployeeId ? (
-        <Card className="shadow-none"><CardContent className="py-10 text-center text-sm text-muted-foreground">Select an employee to view and manage monthly KPI targets.</CardContent></Card>
+        <Card className="shadow-none"><CardContent className="py-10 text-center text-sm text-muted-foreground">Select an employee to view and manage quarterly targets.</CardContent></Card>
       ) : isLoading ? (
         <div className="grid gap-4 md:grid-cols-2">
           {[0, 1].map((index) => (
@@ -250,37 +299,37 @@ export default function EmployeeKpiTargets() {
             {KPI_OPTIONS.map((kpi) => {
               const progress = kpiByMetric.get(kpi.value);
               const targetRow = targets.find((target) => (target.metric ?? 'SALES_MT').toUpperCase() === kpi.value);
-              const targetValue = progress?.targetValue ?? targetRow?.targetTons ?? 0;
+              const targetValue = targetRow?.targetTons ?? 0;
               const achievedValue = progress?.achievedValue ?? 0;
-              const remainingValue = progress?.remainingValue ?? Math.max(0, targetValue - achievedValue);
-              const percent = progress?.achievementPercent ?? (targetValue > 0 ? (achievedValue / targetValue) * 100 : 0);
-              const hasTarget = progress != null || targetRow != null;
+              const remainingValue = Math.max(0, targetValue - achievedValue);
+              const percent = targetValue > 0 ? (achievedValue / targetValue) * 100 : 0;
+              const hasTarget = targetRow != null;
               return (
                 <Card key={kpi.value} className="shadow-none">
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center justify-between text-sm font-semibold">
                       {kpi.label}
-                      <span className="text-xs font-normal text-muted-foreground">{MONTHS[month - 1]} {year}</span>
+                      <span className="text-xs font-normal text-muted-foreground">{quarterLabel(quarter, year)}</span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {!hasTarget ? (
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-muted-foreground">No target set for this month.</p>
+                        <p className="text-xs text-muted-foreground">No target set for this quarter.</p>
                         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openAssign(kpi.value)}><Plus className="mr-1.5 h-3.5 w-3.5" />Assign</Button>
                       </div>
                     ) : (
                       <>
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div><p className="text-[11px] text-muted-foreground">Target</p><p className="text-sm font-semibold tabular-nums">{formatValue(targetValue, kpi.unit)}</p></div>
-                          <div><p className="text-[11px] text-muted-foreground">Achieved</p><p className="text-sm font-semibold tabular-nums">{formatValue(achievedValue, kpi.unit)}</p></div>
-                          <div><p className="text-[11px] text-muted-foreground">Remaining</p><p className="text-sm font-semibold tabular-nums">{formatValue(remainingValue, kpi.unit)}</p></div>
+                          <div><p className="text-[11px] text-muted-foreground">Achieved</p><p className="text-sm font-semibold tabular-nums">{progressComplete ? formatValue(achievedValue, kpi.unit) : '—'}</p></div>
+                          <div><p className="text-[11px] text-muted-foreground">Remaining</p><p className="text-sm font-semibold tabular-nums">{progressComplete ? formatValue(remainingValue, kpi.unit) : '—'}</p></div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <KpiProgressBar percent={percent} />
-                          <span className="text-xs font-medium tabular-nums">{Math.round(percent)}%</span>
+                          <KpiProgressBar percent={progressComplete ? percent : 0} />
+                          <span className="text-xs font-medium tabular-nums">{progressComplete ? `${Math.round(percent)}%` : '—'}</span>
                         </div>
-                        {!progress && <p className="text-[11px] text-muted-foreground">Live progress unavailable — target only.</p>}
+                        {!progressComplete && <p className="text-[11px] text-muted-foreground">Quarterly progress is unavailable because one or more monthly calculations failed.</p>}
                       </>
                     )}
                   </CardContent>
@@ -295,7 +344,7 @@ export default function EmployeeKpiTargets() {
             </CardHeader>
             <CardContent className="p-0">
               {targets.length === 0 ? (
-                <p className="px-4 py-8 text-center text-xs text-muted-foreground">No KPI targets for {MONTHS[month - 1]} {year}. Assign one from the cards above.</p>
+                <p className="px-4 py-8 text-center text-xs text-muted-foreground">No targets for {quarterLabel(quarter, year)}. Assign one from the cards above.</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -314,7 +363,7 @@ export default function EmployeeKpiTargets() {
                         <TableRow key={target.id}>
                           <TableCell className="font-medium">{meta.label}</TableCell>
                           <TableCell className="text-right tabular-nums">{formatValue(target.targetTons, meta.unit)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{progress ? formatValue(progress.achievedValue, meta.unit) : '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{progressComplete && progress ? formatValue(progress.achievedValue, meta.unit) : '—'}</TableCell>
                           <TableCell>
                             <div className="flex justify-end gap-1">
                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(target)} aria-label={`Edit ${meta.label} target`} title="Edit target"><Pencil className="h-3.5 w-3.5" /></Button>
@@ -337,7 +386,7 @@ export default function EmployeeKpiTargets() {
           <DialogHeader>
             <DialogTitle>{editingTarget ? 'Edit target' : 'Assign target'}</DialogTitle>
             <DialogDescription>
-              {selectedEmployee ? [selectedEmployee.firstName, selectedEmployee.lastName].filter(Boolean).join(' ') : ''} · {MONTHS[month - 1]} {year}. Achievement is calculated by the backend — it cannot be edited here.
+              {selectedEmployee ? [selectedEmployee.firstName, selectedEmployee.lastName].filter(Boolean).join(' ') : ''} · {quarterLabel(quarter, year)}. Achieved values are calculated from all three months and cannot be edited here.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -350,7 +399,7 @@ export default function EmployeeKpiTargets() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="kpi-target-value">Target value {formMetric === 'SALES_MT' ? '(MT)' : '(count)'}</Label>
-              <Input id="kpi-target-value" type="number" min="0.01" step="0.01" inputMode="decimal" value={formValue} onChange={(event) => setFormValue(event.target.value)} placeholder={formMetric === 'SALES_MT' ? 'e.g. 100' : 'e.g. 5'} />
+              <Input id="kpi-target-value" type="number" min={formMetric === 'SALES_MT' ? '0.01' : '1'} step={formMetric === 'SALES_MT' ? '0.01' : '1'} inputMode="decimal" value={formValue} onChange={(event) => setFormValue(event.target.value)} placeholder={formMetric === 'SALES_MT' ? 'e.g. 100' : 'e.g. 5'} />
             </div>
             {formError && <p role="alert" className="text-xs text-destructive">{formError}</p>}
           </div>

@@ -259,12 +259,28 @@ export const RetailAPI = {
     await request(`/api/retail/accounts/${accountId}/group`, token, json('POST', { clientGroupId }));
   },
   async getSalesRegions(token: string): Promise<RetailSalesRegion[]> {
-    const response = await getWithDocumentedFallback(['/api/common/sales-regions', '/api/common/regions?page=0&size=200'], token);
+    const response = await getWithDocumentedFallback(['/api/common/regions?page=0&size=200', '/api/common/sales-regions'], token);
     return pageItems(response).flatMap((value) => { const item = recordOf(value); const id = numberOf(item?.id, item?.regionId, item?.salesRegionId); const name = stringOf(item?.name, item?.regionName, item?.salesRegionName); return id == null || !name ? [] : [{ id, name, code: stringOf(item?.code, item?.regionCode) || null, active: typeof item?.active === 'boolean' ? item.active : undefined }] });
   },
   async getPinCodes(token: string): Promise<RetailPinCode[]> {
-    const response = await getWithDocumentedFallback(['/api/common/pincodes', '/api/common/pin-codes?page=0&size=500'], token);
-    return pageItems(response).flatMap((value) => { const item = recordOf(value); const region = nested(item, 'region', 'salesRegion'); const pinCode = stringOf(item?.pinCode, item?.pincode, item?.code); const rawId = numberOf(item?.id, item?.pinCodeId, item?.pincodeId); return !pinCode ? [] : [{ id: rawId ?? Number(pinCode), pinCode, regionId: numberOf(item?.regionId, item?.salesRegionId, region?.id), regionName: stringOf(item?.regionName, item?.salesRegionName, region?.name, region?.regionName), active: typeof item?.active === 'boolean' ? item.active : undefined }] });
+    const normalize = (value: unknown): RetailPinCode | null => {
+      const item = recordOf(value);
+      const region = nested(item, 'region', 'salesRegion');
+      const pinCode = stringOf(item?.pinCode, item?.pincode, item?.code);
+      const rawId = numberOf(item?.id, item?.pinCodeId, item?.pincodeId);
+      return !pinCode ? null : { id: rawId ?? Number(pinCode), pinCode, regionId: numberOf(item?.regionId, item?.salesRegionId, region?.id), regionName: stringOf(item?.regionName, item?.salesRegionName, region?.name, region?.regionName), active: typeof item?.active === 'boolean' ? item.active : undefined };
+    };
+    const size = 200;
+    const first = await getWithDocumentedFallback([`/api/common/pin-codes?page=0&size=${size}`, '/api/common/pincodes'], token);
+    const firstItems = pageItems(first).flatMap((value) => { const item = normalize(value); return item ? [item] : []; });
+    const outer = recordOf(first); const data = recordOf(outer?.data);
+    const source = data && (Array.isArray(data.content) || 'totalElements' in data) ? data : outer;
+    const totalPages = numberOf(source?.totalPages) ?? 1;
+    if (totalPages <= 1) return firstItems;
+    const rest = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, index) => request(`/api/common/pin-codes?page=${index + 1}&size=${size}`, token)),
+    );
+    return [firstItems, ...rest.map((response) => pageItems(response).flatMap((value) => { const item = normalize(value); return item ? [item] : []; }))].flat();
   },
   /**
    * District master browser.

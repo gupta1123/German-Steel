@@ -21,6 +21,7 @@ import {
   type RetailEmployee,
   type RetailMasterContact,
   type RetailNote,
+  type RetailPinCode,
   type RetailSale,
   type RetailSalesRegion,
   type RetailTask,
@@ -56,6 +57,16 @@ const showDate = (value: string) => value ? new Date(value.length === 10 ? `${va
 // Radix Select cannot use '' as an item value, so "no secondary" needs a sentinel.
 const NO_SECONDARY = 'none';
 const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
+const validateRetailAccountEdit = (draft: RetailAccountDraft) => {
+  const errors = validateRetailAccountDraft(draft);
+  if (!draft.clientGroupId) errors.push('Client group is required.');
+  return errors;
+};
+const resolveRetailAccountRegionId = (pinCode: string, pinCodes: RetailPinCode[]) => {
+  const normalizedPin = pinCode.trim();
+  const matchedPin = pinCodes.find((item) => item.active !== false && item.pinCode.trim() === normalizedPin);
+  return matchedPin?.regionId == null ? '' : String(matchedPin.regionId);
+};
 
 
 export default function CustomerDetailPage({ accountId }: CustomerDetailPageProps) {
@@ -75,6 +86,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
   const [groups, setGroups] = useState<RetailClientGroup[]>([]);
   const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
+  const [pinCodes, setPinCodes] = useState<RetailPinCode[]>([]);
   const [competitorBrands, setCompetitorBrands] = useState<CompetitorBrand[]>([]);
   const [masterContacts, setMasterContacts] = useState<RetailMasterContact[]>([]);
   const [brandSelect, setBrandSelect] = useState('');
@@ -87,6 +99,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const [editOpen, setEditOpen] = useState(false);
   const [editDraft, setEditDraft] = useState<RetailAccountDraft | null>(null);
   const [editErrors, setEditErrors] = useState<string[]>([]);
+  const [editValidationActive, setEditValidationActive] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<RetailContact | null>(null);
   const [contactForm, setContactForm] = useState<ContactForm>(emptyContact);
@@ -172,20 +185,6 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     catch (error) { toast.error(getErrorMessage(error, 'Unable to reload commercial history.')) }
   }, [accountId, token]);
 
-  const loadMastersSection = useCallback(async () => {
-    if (!token) return;
-    try {
-      const [emps, grps, regs] = await Promise.all([
-        RetailAPI.getEmployees(token),
-        RetailAPI.getClientGroups(token),
-        RetailAPI.getSalesRegions(token),
-      ]);
-      setEmployees(emps);
-      setGroups(grps);
-      setRegions(regs);
-    } catch { /* non-blocking masters */ }
-  }, [token]);
-
   const load = useCallback(async () => {
     if (!token || !Number.isFinite(accountId)) return;
     setIsLoading(true);
@@ -205,9 +204,10 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         RetailAPI.getEmployees(token).then(setEmployees),
         RetailAPI.getClientGroups(token).then(setGroups),
         RetailAPI.getSalesRegions(token).then(setRegions),
+        RetailAPI.getPinCodes(token).then((items) => setPinCodes(items.filter((pinCode) => pinCode.active !== false))),
         RetailAPI.getCompetitorBrands(token).then(setCompetitorBrands),
       ]).then((sources) => {
-        const labels = ['contacts', 'notes', 'visits', 'sales', 'tasks', 'active brands', 'brand history', 'commercial history', 'employees', 'groups', 'regions', 'competitor brands'];
+        const labels = ['contacts', 'notes', 'visits', 'sales', 'tasks', 'active brands', 'brand history', 'commercial history', 'employees', 'groups', 'regions', 'PIN codes', 'competitor brands'];
         const failed: string[] = [];
         sources.forEach((result, index) => {
           if (result.status === 'rejected') failed.push(`${labels[index]} could not be loaded: ${getErrorMessage(result.reason, 'request failed')}`);
@@ -278,25 +278,44 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
 
   const openEdit = () => {
     if (!account) return;
-    setEditDraft(createRetailAccountDraft(account));
+    setEditDraft({
+      ...createRetailAccountDraft(account),
+      regionId: resolveRetailAccountRegionId(account.pinCode, pinCodes),
+    });
     setEditErrors([]);
+    setEditValidationActive(false);
     setEditOpen(true);
+  };
+
+  const updateEditDraft = (nextDraft: RetailAccountDraft) => {
+    const draftWithRegion = {
+      ...nextDraft,
+      regionId: resolveRetailAccountRegionId(nextDraft.pinCode, pinCodes),
+    };
+    setEditDraft(draftWithRegion);
+    if (editValidationActive) setEditErrors(validateRetailAccountEdit(draftWithRegion));
   };
 
   const saveAccount = async () => {
     if (!token || !editDraft) return;
-    const errors = validateRetailAccountDraft(editDraft);
-    if (!editDraft.clientGroupId) errors.push('Client group is required.');
-    if (errors.length) { setEditErrors(errors); return }
+    const draftWithRegion = {
+      ...editDraft,
+      regionId: resolveRetailAccountRegionId(editDraft.pinCode, pinCodes),
+    };
+    setEditDraft(draftWithRegion);
+    const errors = validateRetailAccountEdit(draftWithRegion);
+    setEditValidationActive(true);
+    setEditErrors(errors);
+    if (errors.length) return;
     setBusy(true);
     try {
       const currentSecondaryId = account?.secondaryEmployeeId ?? null;
-      const nextSecondaryId = editDraft.secondaryEmployeeId ? Number(editDraft.secondaryEmployeeId) : null;
-      const nextOwnerId = Number(editDraft.ownerEmployeeId);
+      const nextSecondaryId = draftWithRegion.secondaryEmployeeId ? Number(draftWithRegion.secondaryEmployeeId) : null;
+      const nextOwnerId = Number(draftWithRegion.ownerEmployeeId);
       // Promoting the current secondary to primary: release the secondary slot first.
       const releaseSecondaryFirst = currentSecondaryId != null && currentSecondaryId === nextOwnerId;
       if (releaseSecondaryFirst) await RetailAPI.removeAccountEmployee(accountId, currentSecondaryId, token);
-      await RetailAPI.updateAccount(accountId, buildRetailAccountPayload(editDraft), token);
+      await RetailAPI.updateAccount(accountId, buildRetailAccountPayload(draftWithRegion), token);
       await RetailAPI.setSecondaryEmployee(accountId, releaseSecondaryFirst ? null : currentSecondaryId, nextSecondaryId, token);
       toast.success('Customer account updated.');
       setEditOpen(false);
@@ -322,7 +341,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
 
   const saveContact = async () => {
     if (!token || !account) return;
-    if (!contactForm.firstName.trim() || !contactForm.designation.trim() || contactForm.mobile.replace(/\D/g, '').length !== 10) { toast.error('First name, designation, and a 10-digit mobile number are required.'); return }
+    if (!contactForm.firstName.trim() || !contactForm.lastName.trim() || !contactForm.designation.trim() || contactForm.mobile.replace(/\D/g, '').length !== 10) { toast.error('First name, last name, designation, and a 10-digit mobile number are required.'); return }
     setBusy(true);
     try {
       if (editingContact) {
@@ -803,31 +822,31 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
       >
         {editDraft && <>
           <FormGroup title="Account">
-            <FormField label="Account name" required className="sm:col-span-2"><Input value={editDraft.accountName} onChange={(event) => setEditDraft({ ...editDraft, accountName: event.target.value })} /></FormField>
-            <FormField label="GSTIN" required><Input className="font-mono uppercase" value={editDraft.gstNumber} onChange={(event) => setEditDraft({ ...editDraft, gstNumber: event.target.value.toUpperCase().slice(0, 15) })} /></FormField>
-            <FormField label="Client type"><Select value={editDraft.clientType} onValueChange={(value) => setEditDraft({ ...editDraft, clientType: value as RetailAccountDraft['clientType'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select></FormField>
-            <FormField label="Account status"><Select value={editDraft.accountStatus} onValueChange={(value) => setEditDraft({ ...editDraft, accountStatus: value as RetailAccountDraft['accountStatus'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select></FormField>
-            <FormField label="Primary employee"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => setEditDraft({ ...editDraft, ownerEmployeeId: value, secondaryEmployeeId: value === editDraft.secondaryEmployeeId ? '' : editDraft.secondaryEmployeeId })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
-            <FormField label="Secondary employee" hint="Optional. Must differ from the primary employee."><Select value={editDraft.secondaryEmployeeId || NO_SECONDARY} onValueChange={(value) => setEditDraft({ ...editDraft, secondaryEmployeeId: value === NO_SECONDARY ? '' : value })}><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger><SelectContent><SelectItem value={NO_SECONDARY}>None</SelectItem>{employees.filter((employee) => String(employee.id) !== editDraft.ownerEmployeeId).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
-            <FormField label="Client group" required className="sm:col-span-2"><Select value={editDraft.clientGroupId} onValueChange={(value) => setEditDraft({ ...editDraft, clientGroupId: value })}><SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger><SelectContent>{groups.filter((g) => g.active !== false).map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.groupName}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Account name" required className="sm:col-span-2"><Input value={editDraft.accountName} onChange={(event) => updateEditDraft({ ...editDraft, accountName: event.target.value })} /></FormField>
+            <FormField label="GSTIN" required><Input className="font-mono uppercase" value={editDraft.gstNumber} onChange={(event) => updateEditDraft({ ...editDraft, gstNumber: event.target.value.toUpperCase().slice(0, 15) })} /></FormField>
+            <FormField label="Client type"><Select value={editDraft.clientType} onValueChange={(value) => updateEditDraft({ ...editDraft, clientType: value as RetailAccountDraft['clientType'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Account status"><Select value={editDraft.accountStatus} onValueChange={(value) => updateEditDraft({ ...editDraft, accountStatus: value as RetailAccountDraft['accountStatus'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Primary employee"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => updateEditDraft({ ...editDraft, ownerEmployeeId: value, secondaryEmployeeId: value === editDraft.secondaryEmployeeId ? '' : editDraft.secondaryEmployeeId })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Secondary employee" hint="Optional. Must differ from the primary employee."><Select value={editDraft.secondaryEmployeeId || NO_SECONDARY} onValueChange={(value) => updateEditDraft({ ...editDraft, secondaryEmployeeId: value === NO_SECONDARY ? '' : value })}><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger><SelectContent><SelectItem value={NO_SECONDARY}>None</SelectItem>{employees.filter((employee) => String(employee.id) !== editDraft.ownerEmployeeId).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Client group" required className="sm:col-span-2"><Select value={editDraft.clientGroupId} onValueChange={(value) => updateEditDraft({ ...editDraft, clientGroupId: value })}><SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger><SelectContent>{groups.filter((g) => g.active !== false).map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.groupName}</SelectItem>)}</SelectContent></Select></FormField>
           </FormGroup>
           <FormGroup title="Outlet address">
-            <FormField label="Village / area" required><Input value={editDraft.addressVillageArea} onChange={(event) => setEditDraft({ ...editDraft, addressVillageArea: event.target.value })} /></FormField>
-            <FormField label="Taluka" required><Input value={editDraft.addressTaluka} onChange={(event) => setEditDraft({ ...editDraft, addressTaluka: event.target.value })} /></FormField>
-            <FormField label="City" required><Input value={editDraft.addressCity} onChange={(event) => setEditDraft({ ...editDraft, addressCity: event.target.value })} /></FormField>
-            <FormField label="District" required><Input value={editDraft.addressDistrict} onChange={(event) => setEditDraft({ ...editDraft, addressDistrict: event.target.value })} /></FormField>
-            <FormField label="State" required><Input value={editDraft.addressState} onChange={(event) => setEditDraft({ ...editDraft, addressState: event.target.value })} /></FormField>
-            <FormField label="PIN code" required><Input inputMode="numeric" value={editDraft.pinCode} onChange={(event) => setEditDraft({ ...editDraft, pinCode: event.target.value.replace(/\D/g, '').slice(0, 6) })} /></FormField>
-            <FormField label="Region" hint="Derived from PIN when left empty." className="sm:col-span-2"><Select value={editDraft.regionId} onValueChange={(value) => setEditDraft({ ...editDraft, regionId: value })}><SelectTrigger><SelectValue placeholder="Derived from PIN" /></SelectTrigger><SelectContent>{regions.filter((r) => r.active !== false).map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}</SelectContent></Select></FormField>
-            <FormField label="Latitude" required><Input type="number" value={editDraft.outletLatitude} onChange={(event) => setEditDraft({ ...editDraft, outletLatitude: event.target.value })} /></FormField>
-            <FormField label="Longitude" required><Input type="number" value={editDraft.outletLongitude} onChange={(event) => setEditDraft({ ...editDraft, outletLongitude: event.target.value })} /></FormField>
+            <FormField label="Village / area" required><Input value={editDraft.addressVillageArea} onChange={(event) => updateEditDraft({ ...editDraft, addressVillageArea: event.target.value })} /></FormField>
+            <FormField label="Taluka" required><Input value={editDraft.addressTaluka} onChange={(event) => updateEditDraft({ ...editDraft, addressTaluka: event.target.value })} /></FormField>
+            <FormField label="City" required><Input value={editDraft.addressCity} onChange={(event) => updateEditDraft({ ...editDraft, addressCity: event.target.value })} /></FormField>
+            <FormField label="District" required><Input value={editDraft.addressDistrict} onChange={(event) => updateEditDraft({ ...editDraft, addressDistrict: event.target.value })} /></FormField>
+            <FormField label="State" required><Input value={editDraft.addressState} onChange={(event) => updateEditDraft({ ...editDraft, addressState: event.target.value })} /></FormField>
+            <FormField label="PIN code" required><Input inputMode="numeric" value={editDraft.pinCode} onChange={(event) => updateEditDraft({ ...editDraft, pinCode: event.target.value.replace(/\D/g, '').slice(0, 6) })} /></FormField>
+            <FormField label="Region" hint="Automatically derived from the PIN-code master." className="sm:col-span-2"><Select value={editDraft.regionId} disabled><SelectTrigger><SelectValue placeholder="Derived from PIN" /></SelectTrigger><SelectContent>{regions.filter((r) => r.active !== false).map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Latitude" required><Input type="number" value={editDraft.outletLatitude} onChange={(event) => updateEditDraft({ ...editDraft, outletLatitude: event.target.value })} /></FormField>
+            <FormField label="Longitude" required><Input type="number" value={editDraft.outletLongitude} onChange={(event) => updateEditDraft({ ...editDraft, outletLongitude: event.target.value })} /></FormField>
           </FormGroup>
           <FormGroup title="Commercial">
-            <FormField label="Declared monthly sales (MT)"><Input type="number" min="0" value={editDraft.declaredMonthlySalesMt} onChange={(event) => setEditDraft({ ...editDraft, declaredMonthlySalesMt: event.target.value })} /></FormField>
-            <FormField label="Focus sector"><Select value={editDraft.focusSector} onValueChange={(value) => setEditDraft({ ...editDraft, focusSector: value as RetailAccountDraft['focusSector'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="RETAIL">Retail</SelectItem><SelectItem value="GOVERNMENT_PROJECTS">Government projects</SelectItem><SelectItem value="DEVELOPER_PROJECTS">Developer projects</SelectItem><SelectItem value="ALL_SECTORS">All sectors</SelectItem></SelectContent></Select></FormField>
-            <FormField label="Client tier"><Select value={editDraft.clientTier} onValueChange={(value) => setEditDraft({ ...editDraft, clientTier: value as RetailAccountDraft['clientTier'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="A">Tier A</SelectItem><SelectItem value="B">Tier B</SelectItem><SelectItem value="C">Tier C</SelectItem></SelectContent></Select></FormField>
-            <FormField label="Credit terms (days)" required><Input type="number" min="0" value={editDraft.creditTermsDays} onChange={(event) => setEditDraft({ ...editDraft, creditTermsDays: event.target.value })} /></FormField>
-            <FormField label="Credit limit (₹)" required className="sm:col-span-2"><Input type="number" min="0" value={editDraft.creditLimitAmount} onChange={(event) => setEditDraft({ ...editDraft, creditLimitAmount: event.target.value })} /></FormField>
+            <FormField label="Declared monthly sales (MT)"><Input type="number" min="0" value={editDraft.declaredMonthlySalesMt} onChange={(event) => updateEditDraft({ ...editDraft, declaredMonthlySalesMt: event.target.value })} /></FormField>
+            <FormField label="Focus sector"><Select value={editDraft.focusSector} onValueChange={(value) => updateEditDraft({ ...editDraft, focusSector: value as RetailAccountDraft['focusSector'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="RETAIL">Retail</SelectItem><SelectItem value="GOVERNMENT_PROJECTS">Government projects</SelectItem><SelectItem value="DEVELOPER_PROJECTS">Developer projects</SelectItem><SelectItem value="ALL_SECTORS">All sectors</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Client tier"><Select value={editDraft.clientTier} onValueChange={(value) => updateEditDraft({ ...editDraft, clientTier: value as RetailAccountDraft['clientTier'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="A">Tier A</SelectItem><SelectItem value="B">Tier B</SelectItem><SelectItem value="C">Tier C</SelectItem></SelectContent></Select></FormField>
+            <FormField label="Credit terms (days)" required><Input type="number" min="0" value={editDraft.creditTermsDays} onChange={(event) => updateEditDraft({ ...editDraft, creditTermsDays: event.target.value })} /></FormField>
+            <FormField label="Credit limit (₹)" required className="sm:col-span-2"><Input type="number" min="0" value={editDraft.creditLimitAmount} onChange={(event) => updateEditDraft({ ...editDraft, creditLimitAmount: event.target.value })} /></FormField>
           </FormGroup>
         </>}
       </FormSheet>
@@ -844,7 +863,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
       >
         <FormGroup title="Person">
           <FormField label="First name" required><Input disabled={Boolean(editingContact)} value={contactForm.firstName} onChange={(event) => setContactForm({ ...contactForm, firstName: event.target.value })} /></FormField>
-          <FormField label="Last name"><Input disabled={Boolean(editingContact)} value={contactForm.lastName} onChange={(event) => setContactForm({ ...contactForm, lastName: event.target.value })} /></FormField>
+          <FormField label="Last name" required><Input disabled={Boolean(editingContact)} value={contactForm.lastName} onChange={(event) => setContactForm({ ...contactForm, lastName: event.target.value })} /></FormField>
           <FormField label="Mobile" required hint={editingContact ? undefined : '10-digit number'}><Input disabled={Boolean(editingContact)} inputMode="numeric" value={contactForm.mobile} onChange={(event) => setContactForm({ ...contactForm, mobile: event.target.value.replace(/\D/g, '').slice(0, 10) })} /></FormField>
           <FormField label="Email"><Input disabled={Boolean(editingContact)} type="email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} /></FormField>
           {!editingContact && <>

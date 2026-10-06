@@ -587,7 +587,7 @@ export interface DailyBreakdownDto {
   baseEarned: number;
 }
 
-export type SalesTargetType = 'MONTHLY' | 'DAILY';
+export type SalesTargetType = 'MONTHLY' | 'DAILY' | 'EMPLOYEE' | 'TEAM' | 'REGION' | 'RETAIL_ACCOUNT';
 
 export type SalesTargetMetric = 'SALES_MT' | 'NEW_APPROVALS';
 

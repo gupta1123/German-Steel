@@ -367,10 +367,14 @@ export default function ProjectDetailPage() {
     if (!editDraft.projectName.trim()) errors.push('Project name is required.');
     if (!editDraft.locationText.trim()) errors.push('Location is required.');
     if (!editDraft.state.trim()) errors.push('State is required.');
+    if (editDraft.estimatedTmtMt.trim()) {
+      const estimatedTmtMt = Number(editDraft.estimatedTmtMt);
+      if (!Number.isFinite(estimatedTmtMt) || estimatedTmtMt <= 0) errors.push('Estimated TMT must be greater than zero.');
+    }
     if (errors.length) { setEditErrors(errors); return; }
     setBusy(true);
     try {
-      const toNum = (v: string): number | null => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+      const toNum = (v: string): number | null => { if (!v.trim()) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
       await ProjectsAPI.updateProject(projectId, {
         projectName: editDraft.projectName.trim(),
         locationText: editDraft.locationText.trim(),
@@ -1051,7 +1055,7 @@ export default function ProjectDetailPage() {
           <FormGroup title="Project">
             <FormField label="Project name" required className="sm:col-span-2"><Input value={editDraft.projectName} onChange={(e) => setEditDraft({ ...editDraft, projectName: e.target.value })} /></FormField>
             <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
-            <FormField label="Estimated TMT (MT)"><Input type="number" min="0" value={editDraft.estimatedTmtMt} onChange={(e) => setEditDraft({ ...editDraft, estimatedTmtMt: e.target.value })} /></FormField>
+            <FormField label="Estimated TMT (MT)"><Input type="number" min="0.001" step="0.001" inputMode="decimal" value={editDraft.estimatedTmtMt} onChange={(e) => setEditDraft({ ...editDraft, estimatedTmtMt: e.target.value })} /></FormField>
             <FormField label="Approval letter ref" className="sm:col-span-2"><Input value={editDraft.approvalLetterReference} onChange={(e) => setEditDraft({ ...editDraft, approvalLetterReference: e.target.value })} /></FormField>
           </FormGroup>
           <FormGroup title="Site">

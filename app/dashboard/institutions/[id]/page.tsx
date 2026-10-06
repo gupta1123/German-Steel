@@ -78,6 +78,13 @@ type InstitutionEditDraft = {
   active: boolean;
 };
 
+const validateInstitutionEdit = (draft: InstitutionEditDraft) => {
+  const errors: string[] = [];
+  if (!draft.institutionName.trim()) errors.push('Institution name is required.');
+  if (!draft.state.trim()) errors.push('State is required.');
+  return errors;
+};
+
 
 export default function InstitutionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -113,6 +120,7 @@ export default function InstitutionDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editDraft, setEditDraft] = useState<InstitutionEditDraft | null>(null);
   const [editErrors, setEditErrors] = useState<string[]>([]);
+  const [editValidationActive, setEditValidationActive] = useState(false);
 
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const [advanceForm, setAdvanceForm] = useState<{ toStatus: EmpanelmentStatus; remarks: string; decisionByEmployeeId: string }>({ toStatus: 'NOT_STARTED', remarks: '', decisionByEmployeeId: '' });
@@ -450,10 +458,10 @@ export default function InstitutionDetailPage() {
 
   const saveEdit = async () => {
     if (!token || !editDraft) return;
-    const errors: string[] = [];
-    if (!editDraft.institutionName.trim()) errors.push('Institution name is required.');
-    if (!editDraft.state.trim()) errors.push('State is required.');
-    if (errors.length) { setEditErrors(errors); return; }
+    const errors = validateInstitutionEdit(editDraft);
+    setEditValidationActive(true);
+    setEditErrors(errors);
+    if (errors.length) return;
     setBusy(true);
     try {
       const toNum = (v: string): number | null => { if (v == null || String(v).trim() === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
@@ -798,7 +806,11 @@ export default function InstitutionDetailPage() {
     return (m && [m.firstName, m.lastName].filter(Boolean).join(' ')) || (entry.decisionByEmployeeId ? `Employee #${entry.decisionByEmployeeId}` : 'System');
   };
 
-  const openEdit = () => { setEditDraft({ institutionName: institution.institutionName, institutionType: institution.institutionType, parentInstitutionId: institution.parentInstitutionId == null ? '' : String(institution.parentInstitutionId), jurisdiction: institution.jurisdiction, state: institution.state, regionId: institution.regionId == null ? '' : String(institution.regionId), empanelmentStatus: institution.empanelmentStatus, assignedEmployeeId: institution.assignedEmployeeId == null ? '' : String(institution.assignedEmployeeId), currentStageOwnerContactId: institution.currentStageOwnerContactId == null ? '' : String(institution.currentStageOwnerContactId), applicationDate: institution.applicationDate ?? '', approvalDate: institution.approvalDate ?? '', expiryDate: institution.expiryDate ?? '', renewalLeadDays: institution.renewalLeadDays == null ? '' : String(institution.renewalLeadDays), active: institution.active }); setEditErrors([]); setEditOpen(true); };
+  const openEdit = () => { setEditDraft({ institutionName: institution.institutionName, institutionType: institution.institutionType, parentInstitutionId: institution.parentInstitutionId == null ? '' : String(institution.parentInstitutionId), jurisdiction: institution.jurisdiction, state: institution.state, regionId: institution.regionId == null ? '' : String(institution.regionId), empanelmentStatus: institution.empanelmentStatus, assignedEmployeeId: institution.assignedEmployeeId == null ? '' : String(institution.assignedEmployeeId), currentStageOwnerContactId: institution.currentStageOwnerContactId == null ? '' : String(institution.currentStageOwnerContactId), applicationDate: institution.applicationDate ?? '', approvalDate: institution.approvalDate ?? '', expiryDate: institution.expiryDate ?? '', renewalLeadDays: institution.renewalLeadDays == null ? '' : String(institution.renewalLeadDays), active: institution.active }); setEditErrors([]); setEditValidationActive(false); setEditOpen(true); };
+  const updateEditDraft = (nextDraft: InstitutionEditDraft) => {
+    setEditDraft(nextDraft);
+    if (editValidationActive) setEditErrors(validateInstitutionEdit(nextDraft));
+  };
   const openVisitForm = () => { setVisitForm({ employeeId: String(institution.assignedEmployeeId || ''), date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true }); setVisitOpen(true); };
   const openNewTask = () => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(institution.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
   const openEditTask = async (task: InstitutionTask) => {
@@ -1127,20 +1139,20 @@ export default function InstitutionDetailPage() {
       >
         {editDraft && <>
           <FormGroup title="Institution">
-            <FormField label="Institution name" required className="sm:col-span-2"><Input value={editDraft.institutionName} onChange={(e) => setEditDraft({ ...editDraft, institutionName: e.target.value })} /></FormField>
-            <FormField label="Jurisdiction"><Input value={editDraft.jurisdiction} onChange={(e) => setEditDraft({ ...editDraft, jurisdiction: e.target.value })} /></FormField>
-            <FormField label="State" required><Input value={editDraft.state} onChange={(e) => setEditDraft({ ...editDraft, state: e.target.value })} /></FormField>
-            <FormField label="Region ID"><Input type="number" value={editDraft.regionId} onChange={(e) => setEditDraft({ ...editDraft, regionId: e.target.value })} /></FormField>
+            <FormField label="Institution name" required className="sm:col-span-2"><Input value={editDraft.institutionName} onChange={(e) => updateEditDraft({ ...editDraft, institutionName: e.target.value })} /></FormField>
+            <FormField label="Jurisdiction"><Input value={editDraft.jurisdiction} onChange={(e) => updateEditDraft({ ...editDraft, jurisdiction: e.target.value })} /></FormField>
+            <FormField label="State" required><Input value={editDraft.state} onChange={(e) => updateEditDraft({ ...editDraft, state: e.target.value })} /></FormField>
+            <FormField label="Region ID"><Input type="number" value={editDraft.regionId} onChange={(e) => updateEditDraft({ ...editDraft, regionId: e.target.value })} /></FormField>
           </FormGroup>
           <FormGroup title="Ownership">
-            <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
-            <FormField label="File holder (stage owner)" hint="The linked contact who currently holds the file."><Select value={editDraft.currentStageOwnerContactId} onValueChange={(v) => setEditDraft({ ...editDraft, currentStageOwnerContactId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder="Choose linked contact" /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => updateEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="File holder (stage owner)" hint="The linked contact who currently holds the file."><Select value={editDraft.currentStageOwnerContactId} onValueChange={(v) => updateEditDraft({ ...editDraft, currentStageOwnerContactId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder="Choose linked contact" /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></FormField>
           </FormGroup>
           <FormGroup title="Lifecycle dates">
-            <FormField label="Application date"><Input type="date" value={editDraft.applicationDate} onChange={(e) => setEditDraft({ ...editDraft, applicationDate: e.target.value })} /></FormField>
-            <FormField label="Approval date"><Input type="date" value={editDraft.approvalDate} onChange={(e) => setEditDraft({ ...editDraft, approvalDate: e.target.value })} /></FormField>
-            <FormField label="Expiry date"><Input type="date" value={editDraft.expiryDate} onChange={(e) => setEditDraft({ ...editDraft, expiryDate: e.target.value })} /></FormField>
-            <FormField label="Renewal lead days" hint="Days before expiry to flag renewal."><Input type="number" min="0" value={editDraft.renewalLeadDays} onChange={(e) => setEditDraft({ ...editDraft, renewalLeadDays: e.target.value })} /></FormField>
+            <FormField label="Application date"><Input type="date" value={editDraft.applicationDate} onChange={(e) => updateEditDraft({ ...editDraft, applicationDate: e.target.value })} /></FormField>
+            <FormField label="Approval date"><Input type="date" value={editDraft.approvalDate} onChange={(e) => updateEditDraft({ ...editDraft, approvalDate: e.target.value })} /></FormField>
+            <FormField label="Expiry date"><Input type="date" value={editDraft.expiryDate} onChange={(e) => updateEditDraft({ ...editDraft, expiryDate: e.target.value })} /></FormField>
+            <FormField label="Renewal lead days" hint="Days before expiry to flag renewal."><Input type="number" min="0" value={editDraft.renewalLeadDays} onChange={(e) => updateEditDraft({ ...editDraft, renewalLeadDays: e.target.value })} /></FormField>
           </FormGroup>
         </>}
       </FormSheet>

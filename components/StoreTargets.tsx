@@ -350,7 +350,7 @@ export default function StoreTargets() {
     }
     try {
       const response = await targetsApi.searchSalesTargets(token, {
-        targetType: "MONTHLY",
+        targetType: "RETAIL_ACCOUNT",
         metric: "SALES_MT",
         month: filters.month,
         year: filters.year,

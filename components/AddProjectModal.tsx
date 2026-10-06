@@ -117,7 +117,7 @@ const validateDraft = (draft: ProjectDraft): string[] => {
   if (!draft.locationLatitude.trim() || !draft.locationLongitude.trim()) errors.push('Latitude and longitude are required — capture via Use my location.');
   if (draft.estimatedTmtMt.trim()) {
     const v = Number(draft.estimatedTmtMt);
-    if (!Number.isFinite(v) || v < 0) errors.push('Estimated TMT must be zero or a positive number.');
+    if (!Number.isFinite(v) || v <= 0) errors.push('Estimated TMT must be greater than zero.');
   }
   if (draft.locationLatitude.trim()) {
     const v = Number(draft.locationLatitude);
@@ -387,7 +387,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
                 </div>
                 <div className="space-y-1.5">
                   <Label>Estimated TMT (Mt)</Label>
-                  <Input type="number" min="0" step="any" value={draft.estimatedTmtMt} onChange={(e) => updateDraft('estimatedTmtMt', e.target.value)} placeholder="e.g. 1200.5" className="h-9" />
+                  <Input type="number" min="0.001" step="0.001" inputMode="decimal" value={draft.estimatedTmtMt} onChange={(e) => updateDraft('estimatedTmtMt', e.target.value)} placeholder="e.g. 1200.5" className="h-9" />
                 </div>
               </div>
             </section>

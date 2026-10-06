@@ -9,7 +9,7 @@ export default function TargetSettingsPage() {
     <Tabs defaultValue="stores" className="space-y-4">
       <TabsList>
         <TabsTrigger value="stores">Store targets</TabsTrigger>
-        <TabsTrigger value="employee-kpis">Employee KPIs</TabsTrigger>
+        <TabsTrigger value="employee-kpis">Employee quarterly targets</TabsTrigger>
       </TabsList>
       <TabsContent value="stores" className="m-0">
         <StoreTargets />
