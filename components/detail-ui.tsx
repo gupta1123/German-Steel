@@ -541,31 +541,41 @@ export const taskSummary = (tasks: TaskLike[]) => {
   return `${open.length} open · ${tasks.length - open.length} closed${overdue ? ` · ${overdue} overdue` : ''}`;
 };
 
-export interface SaleLike { id: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem?: string | null }
+export interface SaleLike { id: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem?: string | null; outcomeStatus?: 'WIN' | 'LOST' | null; poDate?: string; poNumber?: string; lossReason?: string }
 
 export const salesSummary = (sales: SaleLike[]): React.ReactNode => {
   if (!sales.length) return 'No purchase orders yet';
+  if (sales.some((sale) => sale.outcomeStatus != null)) {
+    const won = sales.filter((sale) => sale.outcomeStatus === 'WIN');
+    const lost = sales.filter((sale) => sale.outcomeStatus === 'LOST');
+    const total = sales.filter((sale) => sale.outcomeStatus !== 'LOST').reduce((sum, sale) => sum + (sale.quantityMt || 0), 0);
+    const unspecified = sales.length - won.length - lost.length;
+    return <><span className="font-medium text-foreground">{total.toLocaleString('en-IN')} MT</span> recorded · {won.length} won · {lost.length} lost{unspecified ? ` · ${unspecified} without outcome` : ''}</>;
+  }
   const total = sales.reduce((sum, sale) => sum + (sale.quantityMt || 0), 0);
   const last = [...sales].sort((left, right) => String(right.saleDate).localeCompare(String(left.saleDate)))[0];
   return <><span className="font-medium text-foreground">{total.toLocaleString('en-IN')} MT</span> total · {sales.length} {sales.length === 1 ? 'order' : 'orders'} · avg {(total / sales.length).toLocaleString('en-IN', { maximumFractionDigits: 2 })} MT · last PO {formatDay(last.saleDate)}</>;
 };
 
 /** PO table, newest first, quantity right-aligned. */
-export function SalesTable({ sales }: { sales: SaleLike[] }) {
+export function SalesTable({ sales, showOutcome = false, onEdit }: { sales: SaleLike[]; showOutcome?: boolean; onEdit?: (sale: SaleLike) => void }) {
   const sorted = [...sales].sort((left, right) => String(right.saleDate).localeCompare(String(left.saleDate)));
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[480px] text-sm">
         <thead className="bg-muted/40 text-xs text-muted-foreground">
-          <tr><th className="px-4 py-2 text-left font-medium">PO date</th><th className="px-4 py-2 text-left font-medium">PO number</th><th className="px-4 py-2 text-right font-medium">Quantity</th><th className="px-4 py-2 text-left font-medium">Source</th></tr>
+          <tr><th className="px-4 py-2 text-left font-medium">{showOutcome ? 'Sale date' : 'PO date'}</th>{showOutcome && <th className="px-4 py-2 text-left font-medium">Outcome</th>}<th className="px-4 py-2 text-left font-medium">{showOutcome ? 'PO / Lost reason' : 'PO number'}</th>{showOutcome && <th className="px-4 py-2 text-left font-medium">Invoice / Reference</th>}<th className="px-4 py-2 text-right font-medium">Quantity</th><th className="px-4 py-2 text-left font-medium">Source</th>{onEdit && <th className="px-4 py-2 text-left font-medium">Actions</th>}</tr>
         </thead>
         <tbody className="divide-y">
           {sorted.map((sale) => (
             <tr key={sale.id} className="transition-colors hover:bg-muted/30">
               <td className="whitespace-nowrap px-4 py-2">{formatDay(sale.saleDate)}</td>
-              <td className="px-4 py-2 font-medium">{sale.invoiceReference || '—'}</td>
+              {showOutcome && <td className="px-4 py-2"><Pill tone={sale.outcomeStatus === 'WIN' ? 'success' : sale.outcomeStatus === 'LOST' ? 'danger' : 'neutral'}>{sale.outcomeStatus === 'WIN' ? 'Won' : sale.outcomeStatus === 'LOST' ? 'Lost' : '—'}</Pill></td>}
+              <td className="px-4 py-2 font-medium">{showOutcome ? sale.outcomeStatus === 'LOST' ? sale.lossReason || '—' : <>{sale.poNumber || '—'}{sale.poDate && <div className="text-xs font-normal text-muted-foreground">{formatDay(sale.poDate)}</div>}</> : sale.invoiceReference || '—'}</td>
+              {showOutcome && <td className="px-4 py-2">{sale.invoiceReference || '—'}</td>}
               <td className="whitespace-nowrap px-4 py-2 text-right font-semibold tabular-nums">{sale.quantityMt.toLocaleString('en-IN')} MT</td>
               <td className="px-4 py-2"><Pill>{titleCase(sale.sourceSystem || 'Manual')}</Pill></td>
+              {onEdit && <td className="px-4 py-2"><Button variant="outline" size="sm" aria-label={`Edit sale ${sale.id}`} onClick={() => onEdit(sale)}>Edit</Button></td>}
             </tr>
           ))}
         </tbody>

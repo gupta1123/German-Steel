@@ -24,7 +24,7 @@ import {
   VALID_STAGE_TRANSITIONS,
   type NcStatus,
 } from '@/lib/projects-api';
-import { RetailAPI, type RetailEmployee } from '@/lib/retail-api';
+import { RetailAPI, type RetailEmployee, type RetailSalesRegion } from '@/lib/retail-api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
@@ -110,6 +110,7 @@ export default function ProjectDetailPage() {
   const [visitOpen, setVisitOpen] = useState(false);
   const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
+  const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,6 +151,11 @@ export default function ProjectDetailPage() {
   const [editingParty, setEditingParty] = useState<ProjectParty | null>(null);
   const [partyForm, setPartyForm] = useState({ partyRole: 'CONTRACTOR', partyNameText: '', packageName: '', primaryParty: false });
 
+  useEffect(() => {
+    if (!token) return;
+    void RetailAPI.getSalesRegions(token).then((items) => setRegions(items.filter((region) => region.active !== false))).catch(() => setRegions([]));
+  }, [token]);
+
   const assignedByEmployeeId = userData?.employeeId || project?.assignedEmployeeId || 0;
   const employeeName = (employeeId: number | null | undefined) => {
     const employee = employees.find((item) => item.id === employeeId);
@@ -184,6 +190,7 @@ export default function ProjectDetailPage() {
     try {
       const found = await ProjectsAPI.getProjectById(projectId, token);
       setProject(found);
+      setParties(found?.parties ?? []);
       if (!found) return;
       const [pipelineResult, approvalResult, stageActionsResult, partiesResult, ncResult, contactsResult, notesResult, tasksResult, docsResult, employeesResult, contactMastersResult, visitsResult, salesResult] = await Promise.allSettled([
         ProjectsAPI.getProjectPipeline(projectId, token),
@@ -378,8 +385,10 @@ export default function ProjectDetailPage() {
       await ProjectsAPI.updateProject(projectId, {
         projectName: editDraft.projectName.trim(),
         locationText: editDraft.locationText.trim(),
+        locationState: editDraft.state.trim(),
         locationLatitude: toNum(editDraft.locationLatitude),
         locationLongitude: toNum(editDraft.locationLongitude),
+        regionId: regions.find((region) => region.name.toLocaleLowerCase('en-IN') === editDraft.state.trim().toLocaleLowerCase('en-IN'))?.id ?? project?.regionId ?? null,
         projectType: editDraft.projectType as Project['projectType'],
         estimatedTmtMt: toNum(editDraft.estimatedTmtMt),
         startDate: editDraft.startDate || null,
@@ -662,6 +671,13 @@ export default function ProjectDetailPage() {
   const stage = project.sourceApprovalStatus;
   const stageTone: Tone = STAGE_TONE[stage] ?? 'neutral';
   const partyName = (party: ProjectParty) => (party as unknown as { partyNameText?: string }).partyNameText ?? party.partyName ?? `Party #${party.id}`;
+  const partiesForRole = (role: 'OWNER_CLIENT' | 'CONTRACTOR' | 'CONSULTANT') => parties
+    .filter((party) => party.active && party.partyRole === role)
+    .sort((left, right) => Number(right.primaryParty) - Number(left.primaryParty));
+  const namesForRole = (role: 'OWNER_CLIENT' | 'CONTRACTOR' | 'CONSULTANT') => [...new Set(partiesForRole(role).map(partyName).filter((name) => name && name !== '—' && name !== 'â€”'))].join(', ');
+  const contractorName = namesForRole('CONTRACTOR') || project.contractorName;
+  const consultantName = namesForRole('CONSULTANT') || project.consultantName;
+  const hasProjectValue = (value: string | null | undefined) => Boolean(value && value !== '—' && value !== 'â€”');
   const noteAuthor = (note: ProjectNote) => {
     if (note.authorName && note.authorName !== '—' && note.authorName.trim()) return note.authorName;
     const match = note.authorEmployeeId ? employees.find((e) => e.id === note.authorEmployeeId) : null;
@@ -681,7 +697,7 @@ export default function ProjectDetailPage() {
   // Organisation selected in the contact dialog (contractor/consultant are organisations, not people).
   const selectedContactParty = contactForm.projectPartyId ? parties.find((item) => String(item.id) === contactForm.projectPartyId) ?? null : null;
 
-  const openEdit = () => { setEditDraft({ projectName: project.projectName, institutionId: project.institutionId == null ? '' : String(project.institutionId), locationText: project.locationText, state: project.state, locationLatitude: '', locationLongitude: '', projectType: project.projectType, estimatedTmtMt: project.estimatedTmtMt == null ? '' : String(project.estimatedTmtMt), startDate: project.startDate ?? '', completionDate: project.completionDate ?? '', sourceApprovalStatus: project.sourceApprovalStatus, approvalLetterReference: project.approvalLetterReference ?? '', assignedEmployeeId: project.assignedEmployeeId == null ? '' : String(project.assignedEmployeeId), active: project.active }); setEditErrors([]); setEditOpen(true); };
+  const openEdit = () => { setEditDraft({ projectName: project.projectName, institutionId: project.institutionId == null ? '' : String(project.institutionId), locationText: project.locationText, state: hasProjectValue(project.state) ? project.state : '', locationLatitude: project.locationLatitude == null ? '' : String(project.locationLatitude), locationLongitude: project.locationLongitude == null ? '' : String(project.locationLongitude), projectType: project.projectType, estimatedTmtMt: project.estimatedTmtMt == null ? '' : String(project.estimatedTmtMt), startDate: project.startDate ?? '', completionDate: project.completionDate ?? '', sourceApprovalStatus: project.sourceApprovalStatus, approvalLetterReference: project.approvalLetterReference ?? '', assignedEmployeeId: project.assignedEmployeeId == null ? '' : String(project.assignedEmployeeId), active: project.active }); setEditErrors([]); setEditOpen(true); };
   const openAdvance = (toStatus?: ProjectStage) => { setAdvanceForm({ toStatus: toStatus ?? allowedNextStatuses[0], remarks: '', decisionByEmployeeId: project.assignedEmployeeId ? String(project.assignedEmployeeId) : '' }); setAdvanceErrors([]); setAdvanceOpen(true); };
   const openVisitForm = () => { setVisitForm({ employeeId: String(project.assignedEmployeeId || ''), date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true }); setVisitOpen(true); };
   const openSaleForm = () => { setSaleForm({ saleDate: today(), quantityMt: '', invoiceReference: '' }); setSaleOpen(true); };
@@ -777,11 +793,11 @@ export default function ProjectDetailPage() {
         meta={[
           { icon: HardHat, label: humanize(project.projectType) },
           { icon: Hash, label: project.id },
-          ...(project.locationText ? [{ icon: MapPin, label: [project.locationText, project.state].filter(Boolean).join(', '), title: 'Site location' }] : []),
-          ...(project.institutionName ? [{ icon: Landmark, label: project.institutionName, title: 'Institution' }] : []),
+          ...(hasProjectValue(project.locationText) ? [{ icon: MapPin, label: [project.locationText, hasProjectValue(project.state) && !project.locationText.toLowerCase().includes(project.state.toLowerCase()) ? project.state : null].filter(Boolean).join(', '), title: 'Site location' }] : []),
+          ...(hasProjectValue(project.institutionName) ? [{ icon: Landmark, label: project.institutionName, title: 'Institution' }] : []),
           { icon: User, label: project.assignedEmployeeName || employeeName(project.assignedEmployeeId), title: 'Assigned employee' },
-          ...(project.contractorName ? [{ icon: Building2, label: project.contractorName, title: 'Contractor' }] : []),
-          ...(project.consultantName ? [{ icon: Users, label: project.consultantName, title: 'Consultant' }] : []),
+          ...(hasProjectValue(contractorName) ? [{ icon: Building2, label: contractorName, title: 'Contractor' }] : []),
+          ...(hasProjectValue(consultantName) ? [{ icon: Users, label: consultantName, title: 'Consultant' }] : []),
         ]}
         actions={<>
           <Button variant="outline" size="sm" className="h-8" onClick={openEdit}><Edit3 className="mr-1.5 h-3.5 w-3.5" />Edit</Button>
@@ -827,9 +843,9 @@ export default function ProjectDetailPage() {
                     <Info label="Institution" value={project.institutionName} />
                     <Info label="Location" value={project.locationText} />
                     <Info label="State" value={project.state} />
-                    <Info label="Contractor" value={project.contractorName} />
-                    <Info label="Consultant" value={project.consultantName} />
-                    <Info label="Assigned employee" value={project.assignedEmployeeName} />
+                    <Info label="Contractor" value={contractorName} />
+                    <Info label="Consultant" value={consultantName} />
+                    <Info label="Assigned employee" value={hasProjectValue(project.assignedEmployeeName) ? project.assignedEmployeeName : employeeName(project.assignedEmployeeId)} />
                     <Info label="Record state" value={project.active ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Inactive</Pill>} />
                   </dl>
                 </Section>

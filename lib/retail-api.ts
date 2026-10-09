@@ -14,7 +14,8 @@ export interface ApiPage<T> {
 export interface RetailClientGroup { id: number; groupName: string; groupType?: string | null; notes?: string | null; active?: boolean }
 export type RetailClientGroupType = 'STANDALONE' | 'FAMILY_GROUP' | 'CORPORATE_GROUP';
 export interface RetailClientGroupPayload { groupName: string; groupType: RetailClientGroupType; notes?: string | null; active?: boolean }
-export interface RetailSalesRegion { id: number; name: string; code?: string | null; active?: boolean }
+export interface RetailSalesRegion { id: number; name: string; code?: string | null; active?: boolean; centerLatitude?: number | null; centerLongitude?: number | null }
+export interface RetailDistrictPayload { code: string; name: string; state: string; regionId: number; active: boolean }
 export interface RetailPinCode { id: number; pinCode: string; regionId: number | null; regionName: string; active?: boolean }
 export interface RetailDistrict { id: number | null; name: string; regionId?: number | null; regionName?: string | null; stateName?: string | null; code?: string | null; active?: boolean }
 export interface RetailDistrictFilters { regionId?: number; q?: string; active?: boolean; page?: number; size?: number }
@@ -73,13 +74,13 @@ export interface RetailContactLinkPayload { clientAccountId: number; contactInfl
 export interface RetailContact { id: number; contactInfluenceRegisterId: number; firstName: string; lastName: string; mobile: string; email: string; dateOfBirth: string; anniversaryDate: string; designation: string; roleDescription: string; primaryContact: boolean; active: boolean }
 export interface RetailBrandUsagePayload { clientAccountId: number; competitorBrandId: number; employeeId: number; remarks: string | null }
 export interface RetailBrandUsage { id: number; competitorBrandId: number; brandName: string; employeeId: number | null; employeeName: string; remarks: string; active: boolean; addedAt: string; removedAt: string }
-export interface RetailSale { id: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem: string }
+export interface RetailSale { id: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem: string; outcomeStatus: 'WIN' | 'LOST' | null; poNumber: string; poDate: string; lossReason: string }
 export interface RetailCommercialHistory { id: number; fieldName: string; oldValue: string; newValue: string; changeReason: string; changedBy: string; changedAt: string }
 export interface RetailNote { id: number; noteText: string; authorName: string; authorEmployeeId: number | null; createdAt: string; updatedAt: string }
 export interface RetailVisit { id: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; purpose: string; description: string | null; assignedEmployeeId: number | null; assignedEmployeeName: string; outcome: string; discussionSummary: string; nextActionText: string; nextActionDate: string; actualCheckinAt: string; actualCheckoutAt: string }
 export interface RetailTask { id: number; clientAccountId: number | null; title: string; description: string; taskType: string; status: 'OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; dueDate: string; assignedEmployeeId: number | null; assignedEmployeeName: string }
 export interface PlannedVisitPayload { visitType: 'DEALER_VISIT'; clientAccountId: number; institutionId: null; projectId: null; assignedEmployeeId: number; assignedByEmployeeId: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; scheduledLatitude: number; scheduledLongitude: number; purpose: string; description?: string | null; selfGenerated: boolean }
-export interface RetailSalePayload { clientAccountId: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem: string }
+export interface RetailSalePayload { clientAccountId: number; saleDate: string; quantityMt: number; invoiceReference: string | null; sourceSystem: string; outcomeStatus: 'WIN' | 'LOST'; poNumber: string | null; poDate: string | null; lossReason: string | null }
 export interface RetailTaskPayload { taskTitle: string; taskDescription: string | null; taskType: 'FOLLOW_UP'; status: RetailTask['status']; priority: RetailTask['priority']; assignedToEmployeeId: number; assignedByEmployeeId: number; dueDate: string; clientAccountId: number; visitActivityId: number | null }
 
 export class RetailApiError extends Error {
@@ -260,7 +261,10 @@ export const RetailAPI = {
   },
   async getSalesRegions(token: string): Promise<RetailSalesRegion[]> {
     const response = await getWithDocumentedFallback(['/api/common/regions?page=0&size=200', '/api/common/sales-regions'], token);
-    return pageItems(response).flatMap((value) => { const item = recordOf(value); const id = numberOf(item?.id, item?.regionId, item?.salesRegionId); const name = stringOf(item?.name, item?.regionName, item?.salesRegionName); return id == null || !name ? [] : [{ id, name, code: stringOf(item?.code, item?.regionCode) || null, active: typeof item?.active === 'boolean' ? item.active : undefined }] });
+    const values = [...pageItems(response)];
+    const totalPages = numberOf(recordOf(response)?.totalPages) ?? 1;
+    for (let page = 1; page < totalPages; page++) values.push(...pageItems(await request(`/api/common/regions?page=${page}&size=200`, token)));
+    return values.flatMap((value) => { const item = recordOf(value); const id = numberOf(item?.id, item?.regionId, item?.salesRegionId); const name = stringOf(item?.name, item?.regionName, item?.salesRegionName); return id == null || !name ? [] : [{ id, name, code: stringOf(item?.code, item?.regionCode) || null, active: typeof item?.active === 'boolean' ? item.active : undefined, centerLatitude: numberOf(item?.centerLatitude), centerLongitude: numberOf(item?.centerLongitude) }] });
   },
   async getPinCodes(token: string): Promise<RetailPinCode[]> {
     const normalize = (value: unknown): RetailPinCode | null => {
@@ -345,6 +349,8 @@ export const RetailAPI = {
       return null;
     }
   },
+  async createDistrict(payload: RetailDistrictPayload, token: string): Promise<void> { await request('/api/common/districts', token, json('POST', payload)); },
+  async updateDistrict(districtId: number, payload: RetailDistrictPayload, token: string): Promise<void> { await request(`/api/common/districts/${districtId}`, token, json('PUT', payload)); },
   async createSalesRegion(payload: { code: string; name: string; centerLatitude?: number | null; centerLongitude?: number | null; active?: boolean }, token: string): Promise<number> {
     return extractCreatedId(await request('/api/common/regions', token, json('POST', payload)), ['id', 'regionId', 'salesRegionId']);
   },
@@ -448,7 +454,10 @@ export const RetailAPI = {
   async deleteAccount(accountId: number, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}`, token, { method: 'DELETE' }) },
   async updateMonthlySales(accountId: number, declaredMonthlySalesMt: number, changeReason: string, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}/monthly-sales`, token, json('PUT', { declaredMonthlySalesMt, changeReason })) },
   async createMasterContact(payload: MasterContactCreatePayload, token: string): Promise<number> { return extractCreatedId(await request('/api/common/contacts', token, json('POST', payload)), ['id', 'contactId', 'contactInfluenceRegisterId']) },
-  async updateMasterContact(contactId: number, payload: MasterContactCreatePayload, token: string): Promise<void> { await request(`/api/common/contacts/${contactId}`, token, json('PUT', payload)) },
+  async updateMasterContact(contactId: number, payload: MasterContactCreatePayload | Pick<MasterContactCreatePayload, 'dateOfBirth' | 'anniversaryDate'>, token: string): Promise<void> {
+    if (!Number.isInteger(contactId) || contactId <= 0) throw new Error('The shared contact ID is missing. Reload the contact and try again.');
+    await request(`/api/common/contacts/${contactId}`, token, json('PUT', payload));
+  },
   async linkContact(payload: RetailContactLinkPayload, token: string): Promise<void> { await request('/api/retail/contacts', token, json('POST', payload)) },
   async getContacts(accountId: number, token: string): Promise<RetailContact[]> { const response = await request(`/api/retail/accounts/${accountId}/contacts?page=0&size=200`, token); return pageItems(response).flatMap((value) => { const contact = normalizeContact(value); return contact ? [contact] : [] }) },
   async getMasterContacts(token: string): Promise<RetailMasterContact[]> {
@@ -474,9 +483,10 @@ export const RetailAPI = {
   },
   async getSales(accountId: number, token: string, from?: string, to?: string): Promise<RetailSale[]> {
     const response = await request(`/api/retail/accounts/${accountId}/sales${queryString({ from: from ?? '2000-01-01', to: to ?? new Date().toISOString().slice(0, 10), page: 0, size: 200 })}`, token);
-    return pageItems(response).flatMap((value) => { const sale = normalizeGeneric(value, (item, id) => ({ id, saleDate: stringOf(item.saleDate, item.date), quantityMt: numberOf(item.quantityMt, item.quantity) ?? 0, invoiceReference: stringOf(item.invoiceReference, item.invoiceNumber), sourceSystem: stringOf(item.sourceSystem, item.source) })); return sale ? [sale] : [] });
+    return pageItems(response).flatMap((value) => { const sale = normalizeGeneric(value, (item, id): RetailSale => ({ id, saleDate: stringOf(item.saleDate, item.date), quantityMt: numberOf(item.quantityMt, item.quantity) ?? 0, invoiceReference: stringOf(item.invoiceReference, item.invoiceNumber), sourceSystem: stringOf(item.sourceSystem, item.source), outcomeStatus: item.outcomeStatus === 'WIN' || item.outcomeStatus === 'LOST' ? item.outcomeStatus : null, poNumber: stringOf(item.poNumber), poDate: stringOf(item.poDate), lossReason: stringOf(item.lossReason) })); return sale ? [sale] : [] });
   },
   async createSale(payload: RetailSalePayload, token: string): Promise<void> { await request('/api/retail/sales', token, json('POST', payload)) },
+  async updateSale(saleId: number, payload: RetailSalePayload, token: string): Promise<void> { await request(`/api/retail/sales/${saleId}`, token, json('PUT', payload)) },
   async getNotes(accountId: number, token: string): Promise<RetailNote[]> {
     const response = await request(`/api/common/retail-clients/${accountId}/notes?page=0&size=200`, token);
     return pageItems(response).flatMap((value) => { const note = normalizeGeneric(value, (item, id) => ({ id, noteText: stringOf(item.noteText, item.text, item.note), authorName: toTitleCase(stringOf(item.authorEmployeeName, item.authorName, item.createdByName, item.createdBy)), authorEmployeeId: numberOf(item.authorEmployeeId, item.createdByEmployeeId), createdAt: stringOf(item.createdAt, item.createdDate), updatedAt: stringOf(item.updatedAt, item.updatedDate, item.lastCorrectedAt, item.createdAt) })); return note ? [note] : [] });

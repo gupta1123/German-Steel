@@ -43,13 +43,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 interface CustomerDetailPageProps { accountId: number }
 interface ContactForm { firstName: string; lastName: string; mobile: string; email: string; dateOfBirth: string; anniversaryDate: string; designation: string; roleDescription: string; primaryContact: boolean; active: boolean }
 interface VisitForm { employeeId: string; date: string; startTime: string; endTime: string; purpose: string; description: string; selfGenerated: boolean }
-interface SaleForm { saleDate: string; quantityMt: string; invoiceReference: string }
+interface SaleForm { saleDate: string; quantityMt: string; invoiceReference: string; outcomeStatus: 'WIN' | 'LOST' | ''; poNumber: string; poDate: string; lossReason: string }
 interface TaskForm { title: string; description: string; employeeId: string; dueDate: string; priority: RetailTask['priority']; status: RetailTask['status'] }
 interface MonthlySalesForm { declaredMonthlySalesMt: string; changeReason: string }
 
 const emptyContact: ContactForm = { firstName: '', lastName: '', mobile: '', email: '', dateOfBirth: '', anniversaryDate: '', designation: '', roleDescription: '', primaryContact: false, active: true };
 const emptyVisit = (): VisitForm => ({ employeeId: '', date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
-const emptySale = (): SaleForm => ({ saleDate: today(), quantityMt: '', invoiceReference: '' });
+const emptySale = (): SaleForm => ({ saleDate: today(), quantityMt: '', invoiceReference: '', outcomeStatus: '', poNumber: '', poDate: '', lossReason: '' });
 const emptyTask = (): TaskForm => ({ title: '', description: '', employeeId: '', dueDate: today(), priority: 'MEDIUM', status: 'OPEN' });
 const emptyMonthlySales = (): MonthlySalesForm => ({ declaredMonthlySalesMt: '', changeReason: '' });
 const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : '—';
@@ -109,6 +109,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const [visitOpen, setVisitOpen] = useState(false);
   const [visitForm, setVisitForm] = useState<VisitForm>(emptyVisit);
   const [saleOpen, setSaleOpen] = useState(false);
+  const [editingSale, setEditingSale] = useState<RetailSale | null>(null);
   const [saleForm, setSaleForm] = useState<SaleForm>(emptySale);
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<RetailTask | null>(null);
@@ -226,7 +227,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
 
   const assignedByEmployeeId = userData?.employeeId || account?.ownerEmployeeId || 0;
   const employeeName = (id: number | null) => employees.find((employee) => employee.id === id) ? [employees.find((employee) => employee.id === id)?.firstName, employees.find((employee) => employee.id === id)?.lastName].filter(Boolean).join(' ') : id ? `Employee #${id}` : '—';
-  const totalSales = useMemo(() => sales.reduce((sum, item) => sum + item.quantityMt, 0), [sales]);
+  const totalSales = useMemo(() => sales.filter((item) => item.outcomeStatus !== 'LOST').reduce((sum, item) => sum + item.quantityMt, 0), [sales]);
   const openTaskCount = useMemo(() => tasks.filter((task) => ['OPEN', 'IN_PROGRESS'].includes(task.status)).length, [tasks]);
   const latestVisit = useMemo(() => [...visits]
     .filter((visit) => Boolean(visit.scheduledVisitDate))
@@ -335,25 +336,37 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
 
   const openContact = (contact?: RetailContact) => {
     setEditingContact(contact ?? null);
-    setContactForm(contact ? { firstName: contact.firstName, lastName: contact.lastName, mobile: contact.mobile, email: contact.email, dateOfBirth: contact.dateOfBirth, anniversaryDate: contact.anniversaryDate, designation: contact.designation, roleDescription: contact.roleDescription, primaryContact: contact.primaryContact, active: contact.active } : { ...emptyContact, primaryContact: resolvedContacts.length === 0 });
+    setContactForm(contact ? { firstName: contact.firstName, lastName: contact.lastName, mobile: contact.mobile, email: contact.email, dateOfBirth: contact.dateOfBirth.slice(0, 10), anniversaryDate: contact.anniversaryDate.slice(0, 10), designation: contact.designation, roleDescription: contact.roleDescription, primaryContact: contact.primaryContact, active: contact.active } : { ...emptyContact, primaryContact: resolvedContacts.length === 0 });
     setContactOpen(true);
   };
 
   const saveContact = async () => {
     if (!token || !account) return;
     if (!contactForm.firstName.trim() || !contactForm.lastName.trim() || !contactForm.designation.trim() || contactForm.mobile.replace(/\D/g, '').length !== 10) { toast.error('First name, last name, designation, and a 10-digit mobile number are required.'); return }
+    const datesChanged = Boolean(editingContact && (contactForm.dateOfBirth !== editingContact.dateOfBirth.slice(0, 10) || contactForm.anniversaryDate !== editingContact.anniversaryDate.slice(0, 10)));
+    if (datesChanged && (!editingContact?.contactInfluenceRegisterId || editingContact.contactInfluenceRegisterId <= 0)) { toast.error('The shared contact ID is missing. Reload the contact and try again.'); return }
     setBusy(true);
+    let datesSaved = false;
     try {
       if (editingContact) {
-        await RetailAPI.updateContact(editingContact.id, { clientAccountId: account.id, contactInfluenceRegisterId: editingContact.contactInfluenceRegisterId, designation: contactForm.designation.trim(), roleDescription: contactForm.roleDescription.trim() || null, primaryContact: contactForm.primaryContact, active: contactForm.active }, token);
+        if (datesChanged) {
+          await RetailAPI.updateMasterContact(editingContact.contactInfluenceRegisterId, { dateOfBirth: contactForm.dateOfBirth || null, anniversaryDate: contactForm.anniversaryDate || null }, token);
+          datesSaved = true;
+        }
+        if (contactForm.designation.trim() !== editingContact.designation || contactForm.roleDescription.trim() !== editingContact.roleDescription || contactForm.primaryContact !== editingContact.primaryContact || contactForm.active !== editingContact.active) {
+          await RetailAPI.updateContact(editingContact.id, { clientAccountId: account.id, contactInfluenceRegisterId: editingContact.contactInfluenceRegisterId, designation: contactForm.designation.trim(), roleDescription: contactForm.roleDescription.trim() || null, primaryContact: contactForm.primaryContact, active: contactForm.active }, token);
+        }
       } else {
         const masterId = await RetailAPI.createMasterContact({ firstName: contactForm.firstName.trim(), lastName: contactForm.lastName.trim(), mobile: contactForm.mobile.replace(/\D/g, ''), email: contactForm.email.trim() || null, dateOfBirth: contactForm.dateOfBirth || null, anniversaryDate: contactForm.anniversaryDate || null, active: true }, token);
         await RetailAPI.linkContact({ clientAccountId: account.id, contactInfluenceRegisterId: masterId, designation: contactForm.designation.trim(), roleDescription: contactForm.roleDescription.trim() || null, primaryContact: contactForm.primaryContact, active: true }, token);
       }
-      toast.success(editingContact ? 'Contact link updated.' : 'Contact created and linked.');
+      toast.success(editingContact ? 'Contact updated.' : 'Contact created and linked.');
       setContactOpen(false);
       await loadContactsSection();
-    } catch (error) { toast.error(getErrorMessage(error, 'Unable to save contact.')) } finally { setBusy(false) }
+    } catch (error) {
+      toast.error(datesSaved ? `Birthday and anniversary were saved, but the account contact details could not be saved. ${getErrorMessage(error, 'Please try again.')}` : getErrorMessage(error, 'Unable to save contact.'));
+      if (datesSaved) await loadContactsSection();
+    } finally { setBusy(false) }
   };
 
   const removeContact = async (contact: RetailContact) => {
@@ -382,14 +395,27 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to plan visit.')) } finally { setBusy(false) }
   };
 
+  const openSale = (sale?: RetailSale) => {
+    setEditingSale(sale ?? null);
+    setSaleForm(sale ? { saleDate: sale.saleDate.slice(0, 10), quantityMt: String(sale.quantityMt), invoiceReference: sale.invoiceReference, outcomeStatus: sale.outcomeStatus ?? '', poNumber: sale.poNumber, poDate: sale.poDate.slice(0, 10), lossReason: sale.lossReason } : emptySale());
+    setSaleOpen(true);
+  };
+
   const saveSale = async () => {
     if (!token || !account) return;
     const quantity = Number(saleForm.quantityMt);
-    if (!saleForm.saleDate || saleForm.saleDate > today()) { toast.error('PO date is required and cannot be in the future.'); return }
+    if (!saleForm.outcomeStatus) { toast.error('Select Won or Lost.'); return }
+    if (!saleForm.saleDate || saleForm.saleDate > today()) { toast.error('Sale date is required and cannot be in the future.'); return }
     if (!Number.isFinite(quantity) || quantity <= 0) { toast.error('Quantity must be greater than zero.'); return }
-    if (!saleForm.invoiceReference.trim()) { toast.error('PO number is required.'); return }
+    if (saleForm.outcomeStatus === 'WIN' && (!saleForm.poNumber.trim() || !saleForm.poDate)) { toast.error('PO date and PO number are required for a won sale.'); return }
+    if (saleForm.outcomeStatus === 'WIN' && saleForm.poDate > today()) { toast.error('PO date cannot be in the future.'); return }
+    if (saleForm.outcomeStatus === 'LOST' && !saleForm.lossReason.trim()) { toast.error('Lost reason is required.'); return }
     setBusy(true);
-    try { await RetailAPI.createSale({ clientAccountId: account.id, saleDate: saleForm.saleDate, quantityMt: quantity, invoiceReference: saleForm.invoiceReference.trim(), sourceSystem: 'manual' }, token); toast.success('Sale recorded.'); setSaleOpen(false); await loadSalesSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to record sale.')) } finally { setBusy(false) }
+    try {
+      const payload = { clientAccountId: account.id, saleDate: saleForm.saleDate, quantityMt: quantity, invoiceReference: saleForm.invoiceReference.trim() || null, sourceSystem: editingSale?.sourceSystem || 'MANUAL', outcomeStatus: saleForm.outcomeStatus, poNumber: saleForm.outcomeStatus === 'WIN' ? saleForm.poNumber.trim() : null, poDate: saleForm.outcomeStatus === 'WIN' ? saleForm.poDate : null, lossReason: saleForm.outcomeStatus === 'LOST' ? saleForm.lossReason.trim() : null };
+      if (editingSale) await RetailAPI.updateSale(editingSale.id, payload, token); else await RetailAPI.createSale(payload, token);
+      toast.success(editingSale ? 'Sale updated.' : 'Sale recorded.'); setSaleOpen(false); await loadSalesSection();
+    } catch (error) { toast.error(getErrorMessage(error, 'Unable to save sale.')) } finally { setBusy(false) }
   };
 
   const openTask = async (task?: RetailTask) => {
@@ -531,7 +557,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const openMonthlySales = () => { setMonthlySalesForm({ declaredMonthlySalesMt: account.declaredMonthlySalesMt == null ? '' : String(account.declaredMonthlySalesMt), changeReason: '' }); setMonthlySalesOpen(true) };
   const statusTone: Tone = account.accountStatus === 'ACTIVE' ? 'success' : account.accountStatus === 'PROSPECT' ? 'info' : account.accountStatus === 'LOST' ? 'danger' : 'warning';
   const nextStep: { text: string; done: boolean; action?: React.ReactNode } =
-    !account.networkMember && totalSales === 0 ? { text: 'Record the first sale, then onboard this account to the network.', done: false, action: <Button size="sm" className="h-8" onClick={() => { setSaleForm(emptySale()); setSaleOpen(true) }}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record first sale</Button> }
+    !account.networkMember && totalSales === 0 ? { text: 'Record the first sale, then onboard this account to the network.', done: false, action: <Button size="sm" className="h-8" onClick={() => openSale()}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record first sale</Button> }
     : !account.networkMember ? { text: 'First order is in. Onboard this account to the network.', done: false, action: <Button size="sm" className="h-8" onClick={() => setNetworkOpen(true)}>Network onboard</Button> }
     : account.accountStatus === 'PROSPECT' ? { text: 'Network onboarding is done. Set the account status to Active.', done: false, action: <Button size="sm" className="h-8" onClick={() => void flipToActive()} disabled={busy}>Set Active</Button> }
     : account.networkStatus === 'INACTIVE' ? { text: 'No sale in the last 3 months. Plan a win-back visit.', done: false, action: <Button size="sm" variant="outline" className="h-8" onClick={openVisitForm}><CalendarPlus className="mr-1.5 h-3.5 w-3.5" />Plan win-back visit</Button> }
@@ -539,7 +565,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     : { text: 'On track. Keep up regular visits and sales.', done: true };
   const recentActivity: ActivityItem[] = [
     ...visits.map((visit) => ({ key: `visit-${visit.id}`, date: visit.actualCheckinAt || visit.scheduledVisitDate, icon: CalendarDays, title: `Visit · ${purposeLabel(visit.purpose)}`, meta: `${visitStatus(visit).label} · ${visit.assignedEmployeeName || employeeName(visit.assignedEmployeeId)}`, onClick: () => router.push(`/dashboard/visits/${visit.id}`) })),
-    ...sales.map((sale) => ({ key: `sale-${sale.id}`, date: sale.saleDate, icon: Package, title: `Sale · ${sale.quantityMt.toLocaleString('en-IN')} MT`, meta: `PO ${sale.invoiceReference || '—'}` })),
+    ...sales.map((sale) => ({ key: `sale-${sale.id}`, date: sale.saleDate, icon: Package, title: `${sale.outcomeStatus === 'LOST' ? 'Lost sale' : sale.outcomeStatus === 'WIN' ? 'Won sale' : 'Sale'} · ${sale.quantityMt.toLocaleString('en-IN')} MT`, meta: sale.outcomeStatus === 'LOST' ? sale.lossReason : [sale.poNumber ? `PO ${sale.poNumber}` : '', sale.invoiceReference].filter(Boolean).join(' · ') || '—' })),
     ...notes.map((note) => ({ key: `note-${note.id}`, date: note.createdAt, icon: StickyNote, title: `Note · ${note.authorName || employeeName(note.authorEmployeeId) || 'System'}`, meta: note.noteText })),
     ...commercialHistory.map((entry) => ({ key: `change-${entry.id}`, date: entry.changedAt, icon: ArrowRightLeft, title: `${humanize(entry.fieldName)} changed`, meta: `${entry.oldValue || '—'} → ${entry.newValue || '—'} · ${entry.changedBy || 'System'}` })),
   ].filter((item) => item.date && dayKey(item.date) <= today()).sort((left, right) => String(right.date).localeCompare(String(left.date))).slice(0, 8);
@@ -775,9 +801,9 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
               <Section
                 description={salesSummary(sales)}
                 bodyClassName="p-0"
-                action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => { setSaleForm(emptySale()); setSaleOpen(true) }}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record sale</Button>}
+                action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openSale()}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record sale</Button>}
               >
-                {sales.length === 0 ? <EmptyState compact title="Record the first PO to start tracking volume." /> : <SalesTable sales={sales} />}
+                {sales.length === 0 ? <EmptyState compact title="Record the first sale to track won and lost opportunities." /> : <SalesTable sales={sales} showOutcome onEdit={(sale) => openSale(sales.find((item) => item.id === sale.id))} />}
               </Section>
             ),
           },
@@ -856,7 +882,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         onOpenChange={(open) => !busy && setContactOpen(open)}
         icon={UserPlus}
         title={editingContact ? 'Edit contact' : 'Add contact'}
-        description={editingContact ? 'Name and phone come from the shared contact register and can’t be changed here.' : `Link a person to ${account.accountName}.`}
+        description={editingContact ? 'Birthday and anniversary update the shared contact wherever this person is linked. Name and phone are read-only here.' : `Link a person to ${account.accountName}.`}
         onSubmit={() => void saveContact()}
         submitLabel={editingContact ? 'Save changes' : 'Add contact'}
         submitting={busy}
@@ -866,10 +892,8 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
           <FormField label="Last name" required><Input disabled={Boolean(editingContact)} value={contactForm.lastName} onChange={(event) => setContactForm({ ...contactForm, lastName: event.target.value })} /></FormField>
           <FormField label="Mobile" required hint={editingContact ? undefined : '10-digit number'}><Input disabled={Boolean(editingContact)} inputMode="numeric" value={contactForm.mobile} onChange={(event) => setContactForm({ ...contactForm, mobile: event.target.value.replace(/\D/g, '').slice(0, 10) })} /></FormField>
           <FormField label="Email"><Input disabled={Boolean(editingContact)} type="email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} /></FormField>
-          {!editingContact && <>
-            <FormField label="Date of birth"><Input type="date" value={contactForm.dateOfBirth} onChange={(event) => setContactForm({ ...contactForm, dateOfBirth: event.target.value })} /></FormField>
-            <FormField label="Anniversary"><Input type="date" value={contactForm.anniversaryDate} onChange={(event) => setContactForm({ ...contactForm, anniversaryDate: event.target.value })} /></FormField>
-          </>}
+          <FormField label="Birthday (date of birth)" hint="Optional."><Input aria-label="Birthday (date of birth)" type="date" value={contactForm.dateOfBirth} onChange={(event) => setContactForm({ ...contactForm, dateOfBirth: event.target.value })} /></FormField>
+          <FormField label="Anniversary" hint="Optional."><Input aria-label="Anniversary" type="date" value={contactForm.anniversaryDate} onChange={(event) => setContactForm({ ...contactForm, anniversaryDate: event.target.value })} /></FormField>
         </FormGroup>
         <FormGroup title="Role at this account">
           <FormField label="Designation" required><Input placeholder="e.g. Owner" value={contactForm.designation} onChange={(event) => setContactForm({ ...contactForm, designation: event.target.value })} /></FormField>
@@ -920,16 +944,19 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         open={saleOpen}
         onOpenChange={(open) => !busy && setSaleOpen(open)}
         icon={PackagePlus}
-        title="Record sale"
-        description={`Log a purchase order from ${account.accountName}.`}
+        title={editingSale ? 'Edit sale' : 'Record sale'}
+        description={`Record a won or lost sale for ${account.accountName}.`}
         onSubmit={() => void saveSale()}
-        submitLabel="Record sale"
+        submitLabel={editingSale ? 'Save changes' : 'Record sale'}
         submitting={busy}
       >
         <FormGroup>
-          <FormField label="PO date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm({ ...saleForm, saleDate: event.target.value })} /></FormField>
+          <FormField label="Outcome" required className="sm:col-span-2"><div className="flex gap-2"><Button type="button" variant={saleForm.outcomeStatus === 'WIN' ? 'default' : 'outline'} aria-pressed={saleForm.outcomeStatus === 'WIN'} onClick={() => setSaleForm({ ...saleForm, outcomeStatus: 'WIN' })}>Won</Button><Button type="button" variant={saleForm.outcomeStatus === 'LOST' ? 'destructive' : 'outline'} aria-pressed={saleForm.outcomeStatus === 'LOST'} onClick={() => setSaleForm({ ...saleForm, outcomeStatus: 'LOST' })}>Lost</Button></div></FormField>
+          <FormField label="Sale date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm({ ...saleForm, saleDate: event.target.value })} /></FormField>
           <FormField label="Quantity (MT)" required><Input type="number" min="0.01" step="0.01" value={saleForm.quantityMt} onChange={(event) => setSaleForm({ ...saleForm, quantityMt: event.target.value })} /></FormField>
-          <FormField label="PO number" required className="sm:col-span-2"><Input placeholder="PO-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm({ ...saleForm, invoiceReference: event.target.value })} /></FormField>
+          {saleForm.outcomeStatus === 'WIN' && <><FormField label="PO date" required><Input type="date" max={today()} value={saleForm.poDate} onChange={(event) => setSaleForm({ ...saleForm, poDate: event.target.value })} /></FormField><FormField label="PO number" required><Input placeholder="PO-2026-101" value={saleForm.poNumber} onChange={(event) => setSaleForm({ ...saleForm, poNumber: event.target.value })} /></FormField></>}
+          {saleForm.outcomeStatus === 'LOST' && <FormField label="Lost reason" required className="sm:col-span-2"><Textarea placeholder="Why was this sale lost?" value={saleForm.lossReason} onChange={(event) => setSaleForm({ ...saleForm, lossReason: event.target.value })} /></FormField>}
+          {saleForm.outcomeStatus && <FormField label="Invoice or reference" hint="Optional." className="sm:col-span-2"><Input placeholder="INV-1001" value={saleForm.invoiceReference} onChange={(event) => setSaleForm({ ...saleForm, invoiceReference: event.target.value })} /></FormField>}
         </FormGroup>
       </FormSheet>
 

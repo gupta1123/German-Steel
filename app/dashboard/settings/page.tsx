@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { useNavigationGuard } from "@/components/unsaved-changes-provider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
@@ -74,6 +76,7 @@ function SettingsContent() {
 
   return (
     <div className="space-y-4 py-4">
+      <div className="flex justify-end"><Button variant="outline" asChild><Link href="/dashboard/regions">Manage Regions and Districts</Link></Button></div>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <div ref={tabScrollerRef} className="-mx-1 overflow-x-auto px-1 pb-1">
         <TabsList className="h-auto w-max justify-start gap-1 rounded-lg border border-border/70 bg-card p-1 shadow-sm">

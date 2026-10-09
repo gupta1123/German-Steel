@@ -67,7 +67,7 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
     },
     "/dashboard/regions": {
       heading: "Sales Regions",
-      subheading: "Zones and PIN → region mappings for territory assignment"
+      subheading: "Manage sales regions, assigned districts and PIN mappings"
     },
     "/dashboard/employees": {
       heading: "Employees",

@@ -13,7 +13,7 @@ import {
   type ProjectStage,
 } from '@/lib/projects-api';
 import { InstitutionsAPI, type Institution } from '@/lib/institutions-api';
-import { RetailAPI, type RetailEmployee } from '@/lib/retail-api';
+import { RetailAPI, type RetailEmployee, type RetailSalesRegion } from '@/lib/retail-api';
 import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 import { Button } from '@/components/ui/button';
 import {
@@ -143,7 +143,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
   const [draft, setDraft] = useState<ProjectDraft>(createEmptyDraft);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
-  const [regionNames, setRegionNames] = useState<string[]>([]);
+  const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const [isLoadingMasters, setIsLoadingMasters] = useState(false);
   const [masterLoadError, setMasterLoadError] = useState<string | null>(null);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
@@ -191,7 +191,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
     });
     // State dropdown source: backend sales regions (independent — failures keep the built-in list).
     RetailAPI.getSalesRegions(token)
-      .then((list) => { if (!cancelled && list.length > 0) setRegionNames(list.map((r) => r.name)); })
+      .then((list) => { if (!cancelled && list.length > 0) setRegions(list.filter((region) => region.active !== false)); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [isOpen, token]);
@@ -276,8 +276,8 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
 
   // State dropdown is sourced from backend sales regions, falling back to the built-in list.
   const stateOptions = useMemo<string[]>(() =>
-    regionNames.length > 0 ? [...regionNames].sort((a, b) => a.localeCompare(b)) : [...STATES],
-    [regionNames]);
+    regions.length > 0 ? regions.map((region) => region.name).sort((a, b) => a.localeCompare(b)) : [...STATES],
+    [regions]);
 
   const handleSubmit = async () => {
     const errors = validateDraft(draft);
@@ -290,8 +290,10 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
       const payload: ProjectCreatePayload = {
         projectName: draft.projectName.trim(),
         locationText: draft.locationText.trim(),
+        locationState: draft.state.trim(),
         locationLatitude: draft.locationLatitude ? Number(draft.locationLatitude) : null,
         locationLongitude: draft.locationLongitude ? Number(draft.locationLongitude) : null,
+        regionId: regions.find((region) => region.name.toLocaleLowerCase('en-IN') === draft.state.trim().toLocaleLowerCase('en-IN'))?.id ?? null,
         projectType: draft.projectType,
         estimatedTmtMt: draft.estimatedTmtMt ? Number(draft.estimatedTmtMt) : null,
         startDate: draft.startDate || null,

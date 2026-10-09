@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Plus, Search,
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/auth-provider';
+import { hasAdminSetupPrivileges, hasManagerPrivileges } from '@/lib/auth';
+import { RegionDistrictDetails } from '@/components/region-district-details';
 import { getErrorMessage } from '@/lib/api-error';
 import { RetailAPI, type RetailPinCode, type RetailSalesRegion } from '@/lib/retail-api';
 import { Button } from '@/components/ui/button';
@@ -24,7 +26,9 @@ const humanize = (v: string | null | undefined) => v ? v.replaceAll('_',' ').toL
 const csvCell = (v: unknown) => `"${String(v ?? '').replaceAll('"','""')}"`;
 
 export default function RegionsPage() {
-  const { token } = useAuth();
+  const { token, userRole, currentUser } = useAuth();
+  const canManage = hasAdminSetupPrivileges(userRole, currentUser) || hasManagerPrivileges(userRole, currentUser) || userRole === 'SCOPE_ALL_ZONES_ALL_MODULES' || Boolean(currentUser?.authorities?.some(item => item.authority === 'SCOPE_ALL_ZONES_ALL_MODULES'));
+  const [detailRegion, setDetailRegion] = useState<RetailSalesRegion | null>(null);
   const [activeTab, setActiveTab] = useState<'pins' | 'regions'>('pins');
 
   // Regions state
@@ -53,7 +57,7 @@ export default function RegionsPage() {
   const [pinLoading, setPinLoading] = useState(true);
   const [pinDialogOpen, setPinDialogOpen] = useState(false);
   const [editingPin, setEditingPin] = useState<RetailPinCode | null>(null);
-  const [pinForm, setPinForm] = useState({ pinCode: '', regionId: '' });
+  const [pinForm, setPinForm] = useState({ pinCode: '', regionId: '', active: true });
   const [pinSaving, setPinSaving] = useState(false);
   const [pinDeleteTarget, setPinDeleteTarget] = useState<RetailPinCode | null>(null);
   const [pinDeleting, setPinDeleting] = useState(false);
@@ -105,15 +109,19 @@ export default function RegionsPage() {
   }, [pins, pinQuery, pinRegionFilter, pinActiveFilter]);
 
   const openCreateRegion = () => { setEditingRegion(null); setRegionForm({ code: '', name: '', centerLatitude: '', centerLongitude: '', active: true }); setRegionDialogOpen(true); };
-  const openEditRegion = (r: RetailSalesRegion) => { setEditingRegion(r); setRegionForm({ code: r.code ?? '', name: r.name, centerLatitude: '', centerLongitude: '', active: r.active !== false }); setRegionDialogOpen(true); };
+  const openEditRegion = (r: RetailSalesRegion) => { setEditingRegion(r); setRegionForm({ code: r.code ?? '', name: r.name, centerLatitude: r.centerLatitude == null ? '' : String(r.centerLatitude), centerLongitude: r.centerLongitude == null ? '' : String(r.centerLongitude), active: r.active !== false }); setRegionDialogOpen(true); };
   const saveRegion = async () => {
-    if (!token) return;
+    if (!token || !canManage) return;
     const code = regionForm.code.trim().toUpperCase();
     const name = regionForm.name.trim();
     if (!code || !name) { toast.error('Code and name are required.'); return; }
+    const centerLatitude = regionForm.centerLatitude.trim() ? Number(regionForm.centerLatitude) : null;
+    const centerLongitude = regionForm.centerLongitude.trim() ? Number(regionForm.centerLongitude) : null;
+    if (centerLatitude !== null && (!Number.isFinite(centerLatitude) || Math.abs(centerLatitude) > 90)) { toast.error('Latitude must be between -90 and 90.'); return; }
+    if (centerLongitude !== null && (!Number.isFinite(centerLongitude) || Math.abs(centerLongitude) > 180)) { toast.error('Longitude must be between -180 and 180.'); return; }
     setRegionSaving(true);
     try {
-      const payload = { code, name, active: regionForm.active };
+      const payload = { code, name, centerLatitude, centerLongitude, active: regionForm.active };
       if (editingRegion) { await RetailAPI.updateSalesRegion(editingRegion.id, payload, token); toast.success('Region updated.'); }
       else { await RetailAPI.createSalesRegion(payload, token); toast.success('Region created.'); }
       setRegionDialogOpen(false);
@@ -121,30 +129,30 @@ export default function RegionsPage() {
     } catch (e) { toast.error(getErrorMessage(e, 'Unable to save region.')); } finally { setRegionSaving(false); }
   };
   const confirmDeleteRegion = async () => {
-    if (!token || !regionDeleteTarget) return;
+    if (!token || !canManage || !regionDeleteTarget) return;
     setRegionDeleting(true);
     try { await RetailAPI.deactivateSalesRegion(regionDeleteTarget.id, token); toast.success('Region deactivated.'); setRegionDeleteTarget(null); await loadRegions(); }
     catch (e) { toast.error(getErrorMessage(e, 'Unable to deactivate region.')); } finally { setRegionDeleting(false); }
   };
 
-  const openCreatePin = () => { setEditingPin(null); setPinForm({ pinCode: '', regionId: '' }); setPinDialogOpen(true); };
-  const openEditPin = (p: RetailPinCode) => { setEditingPin(p); setPinForm({ pinCode: p.pinCode, regionId: p.regionId ? String(p.regionId) : '' }); setPinDialogOpen(true); };
+  const openCreatePin = () => { if (!canManage) return; setEditingPin(null); setPinForm({ pinCode: '', regionId: '', active: true }); setPinDialogOpen(true); };
+  const openEditPin = (p: RetailPinCode) => { if (!canManage) return; setEditingPin(p); setPinForm({ pinCode: p.pinCode, regionId: p.regionId ? String(p.regionId) : '', active: p.active !== false }); setPinDialogOpen(true); };
   const savePin = async () => {
-    if (!token) return;
-    const pin = pinForm.pinCode.replace(/\D/g, '').slice(0, 6);
+    if (!token || !canManage) return;
+    const pin = editingPin ? editingPin.pinCode : pinForm.pinCode.replace(/\D/g, '').slice(0, 6);
     const regionId = Number(pinForm.regionId);
     if (pin.length !== 6) { toast.error('PIN must be exactly 6 digits.'); return; }
-    if (!Number.isFinite(regionId)) { toast.error('Choose a sales region.'); return; }
+    if (!pinForm.regionId || !Number.isInteger(regionId) || regionId <= 0 || !regions.some(r => r.id === regionId)) { toast.error('Choose a sales region.'); return; }
     setPinSaving(true);
     try {
-      if (editingPin) { await RetailAPI.updatePinCode(editingPin.pinCode, { pinCode: pin, regionId, active: true }, token); toast.success('PIN mapping updated.'); }
-      else { await RetailAPI.createPinCode({ pinCode: pin, regionId, active: true }, token); toast.success('PIN mapped to region. Retail onboarding will now accept this PIN.'); }
+      if (editingPin) { await RetailAPI.updatePinCode(editingPin.pinCode, { pinCode: pin, regionId, active: pinForm.active }, token); toast.success('PIN mapping updated.'); }
+      else { await RetailAPI.createPinCode({ pinCode: pin, regionId, active: pinForm.active }, token); toast.success(pinForm.active ? 'PIN mapped to region. Retail onboarding will now accept this PIN.' : 'Inactive PIN mapping created.'); }
       setPinDialogOpen(false);
       await loadPins();
     } catch (e) { toast.error(getErrorMessage(e, 'Unable to save PIN mapping.')); } finally { setPinSaving(false); }
   };
   const confirmDeletePin = async () => {
-    if (!token || !pinDeleteTarget) return;
+    if (!token || !canManage || !pinDeleteTarget) return;
     setPinDeleting(true);
     try { await RetailAPI.deactivatePinCode(pinDeleteTarget.pinCode, token); toast.success(`PIN ${pinDeleteTarget.pinCode} deactivated.`); setPinDeleteTarget(null); await loadPins(); }
     catch (e) { toast.error(getErrorMessage(e, 'Unable to deactivate PIN.')); } finally { setPinDeleting(false); }
@@ -201,7 +209,7 @@ export default function RegionsPage() {
               <span className="hidden text-xs text-muted-foreground xl:inline">{filteredPins.length} mappings</span>
               <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => setAreFiltersVisible(v => !v)}><Filter className="h-4 w-4" /></Button>
               <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={exportPins}><DownloadIcon className="h-4 w-4" /></Button>
-              <Button size="sm" className="h-8 text-xs" onClick={openCreatePin}><Plus className="mr-2 h-4 w-4" />Map PIN</Button>
+              {canManage && <Button size="sm" className="h-8 text-xs" onClick={openCreatePin}><Plus className="mr-2 h-4 w-4" />Map PIN</Button>}
             </div>
           </div>
           <p className="text-xs text-muted-foreground">PIN-first tab — add a new 6-digit PIN here to unblock retail onboarding (Create Retailer derives region from this master).</p>
@@ -219,8 +227,8 @@ export default function RegionsPage() {
                       <TableCell><Ellipsis value={p.regionId ?? '—'} /></TableCell>
                       <TableCell><Ellipsis value={p.active===false ? 'Inactive':'Active'} /></TableCell>
                       <TableCell><div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>openEditPin(p)}>Edit</Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={p.active===false} onClick={()=>setPinDeleteTarget(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        {canManage && <><Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>openEditPin(p)}>Edit</Button>
+                        <Button aria-label={`Deactivate PIN ${p.pinCode}`} variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={p.active===false} onClick={()=>setPinDeleteTarget(p)}><Trash2 className="h-3.5 w-3.5" /></Button></>}
                       </div></TableCell>
                     </TableRow>
                   ))}
@@ -249,14 +257,14 @@ export default function RegionsPage() {
               </div>
             </div>
             <div className="min-w-0 flex-1">
-              <Select value={regionActiveFilter} onValueChange={setRegionActiveFilter}>
+              <Select value={regionActiveFilter} onValueChange={value => { setRegionPage(0); setRegionActiveFilter(value); }}>
                 <SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Record state" /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">All Records</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="INACTIVE">Inactive</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <span className="hidden text-xs text-muted-foreground xl:inline">{filteredRegions.length} regions</span>
-              <Button size="sm" className="h-8 text-xs" onClick={openCreateRegion}><Plus className="mr-2 h-4 w-4" />Create Region</Button>
+              {canManage && <Button size="sm" className="h-8 text-xs" onClick={openCreateRegion}><Plus className="mr-2 h-4 w-4" />Create Region</Button>}
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -270,11 +278,12 @@ export default function RegionsPage() {
                     <TableRow key={r.id}>
                       <TableCell className="font-mono"><Ellipsis value={r.code} /></TableCell>
                       <TableCell className="font-medium"><Ellipsis value={r.name} /></TableCell>
-                      <TableCell><Ellipsis value={r.code ? '—' : '—'} /></TableCell>
+                      <TableCell><Ellipsis value={r.centerLatitude != null && r.centerLongitude != null ? `${r.centerLatitude}, ${r.centerLongitude}` : null} /></TableCell>
                       <TableCell><Ellipsis value={r.active===false ? 'Inactive':'Active'} /></TableCell>
                       <TableCell><div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>openEditRegion(r)}>Edit</Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={r.active===false} onClick={()=>setRegionDeleteTarget(r)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>setDetailRegion(r)}>Details</Button>
+                        {canManage && <><Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>openEditRegion(r)}>Edit</Button>
+                        <Button aria-label={`Deactivate ${r.name}`} variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={r.active===false} onClick={()=>setRegionDeleteTarget(r)}><Trash2 className="h-3.5 w-3.5" /></Button></>}
                       </div></TableCell>
                     </TableRow>
                   ))}
@@ -293,6 +302,7 @@ export default function RegionsPage() {
           </div>
         </TabsContent>
       </Tabs>
+      {detailRegion && token && <RegionDistrictDetails key={detailRegion.id} region={detailRegion} regions={regions} token={token} canManage={canManage} onClose={() => setDetailRegion(null)} />}
 
       <Dialog open={regionDialogOpen} onOpenChange={(o)=>!regionSaving && setRegionDialogOpen(o)}>
         <DialogContent>
@@ -300,6 +310,9 @@ export default function RegionsPage() {
           <div className="space-y-4">
             <div className="space-y-1.5"><Label>Code *</Label><Input value={regionForm.code} onChange={(e)=>setRegionForm({...regionForm, code: e.target.value.toUpperCase().slice(0,40)})} placeholder="e.g. PUNE" className="normal-case" data-preserve-case="true" /></div>
             <div className="space-y-1.5"><Label>Name *</Label><Input value={regionForm.name} onChange={(e)=>setRegionForm({...regionForm, name: e.target.value})} placeholder="e.g. Pune" /></div>
+            <div className="space-y-1.5"><Label htmlFor="region-latitude">Center Latitude</Label><Input id="region-latitude" type="number" min="-90" max="90" step="any" value={regionForm.centerLatitude} onChange={event => setRegionForm({ ...regionForm, centerLatitude: event.target.value })} /></div>
+            <div className="space-y-1.5"><Label htmlFor="region-longitude">Center Longitude</Label><Input id="region-longitude" type="number" min="-180" max="180" step="any" value={regionForm.centerLongitude} onChange={event => setRegionForm({ ...regionForm, centerLongitude: event.target.value })} /></div>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={regionForm.active} onChange={event => setRegionForm({ ...regionForm, active: event.target.checked })} />Active Region</label>
           </div>
           <DialogFooter><Button variant="outline" onClick={()=>setRegionDialogOpen(false)} disabled={regionSaving}>Cancel</Button><Button onClick={()=>void saveRegion()} disabled={regionSaving}>{regionSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingRegion ? 'Save changes' : 'Create region'}</Button></DialogFooter>
         </DialogContent>
@@ -314,12 +327,19 @@ export default function RegionsPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>{editingPin ? `Edit PIN ${editingPin.pinCode}` : 'Map PIN to Region'}</DialogTitle><DialogDescription>6-digit PIN → sales region. Retail onboarding derives region from this master and will block if missing.</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-1.5"><Label>PIN Code *</Label><Input value={pinForm.pinCode} onChange={(e)=>setPinForm({...pinForm, pinCode: e.target.value.replace(/\D/g,'').slice(0,6)})} inputMode="numeric" placeholder="560006" /></div>
+            {!editingPin && <div className="space-y-1.5"><Label htmlFor="pin-code">PIN Code *</Label><Input id="pin-code" value={pinForm.pinCode} onChange={(e)=>setPinForm({...pinForm, pinCode: e.target.value.replace(/\D/g,'').slice(0,6)})} inputMode="numeric" placeholder="560006" /></div>}
             <div className="space-y-1.5"><Label>Sales Region *</Label>
               <Select value={pinForm.regionId} onValueChange={(v)=>setPinForm({...pinForm, regionId: v})}>
                 <SelectTrigger><SelectValue placeholder="Choose region" /></SelectTrigger>
-                <SelectContent>{regions.filter(r=>r.active!==false).map(r=><SelectItem key={r.id} value={String(r.id)}>{r.name} ({r.code})</SelectItem>)}</SelectContent>
+                <SelectContent>{regions.filter(r=>r.active!==false || r.id === editingPin?.regionId).map(r=><SelectItem key={r.id} value={String(r.id)}>{r.name} ({r.code}){r.active === false ? ' — Inactive' : ''}</SelectItem>)}</SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5"><Label htmlFor="pin-status">Status *</Label>
+              <Select value={pinForm.active ? 'ACTIVE' : 'INACTIVE'} onValueChange={value=>setPinForm({...pinForm, active: value === 'ACTIVE'})}>
+                <SelectTrigger id="pin-status"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="INACTIVE">Inactive</SelectItem></SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Inactive PIN mappings stay inactive when edited unless you change this status to Active.</p>
             </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={()=>setPinDialogOpen(false)} disabled={pinSaving}>Cancel</Button><Button onClick={()=>void savePin()} disabled={pinSaving}>{pinSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingPin ? 'Save changes' : 'Create mapping'}</Button></DialogFooter>

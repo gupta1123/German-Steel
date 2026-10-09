@@ -189,8 +189,10 @@ export interface ProjectNcEntry {
 export interface ProjectCreatePayload {
   projectName: string;
   locationText: string;
+  locationState: string;
   locationLatitude: number | null;
   locationLongitude: number | null;
+  regionId: number | null;
   projectType: ProjectType;
   estimatedTmtMt: number | null;
   startDate: string | null;
@@ -208,6 +210,12 @@ export interface Project {
   institutionName: string;
   locationText: string;
   state: string;
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
+  regionName?: string | null;
+  projectGroupName?: string | null;
+  projectGroupType?: string | null;
+  parties?: ProjectParty[];
   projectType: ProjectType;
   estimatedTmtMt: number | null;
   sourceApprovalStatus: ProjectStage | string;
@@ -275,6 +283,7 @@ const normalizeProject = (value: unknown): Project | null => {
   const id = numberOf(item.id, item.projectId); if (id == null) return null;
   const owner = nested(item, 'assignedEmployee', 'employee', 'owner');
   const inst = nested(item, 'institution');
+  const region = nested(item, 'region', 'salesRegion');
   const typeRaw = stringOf(item.projectType, item.type).toUpperCase().replace(/[\s-]+/g,'_');
   const stageRaw = stringOf(item.sourceApprovalStatus, item.status, item.projectStatus, item.approvalStatus, item.currentStage, item.stage).toUpperCase().replace(/[\s-]+/g,'_');
   const allowedTypes: ProjectType[] = ['ROAD_HIGHWAY', 'BRIDGE', 'BUILDING', 'IRRIGATION', 'PORT_OR_INDUSTRIAL', 'OTHER_INFRASTRUCTURE'];
@@ -284,8 +293,14 @@ const normalizeProject = (value: unknown): Project | null => {
     institutionId: numberOf(item.institutionId, inst?.id),
     institutionName: toTitleCase(stringOf(item.institutionName, inst?.institutionName, inst?.name)) || '—',
     locationText: toTitleCase(stringOf(item.locationText, item.location, item.address)) || '—',
-    state: toTitleCase(stringOf(item.state, item.addressState, inst?.state)) || '—',
-    regionId: numberOf(item.regionId, item.salesRegionId),
+    state: toTitleCase(stringOf(item.locationState, item.state, item.addressState, item.regionName, item.salesRegionName, region?.name)) || '—',
+    locationLatitude: numberOf(item.locationLatitude),
+    locationLongitude: numberOf(item.locationLongitude),
+    regionId: numberOf(item.regionId, item.salesRegionId, region?.id),
+    regionName: toTitleCase(stringOf(item.regionName, item.salesRegionName, region?.name)) || null,
+    projectGroupName: toTitleCase(stringOf(item.projectGroupName)) || null,
+    projectGroupType: stringOf(item.projectGroupType) || null,
+    parties: Array.isArray(item.parties) ? item.parties.flatMap((value) => { const party = normalizeProjectParty(value); return party ? [party] : []; }) : [],
     startDate: stringOf(item.startDate) || null,
     completionDate: stringOf(item.completionDate) || null,
     projectType: (allowedTypes.includes(typeRaw as ProjectType) ? typeRaw : 'ROAD_HIGHWAY') as ProjectType,
@@ -354,7 +369,7 @@ const normalizeProjectParty = (value: unknown): ProjectParty | null => {
     id,
     projectId: numberOf(item.projectId, item.project_id, party?.projectId, party?.project_id) ?? 0,
     partyName: toTitleCase(stringOf(item.partyNameText, item.party_name_text, item.partyName, item.party_name, item.name, item.title, item.displayName, item.organization, item.organizationName, item.companyName, item.firmName, item.contractorName, party?.partyNameText, party?.partyName, party?.party_name, party?.name, party?.title, party?.organization, org?.organizationName, org?.name) || stringOf(contact?.contactPerson, contact?.contact_person, contact?.personName, contact?.fullName)) || 'â€”',
-    partyRole: toTitleCase(stringOf(item.partyRole, item.party_role, item.role, item.type, item.partyType, item.party_type, item.designation, party?.partyRole, party?.party_role, party?.role, party?.type, party?.designation)) || 'â€”',
+    partyRole: stringOf(item.partyRole, item.party_role, item.role, item.type, item.partyType, item.party_type, item.designation, party?.partyRole, party?.party_role, party?.role, party?.type, party?.designation).toUpperCase().replace(/[\s-]+/g, '_') || 'â€”',
     packageName: toTitleCase(stringOf(item.packageName, item.package_name, item.package, party?.packageName, party?.package_name)) || null,
     primaryParty: booleanOf(false, item.primaryParty, item.primary_party, item.isPrimary, item.is_primary, party?.primaryParty, party?.primary_party),
     contactPerson: toTitleCase(stringOf(item.contactPerson, item.contact_person, item.personName, item.person_name, item.fullName, item.contactName, item.responsiblePerson, contact?.contactPerson, contact?.contact_person, contact?.personName, contact?.fullName, party?.contactPerson)) || 'â€”',
@@ -535,7 +550,12 @@ export const ProjectsAPI = {
   },
   async getProjectSales(projectId: number, token: string, from = '2000-01-01', to = new Date().toISOString().slice(0, 10)): Promise<ProjectSale[]> {
     const response = await request(`/api/projects/${projectId}/sales${queryString({ from, to, page: 0, size: 50 })}`, token);
-    return pageItems(response).flatMap((value) => {
+    const values = [...pageItems(response)];
+    const pagination = pageOf(response, values, 0, 50);
+    for (let page = 1; page < pagination.totalPages; page++) {
+      values.push(...pageItems(await request(`/api/projects/${projectId}/sales${queryString({ from, to, page, size: pagination.size })}`, token)));
+    }
+    return values.flatMap((value) => {
       const item = recordOf(value);
       const id = item ? numberOf(item.id) : null;
       if (!item || id == null) return [];
@@ -569,10 +589,14 @@ export const ProjectsAPI = {
   async getProjectParties(projectId: number, token: string): Promise<ApiPage<ProjectParty>> {
     try {
       const res = await request(`/api/projects/${projectId}/parties?page=0&size=50`, token);
-      const items = pageItems(res).flatMap((v) => { const n = normalizeProjectParty(v); return n ? [n] : []; });
-      return pageOf(res, items, 0, 50);
+      const values = [...pageItems(res)];
+      const pagination = pageOf(res, values, 0, 50);
+      for (let page = 1; page < pagination.totalPages; page++) {
+        values.push(...pageItems(await request(`/api/projects/${projectId}/parties?page=${page}&size=${pagination.size}`, token)));
+      }
+      const items = values.flatMap((v) => { const n = normalizeProjectParty(v); return n ? [n] : []; });
+      return { ...pagination, content: items };
     } catch (error) {
-      if (error instanceof ProjectsApiError && [404, 405].includes(error.status)) return { content: [], number: 0, size: 50, totalElements: 0, totalPages: 1 };
       throw error;
     }
   },
