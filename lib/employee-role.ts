@@ -19,7 +19,8 @@ export const getEmployeeRoleCategory = (role: unknown): EmployeeRoleCategory => 
     normalizedRole.includes('field officer') ||
     normalizedRole === 'retail fe' ||
     normalizedRole === 'institution project fe' ||
-    normalizedRole === 'dual fe'
+    normalizedRole === 'dual fe' ||
+    ['empanelment fe', 'project fe', 'retail empanelment fe', 'retail project fe'].includes(normalizedRole)
   ) return 'field-officer';
   if (
     normalizedRole.includes('manager') ||

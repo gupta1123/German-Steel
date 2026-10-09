@@ -41,6 +41,7 @@ import { EmployeeUserDto } from "@/lib/api";
 import { teamsApi } from "@/lib/teams-api";
 import { formatCityLabel } from "@/lib/city-options";
 import { getEmployeeRoleFormValue } from "@/lib/employee-role";
+import { fetchFieldOfficerRoles, type EmployeeAccessRole } from "@/lib/employee-access-roles";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { useDashboardHeader } from "@/components/dashboard-header-context";
 
@@ -54,6 +55,7 @@ interface NewEmployeeState {
   department: string;
   email: string;
   role: string;
+  fieldOfficerRole: string;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -75,6 +77,7 @@ const initialNewEmployeeState: NewEmployeeState = {
   department: "Sales",
   email: "",
   role: "",
+  fieldOfficerRole: "",
   addressLine1: "",
   addressLine2: "",
   city: "",
@@ -111,6 +114,7 @@ const mapEmployeeDtoToState = (employee: EmployeeUserDto): NewEmployeeState => {
     department: employee.departmentName || "",
     email: employee.email || "",
     role: normalizedRole,
+    fieldOfficerRole: normalizedRole === 'Field Officer' ? employee.role || '' : '',
     addressLine1: employee.addressLine1 || "",
     addressLine2: employee.addressLine2 || "",
     city: employee.city || "",
@@ -153,6 +157,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [isCityAssignmentOpen, setIsCityAssignmentOpen] = useState(false);
   const [citySearch, setCitySearch] = useState("");
   const [usernameWasEdited, setUsernameWasEdited] = useState(false);
+  const [fieldOfficerRoles, setFieldOfficerRoles] = useState<EmployeeAccessRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState('');
+  const [rolesRetry, setRolesRetry] = useState(0);
 
   const employeeFormIsDirty = isFormReady && (
     JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
@@ -172,6 +180,18 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const passwordFieldId = `addEmployeePass-${rawPasswordId.replace(/:/g, '')}`;
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+
+  useEffect(() => {
+    if (!token || isEditMode || newEmployee.role !== 'Field Officer') return;
+    const controller = new AbortController();
+    setRolesLoading(true);
+    setRolesError('');
+    fetchFieldOfficerRoles(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081', token, controller.signal)
+      .then(roles => { if (!controller.signal.aborted) setFieldOfficerRoles(roles); })
+      .catch(error => { if (!controller.signal.aborted) { setFieldOfficerRoles([]); setRolesError(error instanceof Error ? error.message : 'Unable to load roles.'); } })
+      .finally(() => { if (!controller.signal.aborted) setRolesLoading(false); });
+    return () => controller.abort();
+  }, [token, isEditMode, newEmployee.role, rolesRetry]);
 
   const resetFormState = (
     state: NewEmployeeState = initialNewEmployeeState,
@@ -448,6 +468,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
     !mobileError &&
     newEmployee.department &&
     newEmployee.role &&
+    (isEditMode || newEmployee.role !== 'Field Officer' || (!rolesLoading && !rolesError && fieldOfficerRoles.some(role => role.employeeRole === newEmployee.fieldOfficerRole))) &&
     (isEditMode || (newEmployee.userName.trim() && newEmployee.password.trim().length >= 8))
   );
 
@@ -468,9 +489,11 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         return;
       }
 
+      if (!isEditMode && newEmployee.role === 'Field Officer' && (rolesLoading || rolesError || !fieldOfficerRoles.some(role => role.employeeRole === newEmployee.fieldOfficerRole))) throw new Error('Choose a Field Officer role from the role master before creating the employee.');
+
       const roleForApi = newEmployee.role === 'Manager' || newEmployee.role === 'Regional Manager' 
         ? 'MANAGER' 
-        : newEmployee.role === 'Field Officer' ? 'RETAIL_FE' 
+        : newEmployee.role === 'Field Officer' ? newEmployee.fieldOfficerRole || 'RETAIL_FE'
         : newEmployee.role;
 
       const mobileNum = Number(newEmployee.mobile);
@@ -704,7 +727,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                             <Select
                                                 value={newEmployee.role}
                                                 onValueChange={(val) => {
-                                                    setNewEmployee({ ...newEmployee, role: val });
+                                                    setNewEmployee({ ...newEmployee, role: val, fieldOfficerRole: val === newEmployee.role ? newEmployee.fieldOfficerRole : '' });
                                                     if (val !== 'Field Officer') {
                                                         setSelectedAssignedCities([]);
                                                     }
@@ -719,6 +742,17 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 </SelectContent>
                                             </Select>
                                         </div>
+
+                                        {!isEditMode && newEmployee.role === 'Field Officer' && <div className="space-y-2">
+                                            <Label htmlFor="field-officer-role">Field Officer Role <span className="text-red-500">*</span></Label>
+                                            <Select value={newEmployee.fieldOfficerRole} onValueChange={value => setNewEmployee({ ...newEmployee, fieldOfficerRole: value })} disabled={rolesLoading || Boolean(rolesError)}>
+                                                <SelectTrigger id="field-officer-role" className="h-9 w-full bg-background"><SelectValue placeholder={rolesLoading ? 'Loading roles…' : 'Select Field Officer Role'} /></SelectTrigger>
+                                                <SelectContent>{fieldOfficerRoles.map(role => <SelectItem key={role.employeeRole} value={role.employeeRole}>{role.displayName}</SelectItem>)}</SelectContent>
+                                            </Select>
+                                            {rolesError && <div role="alert" className="text-xs text-destructive">{rolesError}<Button type="button" variant="link" size="sm" onClick={() => setRolesRetry(value => value + 1)}>Retry</Button></div>}
+                                            {!rolesLoading && !rolesError && !fieldOfficerRoles.length && <p role="alert" className="text-xs text-destructive">No active Field Officer roles available.</p>}
+                                            {newEmployee.fieldOfficerRole && <p className="text-xs text-muted-foreground">{fieldOfficerRoles.find(role => role.employeeRole === newEmployee.fieldOfficerRole)?.accessDescription}</p>}
+                                        </div>}
 
                                     <div className="space-y-2">
                                         <Label>Date of Joining</Label>
