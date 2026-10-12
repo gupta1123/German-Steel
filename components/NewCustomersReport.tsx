@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -106,7 +107,7 @@ const NewCustomersReport = () => {
             // Use documented paginated GET /api/common/employees with active/role/search filters
             const page = await teamsApi.getEmployeesPage(token, params as never);
             const fieldOfficers = (page.content as unknown as Employee[])
-                .filter(emp => emp.role === "Field Officer")
+                .filter(emp => getEmployeeRoleCategory(emp.role) === 'field-officer')
                 .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
             const employeeOptions = fieldOfficers
                 .map((emp: Employee) => ({

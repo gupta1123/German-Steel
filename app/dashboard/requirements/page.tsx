@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { format, subDays, differenceInDays, startOfMonth } from 'date-fns';
+import { format, subDays, addDays, differenceInDays, startOfMonth } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { RetailAPI } from '@/lib/retail-api';
@@ -98,13 +98,13 @@ const toRequirementTask = (task: SharedTask): Task => ({
     taskDesciption: task.taskDescription,
     dueDate: task.dueDate,
     assignedToId: task.assignedToEmployeeId ?? 0,
-    assignedToName: task.assignedToEmployeeName || 'Unknown',
+    assignedToName: task.assignedToEmployeeName || (task.assignedToEmployeeId ? `Employee #${task.assignedToEmployeeId}` : 'Unassigned'),
     assignedById: task.assignedByEmployeeId ?? 0,
     status: normalizeTaskStatus(task.status),
     priority: task.priority.toLowerCase(),
     category: 'Requirement',
     storeId: task.clientAccountId ?? 0,
-    storeName: task.clientAccountName,
+    storeName: task.clientAccountName || (task.clientAccountId ? `Store #${task.clientAccountId}` : task.projectId ? `Project #${task.projectId}` : task.institutionId ? `Institution #${task.institutionId}` : ''),
     storeCity: task.clientAccountCity,
     taskType: task.taskType || 'REQUIREMENT',
 });
@@ -130,7 +130,7 @@ const Requirements = () => {
     const router = useGuardedRouter();
     // Bumped to v2: v1 persisted the old today-only default (startDate == endDate == today),
     // which the hydration effect would restore over the new month-to-date default.
-    const FILTER_STATE_KEY = 'requirements.filters.v2';
+    const FILTER_STATE_KEY = 'requirements.filters.v3';
     const [isFiltersHydrated, setIsFiltersHydrated] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
@@ -147,7 +147,7 @@ const Requirements = () => {
         status: 'all',
         search: '',
         startDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-        endDate: format(new Date(), 'yyyy-MM-dd')
+        endDate: format(addDays(new Date(), 60), 'yyyy-MM-dd')
     });
     const [isLoading, setIsLoading] = useState(true);
     const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
@@ -264,8 +264,9 @@ const Requirements = () => {
         try {
             // GET /api/tasks/visible — all params optional. Backend scopes by JWT:
             // admin sees all, manager sees own + direct-reports rollup, FE sees own.
-            // Priority/search/dates stay client-side (date defaults are today–today).
-            const opts: { assignedToEmployeeId?: number | string; status?: string; q?: string; dueFrom?: string; dueTo?: string; page?: number; size?: number } = {
+            // The API helper filters the complete visible task set by type and
+            // priority before returning the requested page.
+            const opts: { assignedToEmployeeId?: number | string; status?: string; priority?: string; q?: string; dueFrom?: string; dueTo?: string; page?: number; size?: number } = {
                 page: currentPage,
                 size: pageSize,
             };
@@ -274,6 +275,9 @@ const Requirements = () => {
             }
             if (filters.status && filters.status !== 'all') {
                 opts.status = filters.status;
+            }
+            if (filters.priority && filters.priority !== 'all') {
+                opts.priority = filters.priority;
             }
             if (filters.search?.trim()) opts.q = filters.search.trim();
             if (filters.startDate) opts.dueFrom = filters.startDate;
@@ -717,7 +721,7 @@ const Requirements = () => {
     const getStatusInfo = (status: string): { icon: React.ReactNode; color: string } => {
         switch (normalizeTaskStatus(status)) {
             case 'OPEN':
-                return { icon: <Clock className="w-4 h-4" />, color: 'bg-purple-100 text-purple-800' };
+                return { icon: <Clock className="w-4 h-4" />, color: 'bg-teal-100 text-teal-800' };
             case 'IN_PROGRESS':
                 return { icon: <Loader className="w-4 h-4 animate-spin" />, color: 'bg-blue-100 text-blue-800' };
             case 'COMPLETED':
@@ -1037,6 +1041,11 @@ const Requirements = () => {
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-3 px-4 pb-4 pt-1">
+                                        {task.taskDesciption?.trim() && (
+                                            <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                                {task.taskDesciption}
+                                            </p>
+                                        )}
                                         <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs">
                                             <div className="flex min-w-0 items-center gap-1.5">
                                                 <User className="h-3.5 w-3.5 shrink-0 text-primary" />

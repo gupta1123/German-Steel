@@ -14,8 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Grid3X3, Table as TableIcon, CheckCircle, XCircle, Download } from "lucide-react";
+import { Loader2, Grid3X3, Table as TableIcon, CheckCircle, XCircle, Download, Eye } from "lucide-react";
 import EmployeeExpenseCard from "@/components/employee-expense-card";
+import ExpenseReceiptsDialog from "@/components/ExpenseReceiptsDialog";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
 import { Text } from "@/components/ui/typography";
 import { API, type EmployeeUserDto, type ExpenseDto } from "@/lib/api";
@@ -92,6 +93,7 @@ export default function ExpensesPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const { token, isLoading: authLoading, userData } = useAuth();
+  const [receiptExpense, setReceiptExpense] = useState<{ id: number; title: string } | null>(null);
   const reviewLock = useRef(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [rejectionIds, setRejectionIds] = useState<number[]>([]);
@@ -646,6 +648,7 @@ export default function ExpensesPage() {
             showExpenses={expandedCardId === employee.id}
             onToggleExpenses={() => toggleCardExpansion(employee.id)}
                 onApprove={handleApprove}
+                onViewReceipts={(expenseId, title) => setReceiptExpense({ id: expenseId, title })}
                 busy={reviewBusy}
                 onReject={handleReject}
                 onApproveMultiple={handleApproveMultiple}
@@ -706,6 +709,16 @@ export default function ExpensesPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
+                                  onClick={() => setReceiptExpense({ id: expense.id, title: `${expense.employeeName} · ${expense.category} · ₹${(expense.amount || 0).toFixed(2)}` })}
+                                  aria-label="View receipts"
+                                  title="View receipts"
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
                                   onClick={() => handleApprove(expense.employeeName, expense.id)}
                                   disabled={reviewBusy || expense.status !== 'pending'}
                                   aria-label="Approve expense"
@@ -740,6 +753,7 @@ export default function ExpensesPage() {
                 </Table>
         </div>
       )}
+      <ExpenseReceiptsDialog expenseId={receiptExpense?.id ?? null} title={receiptExpense?.title} onClose={() => setReceiptExpense(null)} />
       <Dialog open={rejectionIds.length > 0} onOpenChange={open => { if (!open && !reviewBusy) setRejectionIds([]); }}>
         <DialogContent>
           <DialogHeader>

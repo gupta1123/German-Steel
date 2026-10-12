@@ -151,7 +151,12 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, 
                   const logStatus = String(dayLog?.attendanceStatus ?? '').trim() || '—';
                   const requested = String(dayRequest?.requestedStatus ?? '').trim();
                   const requestStatus = String(dayRequest?.status ?? '').trim().toUpperCase();
-                  const requestLabel = requestStatus === 'APPROVED' ? 'Approved' : 'Requested';
+                  const requestLabel = requestStatus === 'APPROVED' ? 'Approved' : requestStatus === 'REJECTED' ? 'Rejected' : 'Pending';
+                  const requestTone = requestStatus === 'APPROVED'
+                    ? 'bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    : requestStatus === 'REJECTED'
+                    ? 'bg-rose-50 text-rose-800 ring-rose-600/20 dark:bg-rose-950/60 dark:text-rose-300'
+                    : 'bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-950/60 dark:text-amber-300';
                   const reason = String(dayRequest?.reason ?? dayRequest?.description ?? '').trim();
                   return (
                     <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-5 py-3">
@@ -160,7 +165,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, 
                           {logStatus.replaceAll('_', ' ')}
                         </span>
                         {requested ? (
-                          <span className="inline-flex max-w-full truncate rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
+                          <span className={`inline-flex max-w-full truncate rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${requestTone}`}>
                             {requestLabel}: {requested.replaceAll('_', ' ')}
                           </span>
                         ) : null}

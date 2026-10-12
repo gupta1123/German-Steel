@@ -42,6 +42,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { getEmployeeFullRoleLabel } from '@/lib/employee-role';
 
 interface AddCustomerModalProps {
   isOpen: boolean;
@@ -398,7 +399,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
       const name = [employee.firstName, employee.lastName].filter(Boolean).join(' ').trim();
       return {
         value: String(employee.id),
-        label: `${name || `Employee #${employee.id}`}${employee.role ? ` - ${employee.role}` : ''}`,
+        label: `${name || `Employee #${employee.id}`}${employee.role ? ` - ${getEmployeeFullRoleLabel(employee.role)}` : ''}`,
       };
     })
     .sort((left, right) => left.label.localeCompare(right.label)), [employees]);

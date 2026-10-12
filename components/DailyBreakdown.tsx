@@ -65,7 +65,7 @@ const StatusBadge = ({ status, isSunday }: { status: string; isSunday: boolean }
     const statusLower = String(normalizedStatus || '').toLowerCase();
     
     if (isSunday && statusLower !== "absent") {
-        colorClass = "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/35 dark:text-violet-300";
+        colorClass = "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/60 dark:bg-teal-950/35 dark:text-teal-300";
     } else {
         switch (statusLower) {
             case "full day": colorClass = "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-300"; break;

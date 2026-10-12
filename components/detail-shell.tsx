@@ -204,7 +204,7 @@ export function DetailStatusSummary({
   isTerminal?: boolean | null;
   authorityNote?: React.ReactNode;
 }) {
-  const humanize = (v: string) => v.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
+  const humanize = (v: string) => v.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()).replace(/\bNc\b/g, 'NC');
 
   return (
     <Card className="border-2">

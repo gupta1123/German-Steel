@@ -32,6 +32,7 @@ interface SearchableSelectProps<T = unknown> {
   loadingMessage?: string;
   onOpenChange?: (open: boolean) => void;
   required?: boolean;
+  modal?: boolean;
 }
 
 export function SearchableSelect<T = unknown>({
@@ -51,6 +52,7 @@ export function SearchableSelect<T = unknown>({
   loadingMessage = "Loading...",
   onOpenChange,
   required = false,
+  modal = false,
 }: SearchableSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -96,7 +98,7 @@ export function SearchableSelect<T = unknown>({
     : Math.min(filteredOptions.length * 36, 256);
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={handleOpenChange} modal={modal}>
       <PopoverTrigger asChild>
         <Button
           id={triggerId}
@@ -113,11 +115,11 @@ export function SearchableSelect<T = unknown>({
             triggerClassName,
           )}
         >
-          {selectedOption ? selectedOption.label : placeholder}
+          <span className="min-w-0 truncate">{selectedOption ? selectedOption.label : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("w-[280px] p-2", contentClassName)} align="start">
+      <PopoverContent className={cn("flex max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] flex-col p-2", contentClassName)} align="start">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -130,7 +132,8 @@ export function SearchableSelect<T = unknown>({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={searchPlaceholder}
-              className="h-9"
+              aria-label={searchPlaceholder}
+              className="h-9 shrink-0"
             />
             {allowClear && selectedOption && (
               <Button
@@ -143,7 +146,7 @@ export function SearchableSelect<T = unknown>({
                 Clear selection
               </Button>
             )}
-            <div className="mt-2 max-h-64 overflow-y-auto pr-1" style={{ maxHeight: 256 }}>
+            <div role="listbox" aria-label={placeholder} className="mt-2 min-h-0 max-h-64 overflow-y-auto overscroll-contain pr-1" style={{ maxHeight: 256 }}>
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-sm text-muted-foreground">{noResultsMessage}</div>
               ) : (

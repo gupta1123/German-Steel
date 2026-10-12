@@ -2,7 +2,8 @@ import type { EmployeeUserDto, SalesTargetDto } from "./api";
 
 export const isTargetFieldOfficer = (employee: Pick<EmployeeUserDto, "role">) => {
   const role = employee.role?.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/^role /, "");
-  return role?.includes("field officer") || role === "retail fe" || role === "institution project fe" || role === "dual fe";
+  // Every field executive role (RETAIL_FE, EMPANELMENT_FE, PROJECT_FE, RETAIL_EMPANELMENT_FE, RETAIL_PROJECT_FE, INSTITUTION_PROJECT_FE, DUAL_FE).
+  return Boolean(role?.includes("field officer") || role?.endsWith(" fe"));
 };
 
 export const targetAchieved = (target: SalesTargetDto) =>

@@ -114,6 +114,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<RetailTask | null>(null);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
+  const [taskKind, setTaskKind] = useState<'COMPLAINT' | 'REQUIREMENT'>('COMPLAINT');
   const [monthlySalesOpen, setMonthlySalesOpen] = useState(false);
   const [monthlySalesForm, setMonthlySalesForm] = useState<MonthlySalesForm>(emptyMonthlySales);
   const [networkOpen, setNetworkOpen] = useState(false);
@@ -424,6 +425,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
       try { task = await RetailAPI.getTaskById(task.id, token); } catch (error) { toast.error(getErrorMessage(error, 'Unable to load task details.')); return; }
     }
     setEditingTask(task ?? null);
+    if (!task) setTaskKind('COMPLAINT');
     setTaskForm(task ? {
       title: task.title ?? '',
       description: task.description ?? '',
@@ -440,7 +442,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     const employeeId = Number(taskForm.employeeId); if (!taskForm.title.trim() || !taskForm.dueDate || !employeeId) { toast.error('Title, assignee, and due date are required.'); return }
     setBusy(true);
     try {
-      const payload = { taskTitle: taskForm.title.trim(), taskDescription: taskForm.description.trim() || null, taskType: 'FOLLOW_UP' as const, status: taskForm.status, priority: taskForm.priority, assignedToEmployeeId: employeeId, assignedByEmployeeId, dueDate: taskForm.dueDate, clientAccountId: account.id, visitActivityId: null };
+      const payload = { taskTitle: taskForm.title.trim(), taskDescription: taskForm.description.trim() || null, taskType: (editingTask ? ((editingTask as { taskType?: string }).taskType ?? taskKind) : taskKind) as string, status: taskForm.status, priority: taskForm.priority, assignedToEmployeeId: employeeId, assignedByEmployeeId, dueDate: taskForm.dueDate, clientAccountId: account.id, visitActivityId: null };
       if (editingTask) {
         await RetailAPI.updateTask(editingTask.id, payload, token);
         toast.success('Task updated.');
@@ -551,6 +553,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   if (isLoading) return <DetailSkeleton />;
   if (!Number.isFinite(accountId) || !account) return <Card><CardHeader><CardTitle>Customer not found</CardTitle><CardDescription>The account was not returned by the new paginated retail-accounts endpoint.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => router.push('/dashboard/customers')}><ArrowLeft className="mr-2 h-4 w-4" />Back to customers</Button></CardContent></Card>;
 
+  const germanNetworkOn = Boolean(account.networkMember && account.networkStatus === 'ACTIVE');
   const ownerName = account.ownerEmployeeName || employeeName(account.ownerEmployeeId);
   const secondaryName = account.secondaryEmployeeId == null ? '' : account.secondaryEmployeeName || employeeName(account.secondaryEmployeeId);
   const openVisitForm = () => { setVisitForm({ ...emptyVisit(), employeeId: String(account.ownerEmployeeId || '') }); setVisitOpen(true) };
@@ -583,7 +586,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         backLabel="Back to customers"
         badges={<>
           <Pill tone={statusTone}>{humanize(account.accountStatus)}</Pill>
-          {account.networkMember && <Pill tone={account.networkStatus === 'INACTIVE' ? 'warning' : 'info'}>Network · {humanize(account.networkStatus)}</Pill>}
+          <Pill tone={germanNetworkOn ? 'success' : 'warning'}>German Network {germanNetworkOn ? 'On' : 'Off'}</Pill>
           {!account.active && <Pill tone="danger">Inactive record</Pill>}
         </>}
         meta={[
@@ -651,8 +654,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
                         </a>
                       ) : null}
                     />
-                    <Info label="Network member" value={account.networkMember ? <Pill tone="success">Yes</Pill> : <Pill>No</Pill>} />
-                    <Info label="Network status" value={humanize(account.networkStatus)} />
+                    <Info label="German Network" value={<Pill tone={germanNetworkOn ? 'success' : 'warning'}>{germanNetworkOn ? 'On' : 'Off'}</Pill>} />
                     <Info label="Onboarding date" value={account.networkOnboardingDate ? showDate(account.networkOnboardingDate) : '—'} />
                     <Info label="Record state" value={account.active ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Inactive</Pill>} />
                   </dl>
@@ -809,11 +811,11 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
           },
           {
             value: 'tasks',
-            label: 'Tasks',
+            label: 'Complaints & requirements',
             count: tasks.length,
             content: (
               <Section description={taskSummary(tasks)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => void openTask()}><Plus className="mr-1.5 h-3.5 w-3.5" />Add task</Button>}>
-                {tasks.length === 0 ? <EmptyState compact title="No tasks yet. Create a follow-up so nothing slips through." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
+                {tasks.length === 0 ? <EmptyState compact title="No complaints or requirements yet. They also appear on the Complaints and Requirements pages." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
               </Section>
             ),
           },
@@ -852,8 +854,8 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
             <FormField label="GSTIN" required><Input className="font-mono uppercase" value={editDraft.gstNumber} onChange={(event) => updateEditDraft({ ...editDraft, gstNumber: event.target.value.toUpperCase().slice(0, 15) })} /></FormField>
             <FormField label="Client type"><Select value={editDraft.clientType} onValueChange={(value) => updateEditDraft({ ...editDraft, clientType: value as RetailAccountDraft['clientType'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEALER">Dealer</SelectItem><SelectItem value="DISTRIBUTOR">Distributor</SelectItem></SelectContent></Select></FormField>
             <FormField label="Account status"><Select value={editDraft.accountStatus} onValueChange={(value) => updateEditDraft({ ...editDraft, accountStatus: value as RetailAccountDraft['accountStatus'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PROSPECT">Prospect</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DORMANT">Dormant</SelectItem><SelectItem value="LOST">Lost</SelectItem></SelectContent></Select></FormField>
-            <FormField label="Primary employee"><Select value={editDraft.ownerEmployeeId} onValueChange={(value) => updateEditDraft({ ...editDraft, ownerEmployeeId: value, secondaryEmployeeId: value === editDraft.secondaryEmployeeId ? '' : editDraft.secondaryEmployeeId })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
-            <FormField label="Secondary employee" hint="Optional. Must differ from the primary employee."><Select value={editDraft.secondaryEmployeeId || NO_SECONDARY} onValueChange={(value) => updateEditDraft({ ...editDraft, secondaryEmployeeId: value === NO_SECONDARY ? '' : value })}><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger><SelectContent><SelectItem value={NO_SECONDARY}>None</SelectItem>{employees.filter((employee) => String(employee.id) !== editDraft.ownerEmployeeId).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Primary employee"><SearchableSelect modal triggerId="retail-edit-primary-employee" options={[...employeeOptions].sort((a, b) => a.label.localeCompare(b.label))} value={editDraft.ownerEmployeeId || undefined} onSelect={option => { const value = option?.value || ''; updateEditDraft({ ...editDraft, ownerEmployeeId: value, secondaryEmployeeId: value === editDraft.secondaryEmployeeId ? '' : editDraft.secondaryEmployeeId }); }} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full text-xs" /></FormField>
+            <FormField label="Secondary employee" hint="Optional. Must differ from the primary employee."><SearchableSelect modal triggerId="retail-edit-secondary-employee" options={[{ value: NO_SECONDARY, label: 'None' }, ...employeeOptions.filter(option => option.value !== editDraft.ownerEmployeeId).sort((a, b) => a.label.localeCompare(b.label))]} value={editDraft.secondaryEmployeeId || NO_SECONDARY} onSelect={option => updateEditDraft({ ...editDraft, secondaryEmployeeId: !option || option.value === NO_SECONDARY ? '' : option.value })} placeholder="None" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full text-xs" /></FormField>
             <FormField label="Client group" required className="sm:col-span-2"><Select value={editDraft.clientGroupId} onValueChange={(value) => updateEditDraft({ ...editDraft, clientGroupId: value })}><SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger><SelectContent>{groups.filter((g) => g.active !== false).map((g) => <SelectItem key={g.id} value={String(g.id)}>{g.groupName}</SelectItem>)}</SelectContent></Select></FormField>
           </FormGroup>
           <FormGroup title="Outlet address">
@@ -964,14 +966,15 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         open={taskOpen}
         onOpenChange={(open) => !busy && setTaskOpen(open)}
         icon={ListChecks}
-        title={editingTask ? 'Edit task' : 'New follow-up task'}
+        title={editingTask ? 'Edit item' : 'New complaint or requirement'}
         description={editingTask ? editingTask.title : `Follow-up for ${account.accountName}.`}
         onSubmit={() => void saveTask()}
-        submitLabel={editingTask ? 'Save changes' : 'Create task'}
+        submitLabel={editingTask ? 'Save changes' : 'Create'}
         submitting={busy}
       >
         <FormGroup>
-          <FormField label="Task title" required className="sm:col-span-2"><Input placeholder="e.g. Share revised price list" value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></FormField>
+          <FormField label="Type" required className="sm:col-span-2"><Select value={editingTask ? String((editingTask as { taskType?: string }).taskType || taskKind).toUpperCase() : taskKind} onValueChange={(v) => setTaskKind(v as 'COMPLAINT' | 'REQUIREMENT')} disabled={Boolean(editingTask)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="COMPLAINT">Complaint</SelectItem><SelectItem value="REQUIREMENT">Requirement</SelectItem>{editingTask && <SelectItem value="FOLLOW_UP">Follow-up</SelectItem>}</SelectContent></Select></FormField>
+          <FormField label="Title" required className="sm:col-span-2"><Input placeholder="e.g. Share revised price list" value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></FormField>
           <FormField label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(value) => setTaskForm({ ...taskForm, employeeId: value })}><SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger><SelectContent>{employees.map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{[employee.firstName, employee.lastName].filter(Boolean).join(' ') || `Employee #${employee.id}`}</SelectItem>)}</SelectContent></Select></FormField>
           <FormField label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm({ ...taskForm, dueDate: event.target.value })} /></FormField>
           <FormField label="Priority"><Select value={taskForm.priority} onValueChange={(value) => setTaskForm({ ...taskForm, priority: value as RetailTask['priority'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></FormField>

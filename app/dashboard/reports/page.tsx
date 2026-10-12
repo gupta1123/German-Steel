@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import { useAuth } from '@/components/auth-provider';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -199,7 +200,7 @@ const ReportsPage: React.FC = () => {
                 const inactiveEmployeeIds = new Set((inactivePage.content as unknown as Employee[]).map(emp => emp.id));
 
                 const activeFieldOfficers = (activePage.content as unknown as Employee[])
-                    .filter(emp => emp.role === 'Field Officer' && !inactiveEmployeeIds.has(emp.id))
+                    .filter(emp => getEmployeeRoleCategory(emp.role) === 'field-officer' && !inactiveEmployeeIds.has(emp.id))
                     .sort((a, b) => {
                         const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
                         const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();

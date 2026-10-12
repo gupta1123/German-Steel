@@ -781,7 +781,7 @@ export default function VisitDetailPage() {
   // Helper functions
   const getOutcomeStatus = (visit: VisitDetail | null): { emoji: React.ReactNode; status: string; color: string; isOngoing: boolean } => {
     if (visit?.checkinTime && visit?.checkoutTime) {
-      return { emoji: '✅', status: 'Completed', color: 'bg-purple-100 text-purple-800', isOngoing: false };
+      return { emoji: '✅', status: 'Completed', color: 'bg-teal-100 text-teal-800', isOngoing: false };
     } else if (visit?.checkoutTime) {
       return { emoji: '⏱️', status: 'Checked Out', color: 'bg-orange-100 text-orange-800', isOngoing: false };
     } else if (visit?.checkinTime) {

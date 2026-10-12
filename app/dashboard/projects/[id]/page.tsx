@@ -14,7 +14,6 @@ import {
   type Project,
   type ProjectParty,
   type ProjectPipelineEntry,
-  type ProjectApprovalHistoryEntry,
   type ProjectNcRegister,
   type ProjectContact,
   type ProjectNote,
@@ -38,7 +37,7 @@ import { ActivityTimeline, DetailHero, DetailSkeleton, EmptyState, FilePicker, F
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
+const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()).replace(/\bNc\b/g, 'NC') : '—';
 const showDate = (value: string | null | undefined) => value ? new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—';
 const STAGE_TONE: Record<string, Tone> = {
   SOURCE_APPROVED: 'success', PROJECT_COMPLETED: 'success',
@@ -91,7 +90,6 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [stageActions, setStageActions] = useState<ProjectStage[]>([]);
   const [pipeline, setPipeline] = useState<ProjectPipelineEntry[]>([]);
-  const [approvalHistory, setApprovalHistory] = useState<ProjectApprovalHistoryEntry[]>([]);
   const [parties, setParties] = useState<ProjectParty[]>([]);
   const [ncRegisters, setNcRegisters] = useState<ProjectNcRegister[]>([]);
   const [ncDocsMap, setNcDocsMap] = useState<Record<number, any[]>>({});
@@ -106,9 +104,9 @@ export default function ProjectDetailPage() {
   const [visits, setVisits] = useState<CommonVisitRow[]>([]);
   const [sales, setSales] = useState<ProjectSale[]>([]);
   const [saleOpen, setSaleOpen] = useState(false);
-  const [saleForm, setSaleForm] = useState({ saleDate: new Date().toISOString().slice(0, 10), quantityMt: '', invoiceReference: '' });
+  const [saleForm, setSaleForm] = useState({ saleDate: today(), quantityMt: '', outcomeStatus: 'WIN' as 'WIN' | 'LOST', poDate: today(), poNumber: '', invoiceReference: '', lossReason: '' });
   const [visitOpen, setVisitOpen] = useState(false);
-  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
+  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
@@ -125,7 +123,7 @@ export default function ProjectDetailPage() {
   const [advanceErrors, setAdvanceErrors] = useState<string[]>([]);
 
   const [ncOpen, setNcOpen] = useState(false);
-  const [ncForm, setNcForm] = useState<{ description: string; raisedDate: string; raisedByOfficialText: string; targetClosureDate: string; status: NcStatus; responsibleEmployeeId: string }>({ description: '', raisedDate: new Date().toISOString().slice(0, 10), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' });
+  const [ncForm, setNcForm] = useState<{ description: string; raisedDate: string; raisedByOfficialText: string; targetClosureDate: string; status: NcStatus; responsibleEmployeeId: string }>({ description: '', raisedDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' });
   const [ncBusyId, setNcBusyId] = useState<number | null>(null);
   const [submitNc, setSubmitNc] = useState<ProjectNcRegister | null>(null);
   const [submitText, setSubmitText] = useState('');
@@ -133,7 +131,7 @@ export default function ProjectDetailPage() {
   const [submitFile, setSubmitFile] = useState<File | null>(null);
   const [submitDocs, setSubmitDocs] = useState<ProjectDocument[]>([]);
   const [acceptNc, setAcceptNc] = useState<ProjectNcRegister | null>(null);
-  const [acceptForm, setAcceptForm] = useState({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date().toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
+  const [acceptForm, setAcceptForm] = useState({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
 
   const [contactOpen, setContactOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ProjectContact | null>(null);
@@ -142,7 +140,8 @@ export default function ProjectDetailPage() {
 
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
-  const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
+  const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
+  const [taskKind, setTaskKind] = useState<'COMPLAINT' | 'REQUIREMENT'>('COMPLAINT');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [contactToRemove, setContactToRemove] = useState<ProjectContact | null>(null);
@@ -179,7 +178,14 @@ export default function ProjectDetailPage() {
   const allowedNextStatuses = useMemo<ProjectStage[]>(() => {
     if (!project) return [];
     const currentStage = project.sourceApprovalStatus as ProjectStage;
-    const candidates: ProjectStage[] = stageActions.length > 0 ? stageActions : (VALID_STAGE_TRANSITIONS[currentStage] || []);
+    const raw: ProjectStage[] = stageActions.length > 0 ? stageActions : (VALID_STAGE_TRANSITIONS[currentStage] || []);
+    // Forward stages first, rejection next, earlier stages last, so the default choice never sends the project backwards.
+    const order = ['NOT_STARTED', 'CREDENTIALS_SUBMITTED', 'FORWARDED_TO_CONSULTANT', 'UNDER_REVIEW', 'TECHNICAL_VISIT_SCHEDULED', 'NC_RAISED', 'NC_CLOSURE_SUBMITTED', 'SOURCE_APPROVED', 'PROJECT_COMPLETED'];
+    const rank = (stage: ProjectStage) => {
+      if (stage === 'REJECTED') return 1;
+      return order.indexOf(stage) > order.indexOf(currentStage) ? 0 : 2;
+    };
+    const candidates = [...raw].sort((a, b) => rank(a) - rank(b));
     return hasClosedNc ? candidates.filter((stage) => stage !== 'NC_RAISED') : candidates;
   }, [project, stageActions, hasClosedNc]);
 
@@ -192,9 +198,8 @@ export default function ProjectDetailPage() {
       setProject(found);
       setParties(found?.parties ?? []);
       if (!found) return;
-      const [pipelineResult, approvalResult, stageActionsResult, partiesResult, ncResult, contactsResult, notesResult, tasksResult, docsResult, employeesResult, contactMastersResult, visitsResult, salesResult] = await Promise.allSettled([
+      const [pipelineResult, stageActionsResult, partiesResult, ncResult, contactsResult, notesResult, tasksResult, docsResult, employeesResult, contactMastersResult, visitsResult, salesResult] = await Promise.allSettled([
         ProjectsAPI.getProjectPipeline(projectId, token),
-        ProjectsAPI.getProjectApprovalHistory(projectId, token),
         ProjectsAPI.getStageActions(projectId, token),
         ProjectsAPI.getProjectParties(projectId, token),
         ProjectsAPI.getNcRegisters(projectId, token),
@@ -209,22 +214,11 @@ export default function ProjectDetailPage() {
           const arr = Array.isArray(j) ? j : Array.isArray((j as any).content) ? (j as any).content : Array.isArray((j as any).data) ? (j as any).data : [];
           return arr;
         }).catch(() => []),
-        visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date().toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
+        visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
         ProjectsAPI.getProjectSales(projectId, token),
       ]);
       if (stageActionsResult.status === 'fulfilled') setStageActions(stageActionsResult.value.allowedActions);
-      // Deduplicate pipeline + approval-history (both 200 with same 4 rows per live fact) — render one accurate history
-      if (pipelineResult.status === 'fulfilled' && approvalResult.status === 'fulfilled') {
-        const combined = [...pipelineResult.value.content, ...approvalResult.value.content];
-        const deduped = Array.from(new Map(combined.map((e: any) => [e.id, e])).values()) as ProjectPipelineEntry[];
-        // Sort by entryDate if present, else enteredAt
-        deduped.sort((a: any, b: any) => new Date((a as any).entryDate || (a as any).enteredAt || 0).getTime() - new Date((b as any).entryDate || (b as any).enteredAt || 0).getTime());
-        setPipeline(deduped);
-        setApprovalHistory([]);
-      } else {
-        if (pipelineResult.status === 'fulfilled') setPipeline(pipelineResult.value.content);
-        if (approvalResult.status === 'fulfilled') setApprovalHistory(approvalResult.value.content);
-      }
+      if (pipelineResult.status === 'fulfilled') setPipeline(pipelineResult.value.content);
       if (partiesResult.status === 'fulfilled') setParties(partiesResult.value.content);
       if (ncResult.status === 'fulfilled') {
         setNcRegisters(ncResult.value);
@@ -250,7 +244,6 @@ export default function ProjectDetailPage() {
       if (salesResult.status === 'fulfilled') setSales(salesResult.value);
       const failed = [
         pipelineResult.status === 'rejected' && 'pipeline',
-        approvalResult.status === 'rejected' && 'approval history',
         partiesResult.status === 'rejected' && 'parties',
         ncResult.status === 'rejected' && 'NC register',
         contactsResult.status === 'rejected' && 'contacts',
@@ -275,18 +268,20 @@ export default function ProjectDetailPage() {
     catch (error) { toast.error(getErrorMessage(error, 'Unable to reload project.')) }
   }, [token, projectId]);
 
+  // The allowed next stages change after every advance; without this the dialog offers the stage the project is already in.
+  const reloadStageActions = useCallback(async () => {
+    if (!token || !Number.isFinite(projectId)) return;
+    try {
+      const actions = await ProjectsAPI.getStageActions(projectId, token);
+      setStageActions(actions.allowedActions);
+    } catch { /* keep the previous list */ }
+  }, [token, projectId]);
+
   const reloadPipeline = useCallback(async () => {
     if (!token || !Number.isFinite(projectId)) return;
     try {
-      const [pipe, appr] = await Promise.all([
-        ProjectsAPI.getProjectPipeline(projectId, token),
-        ProjectsAPI.getProjectApprovalHistory(projectId, token),
-      ]);
-      const combined = [...pipe.content, ...appr.content];
-      const deduped = Array.from(new Map(combined.map((e: any) => [e.id, e])).values()) as ProjectPipelineEntry[];
-      deduped.sort((a: any, b: any) => new Date((a as any).entryDate || (a as any).enteredAt || 0).getTime() - new Date((b as any).entryDate || (b as any).enteredAt || 0).getTime());
-      setPipeline(deduped);
-      setApprovalHistory([]);
+      const pipe = await ProjectsAPI.getProjectPipeline(projectId, token);
+      setPipeline(pipe.content);
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to reload pipeline.')) }
   }, [token, projectId]);
 
@@ -344,7 +339,7 @@ export default function ProjectDetailPage() {
   const reloadVisits = useCallback(async () => {
     if (!token || !Number.isFinite(projectId)) return;
     try {
-      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date().toISOString().slice(0, 10) });
+      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
       const raw = page as unknown as { content: CommonVisitRow[] } | CommonVisitRow[];
       const list = Array.isArray(raw) ? raw : raw.content || [];
       setVisits(list.filter((v) => v.projectId === projectId));
@@ -429,6 +424,9 @@ export default function ProjectDetailPage() {
     if ((advanceForm.toStatus === 'SOURCE_APPROVED') && hasOpenNc) {
       errors.push('Cannot advance to source approval with open NCs.');
     }
+    if (advanceForm.toStatus === 'NC_RAISED' && ncRegisters.length === 0) {
+      errors.push('Raise at least one NC (Process tab, Raise NC) before moving the project to NC Raised.');
+    }
     if (!allowedNextStatuses.includes(advanceForm.toStatus)) {
       errors.push(`Invalid transition from ${humanize(project.sourceApprovalStatus)} to ${humanize(advanceForm.toStatus)}.`);
     }
@@ -439,13 +437,14 @@ export default function ProjectDetailPage() {
       await ProjectsAPI.advanceStage(projectId, {
         nextStage: advanceForm.toStatus,
         responsibleEmployeeId: advanceForm.decisionByEmployeeId ? Number(advanceForm.decisionByEmployeeId) : null,
-        entryDate: new Date().toISOString().slice(0, 10),
+        entryDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
         outcomeComment: advanceForm.remarks.trim(),
       }, token);
       toast.success(`Stage advanced to ${humanize(advanceForm.toStatus)}.`);
       setAdvanceOpen(false);
       await reloadProject();
       await reloadPipeline();
+      await reloadStageActions();
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to advance stage.')); } finally { setBusy(false); }
   };
 
@@ -505,7 +504,7 @@ export default function ProjectDetailPage() {
 
   const openAcceptNc = async (nc: ProjectNcRegister) => {
     setAcceptNc(nc);
-    setAcceptForm({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date().toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
+    setAcceptForm({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
     if (!token) return;
     try { setSubmitDocs(await ProjectsAPI.getNcDocuments(nc.id, token)); }
     catch { setSubmitDocs([]); }
@@ -612,15 +611,28 @@ export default function ProjectDetailPage() {
   const addSale = async () => {
     if (!token) return;
     const quantityMt = Number(saleForm.quantityMt);
-    if (!saleForm.saleDate || saleForm.saleDate > today()) { toast.error('PO date is required and cannot be in the future.'); return; }
+    if (!saleForm.saleDate || saleForm.saleDate > today()) { toast.error('Sale date is required and cannot be in the future.'); return; }
     if (!Number.isFinite(quantityMt) || quantityMt <= 0) { toast.error('Quantity must be greater than zero.'); return; }
-    if (!saleForm.invoiceReference.trim()) { toast.error('PO number is required.'); return; }
+    const isWin = saleForm.outcomeStatus === 'WIN';
+    if (isWin && !saleForm.poNumber.trim()) { toast.error('PO number is required for a won sale.'); return; }
+    if (isWin && (!saleForm.poDate || saleForm.poDate > today())) { toast.error('PO date is required and cannot be in the future for a won sale.'); return; }
+    if (!isWin && !saleForm.lossReason.trim()) { toast.error('Loss reason is required.'); return; }
     setBusy(true);
     try {
-      await ProjectsAPI.createProjectSale({ projectId, saleDate: saleForm.saleDate, quantityMt, invoiceReference: saleForm.invoiceReference.trim(), sourceSystem: 'WEB' }, token);
+      await ProjectsAPI.createProjectSale({
+        projectId,
+        saleDate: saleForm.saleDate,
+        quantityMt,
+        invoiceReference: saleForm.invoiceReference.trim() || null,
+        sourceSystem: 'WEB',
+        outcomeStatus: saleForm.outcomeStatus,
+        poNumber: isWin ? saleForm.poNumber.trim() : null,
+        poDate: isWin ? saleForm.poDate : null,
+        lossReason: isWin ? null : saleForm.lossReason.trim(),
+      }, token);
       setSales(await ProjectsAPI.getProjectSales(projectId, token));
       setSaleOpen(false);
-      setSaleForm({ saleDate: today(), quantityMt: '', invoiceReference: '' });
+      setSaleForm({ saleDate: today(), quantityMt: '', outcomeStatus: 'WIN', poDate: today(), poNumber: '', invoiceReference: '', lossReason: '' });
       toast.success('Project sale recorded.');
     } catch (error) { toast.error(getErrorMessage(error, 'Unable to record project sale.')); } finally { setBusy(false); }
   };
@@ -631,9 +643,9 @@ export default function ProjectDetailPage() {
     if (!taskForm.title.trim() || !taskForm.dueDate || !employeeId) { toast.error('Title, assignee, and due date are required.'); return }
     setBusy(true);
     try {
-      const payload = { taskTitle: taskForm.title.trim(), taskDescription: taskForm.description.trim() || null, taskType: 'FOLLOW_UP', status: taskForm.status, priority: taskForm.priority, assignedToEmployeeId: employeeId, assignedByEmployeeId, dueDate: taskForm.dueDate, projectId, visitActivityId: null };
+      const payload = { taskTitle: taskForm.title.trim(), taskDescription: taskForm.description.trim() || null, taskType: editingTask ? ((editingTask as { taskType?: string }).taskType ?? taskKind) : taskKind, status: taskForm.status, priority: taskForm.priority, assignedToEmployeeId: employeeId, assignedByEmployeeId, dueDate: taskForm.dueDate, projectId, visitActivityId: null };
       if (editingTask) await ProjectsAPI.updateTask(editingTask.id, payload, token); else await ProjectsAPI.createTask(payload, token);
-      toast.success(editingTask ? 'Task updated.' : 'Task created.');
+      toast.success(editingTask ? 'Updated.' : (taskKind === 'REQUIREMENT' ? 'Requirement created.' : 'Complaint created.'));
       setTaskOpen(false);
       setEditingTask(null);
       setTaskForm({ title: '', description: '', employeeId: '', dueDate: today(), priority: 'MEDIUM', status: 'OPEN' });
@@ -700,8 +712,8 @@ export default function ProjectDetailPage() {
   const openEdit = () => { setEditDraft({ projectName: project.projectName, institutionId: project.institutionId == null ? '' : String(project.institutionId), locationText: project.locationText, state: hasProjectValue(project.state) ? project.state : '', locationLatitude: project.locationLatitude == null ? '' : String(project.locationLatitude), locationLongitude: project.locationLongitude == null ? '' : String(project.locationLongitude), projectType: project.projectType, estimatedTmtMt: project.estimatedTmtMt == null ? '' : String(project.estimatedTmtMt), startDate: project.startDate ?? '', completionDate: project.completionDate ?? '', sourceApprovalStatus: project.sourceApprovalStatus, approvalLetterReference: project.approvalLetterReference ?? '', assignedEmployeeId: project.assignedEmployeeId == null ? '' : String(project.assignedEmployeeId), active: project.active }); setEditErrors([]); setEditOpen(true); };
   const openAdvance = (toStatus?: ProjectStage) => { setAdvanceForm({ toStatus: toStatus ?? allowedNextStatuses[0], remarks: '', decisionByEmployeeId: project.assignedEmployeeId ? String(project.assignedEmployeeId) : '' }); setAdvanceErrors([]); setAdvanceOpen(true); };
   const openVisitForm = () => { setVisitForm({ employeeId: String(project.assignedEmployeeId || ''), date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true }); setVisitOpen(true); };
-  const openSaleForm = () => { setSaleForm({ saleDate: today(), quantityMt: '', invoiceReference: '' }); setSaleOpen(true); };
-  const openNewTask = () => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(project.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
+  const openSaleForm = () => { setSaleForm({ saleDate: today(), quantityMt: '', outcomeStatus: 'WIN', poDate: today(), poNumber: '', invoiceReference: '', lossReason: '' }); setSaleOpen(true); };
+  const openNewTask = () => { setTaskKind('COMPLAINT'); setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(project.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
   const openEditTask = async (task: ProjectTask) => {
     try {
       const details = await ProjectsAPI.getTaskById(task.id, token!);
@@ -879,18 +891,17 @@ export default function ProjectDetailPage() {
           {
             value: 'process',
             label: 'Process',
-            count: pipeline.length + approvalHistory.length + ncRegisters.length,
+            count: pipeline.length + ncRegisters.length,
             content: (
               <div className="space-y-4">
                 <Section bodyClassName="px-4 py-3">
                   <StageStepper steps={PROJECT_STEPS} index={stageIndex} offPath={<Pill tone={stageTone}>{humanize(stage)}</Pill>} />
                 </Section>
                 <div className="grid items-start gap-4 xl:grid-cols-2">
-                  <Section icon={History} title={`Pipeline · ${pipeline.length + approvalHistory.length}`} bodyClassName="p-0">
-                    {sortedPipeline.length === 0 && approvalHistory.length === 0 ? <EmptyState compact title="No stage changes recorded yet." /> : (
+                  <Section icon={History} title={`Pipeline · ${pipeline.length}`} bodyClassName="p-0">
+                    {sortedPipeline.length === 0 ? <EmptyState compact title="No stage changes recorded yet." /> : (
                       <ul className="max-h-[420px] divide-y overflow-y-auto">
                         {sortedPipeline.map((entry) => <StageHistoryRow key={`p-${entry.id}`} to={entry.stage} remarks={entry.remarks} date={entry.enteredAt} by={pipelineOwnerName(entry.enteredBy)} current={entry === currentEntry} />)}
-                        {approvalHistory.map((entry) => <StageHistoryRow key={`a-${entry.id}`} from={entry.fromStage} to={entry.toStage || entry.action} remarks={entry.remarks} date={entry.performedAt} by={pipelineOwnerName(entry.performedBy)} current={entry.toStage === stage} />)}
                       </ul>
                     )}
                   </Section>
@@ -1025,17 +1036,17 @@ export default function ProjectDetailPage() {
             count: sales.length,
             content: (
               <Section description={salesSummary(sales)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openSaleForm}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record sale</Button>}>
-                {sales.length === 0 ? <EmptyState compact title="Record the first PO to start tracking supply against the estimate." /> : <SalesTable sales={sales} />}
+                {sales.length === 0 ? <EmptyState compact title="Record a won or lost sale to start tracking project sales." /> : <SalesTable sales={sales} showOutcome />}
               </Section>
             ),
           },
           {
             value: 'tasks',
-            label: 'Tasks',
+            label: 'Complaints & requirements',
             count: tasks.length,
             content: (
               <Section description={taskSummary(tasks)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openNewTask}><Plus className="mr-1.5 h-3.5 w-3.5" />Add task</Button>}>
-                {tasks.length === 0 ? <EmptyState compact title="No tasks yet. Create a follow-up so nothing slips through." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openEditTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
+                {tasks.length === 0 ? <EmptyState compact title="No complaints or requirements yet. They also appear on the Complaints and Requirements pages." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openEditTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
               </Section>
             ),
           },
@@ -1070,7 +1081,7 @@ export default function ProjectDetailPage() {
         {editDraft && <>
           <FormGroup title="Project">
             <FormField label="Project name" required className="sm:col-span-2"><Input value={editDraft.projectName} onChange={(e) => setEditDraft({ ...editDraft, projectName: e.target.value })} /></FormField>
-            <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => setEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Assigned employee"><SearchableSelect modal triggerId="project-edit-employee" options={[...employeeOptions].sort((a, b) => a.label.localeCompare(b.label))} value={editDraft.assignedEmployeeId || undefined} onSelect={option => setEditDraft({ ...editDraft, assignedEmployeeId: option?.value || '' })} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full text-xs" /></FormField>
             <FormField label="Estimated TMT (MT)"><Input type="number" min="0.001" step="0.001" inputMode="decimal" value={editDraft.estimatedTmtMt} onChange={(e) => setEditDraft({ ...editDraft, estimatedTmtMt: e.target.value })} /></FormField>
             <FormField label="Approval letter ref" className="sm:col-span-2"><Input value={editDraft.approvalLetterReference} onChange={(e) => setEditDraft({ ...editDraft, approvalLetterReference: e.target.value })} /></FormField>
           </FormGroup>
@@ -1154,14 +1165,15 @@ export default function ProjectDetailPage() {
         open={taskOpen}
         onOpenChange={(open) => !busy && setTaskOpen(open)}
         icon={ListChecks}
-        title={editingTask ? 'Edit task' : 'New follow-up task'}
+        title={editingTask ? 'Edit item' : 'New complaint or requirement'}
         description={editingTask ? editingTask.title : `Follow-up for ${project.projectName}.`}
         onSubmit={() => void addTask()}
-        submitLabel={editingTask ? 'Save changes' : 'Create task'}
+        submitLabel={editingTask ? 'Save changes' : 'Create'}
         submitting={busy}
       >
         <FormGroup>
-          <FormField label="Task title" required className="sm:col-span-2"><Input placeholder="e.g. Collect revised BOQ" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></FormField>
+          <FormField label="Type" required className="sm:col-span-2"><Select value={editingTask ? String((editingTask as { taskType?: string }).taskType || taskKind).toUpperCase() : taskKind} onValueChange={(v) => setTaskKind(v as 'COMPLAINT' | 'REQUIREMENT')} disabled={Boolean(editingTask)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="COMPLAINT">Complaint</SelectItem><SelectItem value="REQUIREMENT">Requirement</SelectItem>{editingTask && <SelectItem value="FOLLOW_UP">Follow-up</SelectItem>}</SelectContent></Select></FormField>
+          <FormField label="Title" required className="sm:col-span-2"><Input placeholder="e.g. Collect revised BOQ" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></FormField>
           <FormField label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(v) => setTaskForm({ ...taskForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
           <FormField label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></FormField>
           <FormField label="Priority"><Select value={taskForm.priority} onValueChange={(v) => setTaskForm({ ...taskForm, priority: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></FormField>
@@ -1175,15 +1187,18 @@ export default function ProjectDetailPage() {
         onOpenChange={(open) => !busy && setSaleOpen(open)}
         icon={PackagePlus}
         title="Record project sale"
-        description={`Log a PO supplied to ${project.projectName}.`}
+        description={`Record a won or lost sale for ${project.projectName}.`}
         onSubmit={() => void addSale()}
         submitLabel="Record sale"
         submitting={busy}
       >
         <FormGroup>
-          <FormField label="PO date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm((current) => ({ ...current, saleDate: event.target.value }))} /></FormField>
+          <FormField label="Sale date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.saleDate} onChange={(event) => setSaleForm((current) => ({ ...current, saleDate: event.target.value }))} /></FormField>
           <FormField label="Quantity (MT)" required><Input type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="25.5" value={saleForm.quantityMt} onChange={(event) => setSaleForm((current) => ({ ...current, quantityMt: event.target.value }))} /></FormField>
-          <FormField label="PO number" required className="sm:col-span-2"><Input placeholder="PO-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm((current) => ({ ...current, invoiceReference: event.target.value }))} /></FormField>
+          <FormField label="Outcome" required className="sm:col-span-2"><div className="flex gap-2"><Button type="button" variant={saleForm.outcomeStatus === 'WIN' ? 'default' : 'outline'} aria-pressed={saleForm.outcomeStatus === 'WIN'} onClick={() => setSaleForm((current) => ({ ...current, outcomeStatus: 'WIN' }))}>Won</Button><Button type="button" variant={saleForm.outcomeStatus === 'LOST' ? 'destructive' : 'outline'} aria-pressed={saleForm.outcomeStatus === 'LOST'} onClick={() => setSaleForm((current) => ({ ...current, outcomeStatus: 'LOST' }))}>Lost</Button></div></FormField>
+          {saleForm.outcomeStatus === 'WIN' && <><FormField label="PO date" required hint="Can’t be in the future."><Input type="date" max={today()} value={saleForm.poDate} onChange={(event) => setSaleForm((current) => ({ ...current, poDate: event.target.value }))} /></FormField><FormField label="PO number" required><Input placeholder="PO-2026-101" value={saleForm.poNumber} onChange={(event) => setSaleForm((current) => ({ ...current, poNumber: event.target.value }))} /></FormField></>}
+          {saleForm.outcomeStatus === 'LOST' && <FormField label="Loss reason" required className="sm:col-span-2"><Textarea placeholder="Why was this opportunity lost?" value={saleForm.lossReason} onChange={(event) => setSaleForm((current) => ({ ...current, lossReason: event.target.value }))} /></FormField>}
+          <FormField label="Invoice/reference" hint="Optional." className="sm:col-span-2"><Input placeholder="INV-2026-101" value={saleForm.invoiceReference} onChange={(event) => setSaleForm((current) => ({ ...current, invoiceReference: event.target.value }))} /></FormField>
         </FormGroup>
       </FormSheet>
 

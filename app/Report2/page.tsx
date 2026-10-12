@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import {
   eachMonthOfInterval,
   format,
@@ -241,7 +242,7 @@ export default function Report2Page() {
       }>();
 
       const fieldOfficers = data
-        .filter((employee) => employee.role === "Field Officer")
+        .filter((employee) => getEmployeeRoleCategory(employee.role) === 'field-officer')
         .map((employee) => ({
           value: employee.id,
           label: `${employee.firstName ?? ""} ${employee.lastName ?? ""}`

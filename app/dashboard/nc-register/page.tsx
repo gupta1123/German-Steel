@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import { NcDetailSheet } from '@/components/nc-detail-sheet';
 
 const humanize = (v: string | null | undefined) => v ? v.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
 const showDate = (v: string | null | undefined) => v ? new Date(v.length === 10 ? `${v}T00:00:00` : v).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—';
@@ -27,6 +28,7 @@ type GlobalNc = CombinedNcRegister & { parentName: string; parentTypeLabel: 'Ins
 export default function NcRegisterPage() {
   const { token } = useAuth();
   const [globalNc, setGlobalNc] = useState<GlobalNc[]>([]);
+  const [detailNc, setDetailNc] = useState<GlobalNc | null>(null);
   const [totalElements, setTotalElements] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,7 +69,7 @@ export default function NcRegisterPage() {
   const [submitDocs, setSubmitDocs] = useState<any[]>([]);
   const [submitEvidenceId, setSubmitEvidenceId] = useState('');
   const [acceptNc, setAcceptNc] = useState<GlobalNc | null>(null);
-  const [acceptForm, setAcceptForm] = useState({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date().toISOString().slice(0,10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
+  const [acceptForm, setAcceptForm] = useState({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
   const [ncBusyId, setNcBusyId] = useState<number | null>(null);
   const [visitsForAccept, setVisitsForAccept] = useState<any[]>([]);
 
@@ -108,7 +110,7 @@ export default function NcRegisterPage() {
   const exportCsv = async () => {
     setIsExporting(true);
     try {
-      const rows = [['NC ID','Parent','Parent Type','Description','Status','Raised','Target','Responsible'], ...globalNc.map(nc => [String(nc.id), nc.parentName, nc.parentTypeLabel, nc.description, nc.status, nc.raisedDate || '', nc.targetClosureDate || '', nc.responsibleEmployeeName || ''])];
+      const rows = [['NC ID','Institution/Project','Institution/Project Type','Description','Status','Raised','Target','Responsible'], ...globalNc.map(nc => [String(nc.id), nc.parentName, nc.parentTypeLabel, nc.description, nc.status, nc.raisedDate || '', nc.targetClosureDate || '', nc.responsibleEmployeeName || ''])];
       const blob = new Blob([rows.map(r=>r.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='nc-register.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       toast.success(`Exported ${globalNc.length} NCs from this page.`);
@@ -116,9 +118,9 @@ export default function NcRegisterPage() {
   };
 
   const statusClassName = (status: string) => {
-    if (status === 'CLOSED') return 'bg-emerald-50 text-emerald-700 ring-emerald-600/15';
-    if (status === 'SUBMITTED') return 'bg-amber-50 text-amber-700 ring-amber-600/15';
-    return 'bg-rose-50 text-rose-700 ring-rose-600/15';
+    if (status === 'CLOSED') return 'bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-950/70 dark:text-emerald-300 dark:ring-emerald-300/25';
+    if (status === 'SUBMITTED') return 'bg-amber-50 text-amber-700 ring-amber-600/15 dark:bg-amber-950/70 dark:text-amber-300 dark:ring-amber-300/25';
+    return 'bg-rose-50 text-rose-700 ring-rose-600/15 dark:bg-rose-950/70 dark:text-rose-300 dark:ring-rose-300/25';
   };
   function Ellipsis({ value }: { value: string | number | null | undefined }) {
     const v = value === null || value === undefined || value === '' ? '—' : String(value);
@@ -166,7 +168,7 @@ export default function NcRegisterPage() {
 
   const openAccept = async (nc: GlobalNc) => {
     setAcceptNc(nc);
-    setAcceptForm({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date().toISOString().slice(0,10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
+    setAcceptForm({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
     if (!token) return;
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/nc/${nc.id}/documents?page=0&size=50`, { headers: { Authorization: `Bearer ${token}` } });
@@ -206,7 +208,7 @@ export default function NcRegisterPage() {
               <Label htmlFor="nc-search" className="sr-only">Search NCs</Label>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input id="nc-search" type="search" autoComplete="off" placeholder="Search description, parent, official…" value={queryInput} onChange={e=>setQueryInput(e.target.value)} className="h-8 bg-background pl-8 pr-8 text-xs shadow-none" />
+                <Input id="nc-search" type="search" autoComplete="off" placeholder="Search NC, institution, project…" value={queryInput} onChange={e=>setQueryInput(e.target.value)} className="h-8 bg-background pl-8 pr-8 text-xs shadow-none" />
                 {queryInput && <button type="button" onClick={()=>{setQueryInput(''); setQuery('');}} className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted"><X className="h-3.5 w-3.5" /></button>}
               </div>
             </div>
@@ -215,8 +217,8 @@ export default function NcRegisterPage() {
               <Select value={statusFilter} onValueChange={(v)=>{setPage(0); setStatusFilter(v);}}><SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="ALL">All Statuses</SelectItem><SelectItem value="OPEN">Open</SelectItem><SelectItem value="SUBMITTED">Submitted</SelectItem><SelectItem value="CLOSED">Closed</SelectItem></SelectContent></Select>
             </div>
             <div className="min-w-0 flex-1">
-              <Label className="sr-only">Parent</Label>
-              <Select value={parentFilter} onValueChange={(v)=>{setPage(0); setParentFilter(v as any);}}><SelectTrigger className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Parent" /></SelectTrigger><SelectContent><SelectItem value="ALL">All Parents</SelectItem><SelectItem value="Institution">Institution</SelectItem><SelectItem value="Project">Project</SelectItem></SelectContent></Select>
+              <Label className="sr-only">Institution/Project</Label>
+              <Select value={parentFilter} onValueChange={(v)=>{setPage(0); setParentFilter(v as any);}}><SelectTrigger aria-label="Institution/Project" className="h-8 w-full bg-background text-xs shadow-none"><SelectValue placeholder="Institution/Project" /></SelectTrigger><SelectContent><SelectItem value="ALL">All Institutions/Projects</SelectItem><SelectItem value="Institution">Institution</SelectItem><SelectItem value="Project">Project</SelectItem></SelectContent></Select>
             </div>
             <div className="min-w-0 flex-1">
               <Label className="sr-only">Overdue</Label>
@@ -240,7 +242,7 @@ export default function NcRegisterPage() {
       <div className="overflow-x-auto">
         <Table className="table-fixed text-xs">
           <colgroup><col className="w-[10%]" /><col className="w-[18%]" /><col className="w-[27%]" /><col className="w-[10%]" /><col className="w-[12%]" /><col className="w-[23%]" /></colgroup>
-          <TableHeader><TableRow>{['Status','Parent','Description','Target','Responsible','Actions'].map(h=><TableHead key={h} className={`overflow-hidden text-ellipsis whitespace-nowrap ${h==='Actions'?'text-right':''}`} title={h}>{h}</TableHead>)}</TableRow></TableHeader>
+          <TableHeader><TableRow>{['Status','Institution/Project','Description','Target','Responsible','Actions'].map(h=><TableHead key={h} className={`overflow-hidden text-ellipsis whitespace-nowrap ${h==='Actions'?'text-right':''}`} title={h}>{h}</TableHead>)}</TableRow></TableHeader>
           <TableBody>
             {isLoading ? (
               Array.from({length: pageSize},(_,i)=><TableRow key={`sk-${i}`}>{Array.from({length:6},(_,c)=><TableCell key={c}><Skeleton className="h-4 w-full max-w-24" /></TableCell>)}</TableRow>)
@@ -248,13 +250,13 @@ export default function NcRegisterPage() {
               <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No NCs match the selected filters.</TableCell></TableRow>
             ) : (
               pageContent.map(nc=>{
-                const isOverdue = nc.targetClosureDate && nc.status !== 'CLOSED' && nc.targetClosureDate < new Date().toISOString().slice(0,10);
+                const isOverdue = nc.targetClosureDate && nc.status !== 'CLOSED' && nc.targetClosureDate < new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
                 return (
-                  <TableRow key={nc.id} className={isOverdue ? 'bg-orange-50/50' : ''}>
+                  <TableRow key={nc.id} className={isOverdue ? 'bg-orange-50/50 hover:bg-orange-50/80 dark:bg-amber-950/25 dark:text-foreground dark:hover:bg-amber-950/40' : ''}>
                     <TableCell className="align-middle">
                       <div className="flex min-w-0 flex-col items-start gap-0.5">
                         <span className={`inline-flex max-w-full shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 ring-1 ring-inset ${statusClassName(nc.status)}`}>{nc.status}</span>
-                        {isOverdue && <span className="whitespace-nowrap text-[10px] leading-4 text-orange-600">Overdue</span>}
+                        {isOverdue && <span className="whitespace-nowrap text-[10px] font-medium leading-4 text-orange-700 dark:text-amber-300">Overdue</span>}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -270,7 +272,7 @@ export default function NcRegisterPage() {
                           <div className="flex items-center justify-end gap-1">
                             {nc.status==='OPEN' && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={ncBusyId===nc.id} onClick={()=>void openSubmit(nc)}>{ncBusyId===nc.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}Submit</Button>}
                             {nc.status==='SUBMITTED' && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={ncBusyId===nc.id} onClick={()=>void openAccept(nc)}>{ncBusyId===nc.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}Accept</Button>}
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" asChild><Link href={nc.parentType==='INSTITUTION' ? `/dashboard/institutions/${nc.parentId}` : `/dashboard/projects/${nc.parentId}`}>View</Link></Button>
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" aria-label={`View NC #${nc.id}`} onClick={() => setDetailNc(nc)}>View</Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -292,6 +294,8 @@ export default function NcRegisterPage() {
           <Button variant="outline" size="sm" className="h-8" onClick={()=>setPage(p=>p+1)} disabled={safePage+1>=totalPages || isLoading}><span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4" /></Button>
         </div>
       </div>
+
+      <NcDetailSheet nc={detailNc} token={token} onClose={() => setDetailNc(null)} onSubmit={nc => void openSubmit(nc)} onAccept={nc => void openAccept(nc)} />
 
       <Sheet open={!!submitNc} onOpenChange={(o)=>!o && setSubmitNc(null)}>
         <SheetContent className="flex w-full flex-col sm:max-w-lg">

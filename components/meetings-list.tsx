@@ -181,7 +181,7 @@ const statusBadgeClass = (status?: string) => {
     case "EXECUTED":
     case "EXPENSE_SUBMITTED":
     case "REPORT_SUBMITTED":
-      return "border-purple-200 bg-purple-50 text-purple-700";
+      return "border-teal-200 bg-teal-50 text-teal-700";
     case "CLOSED":
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "REJECTED":

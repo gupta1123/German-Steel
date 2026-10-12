@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 
 import { useAuth } from '@/components/auth-provider';
+import InstitutionSales from '@/components/institution-sales';
 import { getErrorMessage } from '@/lib/api-error';
 import {
   InstitutionsAPI,
@@ -36,7 +37,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from '@/lib/utils';
 import { visitsApi, type CommonVisitRow } from '@/lib/visits-api';
 
-const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
+const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()).replace(/\bNc\b/g, 'NC') : '—';
 const showDate = (value: string | null | undefined) => value ? new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—';
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -135,6 +136,7 @@ export default function InstitutionDetailPage() {
   const [advApprovalDate, setAdvApprovalDate] = useState('');
   const [advExpiryDate, setAdvExpiryDate] = useState('');
   const [advLetterFile, setAdvLetterFile] = useState<File | null>(null);
+  const [advVisitReportFile, setAdvVisitReportFile] = useState<File | null>(null);
   const [advLetterType, setAdvLetterType] = useState<InstitutionDocumentType>('EMPANELMENT_APPROVAL_LETTER_SCAN');
   const [advContactMobile, setAdvContactMobile] = useState('');
   const [advContactDesignation, setAdvContactDesignation] = useState('');
@@ -143,16 +145,17 @@ export default function InstitutionDetailPage() {
 
   const openAdvance = (toStatus: EmpanelmentStatus) => {
     setAdvanceForm({ toStatus, remarks: '', decisionByEmployeeId: institution?.assignedEmployeeId ? String(institution.assignedEmployeeId) : '' });
-    setAdvAppDate(institution?.applicationDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+    setAdvAppDate(institution?.applicationDate?.slice(0, 10) ?? new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
     setAdvOwnerId(institution?.currentStageOwnerContactId ? String(institution.currentStageOwnerContactId) : '');
     setAdvContactName('');
     setAdvContactLastName('');
     setAdvNcDesc('');
     setAdvNcRaisedBy('');
     setAdvNcTargetDate('');
-    setAdvApprovalDate(institution?.approvalDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+    setAdvApprovalDate(institution?.approvalDate?.slice(0, 10) ?? new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
     setAdvExpiryDate(institution?.expiryDate?.slice(0, 10) ?? '');
     setAdvLetterFile(null);
+    setAdvVisitReportFile(null);
     setAdvLetterType('EMPANELMENT_APPROVAL_LETTER_SCAN');
     setAdvContactMobile('');
     setAdvContactDesignation('');
@@ -163,7 +166,7 @@ export default function InstitutionDetailPage() {
   };
 
   const [ncOpen, setNcOpen] = useState(false);
-  const [ncForm, setNcForm] = useState<{ description: string; raisedDate: string; raisedByOfficialText: string; targetClosureDate: string; status: NcStatus; responsibleEmployeeId: string }>({ description: '', raisedDate: new Date().toISOString().slice(0, 10), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' });
+  const [ncForm, setNcForm] = useState<{ description: string; raisedDate: string; raisedByOfficialText: string; targetClosureDate: string; status: NcStatus; responsibleEmployeeId: string }>({ description: '', raisedDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' });
   const [ncBusyId, setNcBusyId] = useState<number | null>(null);
   const [submitNc, setSubmitNc] = useState<NcRegister | null>(null);
   const [submitText, setSubmitText] = useState('');
@@ -171,7 +174,7 @@ export default function InstitutionDetailPage() {
   const [submitFile, setSubmitFile] = useState<File | null>(null);
   const [submitDocs, setSubmitDocs] = useState<InstitutionDocument[]>([]);
   const [acceptNc, setAcceptNc] = useState<NcRegister | null>(null);
-  const [acceptForm, setAcceptForm] = useState({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date().toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
+  const [acceptForm, setAcceptForm] = useState({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
 
   const [contactOpen, setContactOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<InstitutionContact | null>(null);
@@ -182,10 +185,11 @@ export default function InstitutionDetailPage() {
 
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<InstitutionTask | null>(null);
-  const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
+  const [taskForm, setTaskForm] = useState<{ title: string; description: string; employeeId: string; dueDate: string; priority: string; status: string }>({ title: '', description: '', employeeId: '', dueDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), priority: 'MEDIUM', status: 'OPEN' });
+  const [taskKind, setTaskKind] = useState<'COMPLAINT' | 'REQUIREMENT'>('COMPLAINT');
 
   const [visitOpen, setVisitOpen] = useState(false);
-  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date().toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
+  const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -347,7 +351,7 @@ export default function InstitutionDetailPage() {
         RetailAPI.getEmployees(token),
         // Visits are independent parallel activities — fetch does not mutate business status
         visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType:
- 'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date().toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
+ 'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
         InstitutionsAPI.getDocuments(institutionId, token),
       ]);
       if (pipelineResult.status === 'fulfilled') setPipeline(pipelineResult.value);
@@ -424,7 +428,7 @@ export default function InstitutionDetailPage() {
   const reloadVisits = useCallback(async () => {
     if (!token || !Number.isFinite(institutionId)) return;
     try {
-      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date().toISOString().slice(0, 10) });
+      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
       const raw = page as unknown as { content: CommonVisitRow[] } | CommonVisitRow[];
       const list = Array.isArray(raw) ? raw : raw.content || [];
       setVisits(list.filter((v) => v.institutionId === institutionId));
@@ -581,7 +585,7 @@ export default function InstitutionDetailPage() {
         await InstitutionsAPI.createNc({
           institutionId,
           description: advNcDesc.trim(),
-          raisedDate: new Date().toISOString().slice(0, 10),
+          raisedDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
           raisedByOfficialText: advNcRaisedBy.trim(),
           targetClosureDate: advNcTargetDate,
           closureMethod: null,
@@ -620,6 +624,11 @@ export default function InstitutionDetailPage() {
         }, token);
         await reloadInstitution();
       }
+      if (advanceForm.toStatus === 'TECHNICAL_VISIT_SCHEDULED' && advVisitReportFile) {
+        const docId = await InstitutionsAPI.createDocument({ documentType: 'TECHNICAL_VISIT_REPORT', institutionId, fileName: advVisitReportFile.name }, token);
+        await InstitutionsAPI.uploadDocumentFile(docId, advVisitReportFile, token);
+        await reloadDocs();
+      }
       // Record the proof-of-submission method in the history comment (no dedicated backend field exists).
       const proofLabel = advanceForm.toStatus === 'CREDENTIALS_SUBMITTED'
         ? { EMAIL: 'Email', HARDCOPY: 'Hardcopy', STAMPED_PDF: 'Stamped PDF' }[advSubmitMethod]
@@ -627,7 +636,7 @@ export default function InstitutionDetailPage() {
       await InstitutionsAPI.advanceStage(institutionId, {
         nextStage: advanceForm.toStatus,
         responsibleEmployeeId: advanceForm.decisionByEmployeeId ? Number(advanceForm.decisionByEmployeeId) : null,
-        entryDate: new Date().toISOString().slice(0, 10),
+        entryDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
         outcomeComment: proofLabel ? `Proof of submission: ${proofLabel}. ${advanceForm.remarks.trim()}` : advanceForm.remarks.trim(),
       }, token);
       toast.success(`Stage advanced to ${humanize(advanceForm.toStatus)}.`);
@@ -698,7 +707,7 @@ export default function InstitutionDetailPage() {
 
   const openAcceptNc = async (nc: NcRegister) => {
     setAcceptNc(nc);
-    setAcceptForm({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date().toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
+    setAcceptForm({ closureMethod: 'DOCUMENTARY_EVIDENCE_ONLY', acceptanceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), acceptingOfficialText: '', evidenceDocumentId: '', witnessedVisitId: '' });
     if (!token) return;
     try {
       const docs = await InstitutionsAPI.getNcDocuments(nc.id, token);
@@ -768,9 +777,9 @@ export default function InstitutionDetailPage() {
     if (!taskForm.title.trim() || !taskForm.dueDate || !employeeId) { toast.error('Title, assignee, and due date are required.'); return }
     setBusy(true);
     try {
-      const payload = { taskTitle: taskForm.title.trim(), taskDescription: taskForm.description.trim() || null, taskType: 'FOLLOW_UP', status: taskForm.status, priority: taskForm.priority, assignedToEmployeeId: employeeId, assignedByEmployeeId, dueDate: taskForm.dueDate, institutionId, visitActivityId: null };
+      const payload = { taskTitle: taskForm.title.trim(), taskDescription: taskForm.description.trim() || null, taskType: editingTask ? ((editingTask as { taskType?: string }).taskType ?? taskKind) : taskKind, status: taskForm.status, priority: taskForm.priority, assignedToEmployeeId: employeeId, assignedByEmployeeId, dueDate: taskForm.dueDate, institutionId, visitActivityId: null };
       if (editingTask) await InstitutionsAPI.updateTask(editingTask.id, payload, token); else await InstitutionsAPI.createTask(payload, token);
-      toast.success(editingTask ? 'Task updated.' : 'Task created.');
+      toast.success(editingTask ? 'Updated.' : (taskKind === 'REQUIREMENT' ? 'Requirement created.' : 'Complaint created.'));
       setTaskOpen(false);
       setEditingTask(null);
       setTaskForm({ title: '', description: '', employeeId: '', dueDate: today(), priority: 'MEDIUM', status: 'OPEN' });
@@ -812,7 +821,7 @@ export default function InstitutionDetailPage() {
     if (editValidationActive) setEditErrors(validateInstitutionEdit(nextDraft));
   };
   const openVisitForm = () => { setVisitForm({ employeeId: String(institution.assignedEmployeeId || ''), date: today(), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true }); setVisitOpen(true); };
-  const openNewTask = () => { setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(institution.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
+  const openNewTask = () => { setTaskKind('COMPLAINT'); setEditingTask(null); setTaskForm({ title: '', description: '', employeeId: String(institution.assignedEmployeeId || ''), dueDate: today(), priority: 'MEDIUM', status: 'OPEN' }); setTaskOpen(true); };
   const openEditTask = async (task: InstitutionTask) => {
     try {
       const details = await InstitutionsAPI.getTaskById(task.id, token!);
@@ -1100,12 +1109,17 @@ export default function InstitutionDetailPage() {
             ),
           },
           {
+            value: 'sales',
+            label: 'Sales',
+            content: token ? <InstitutionSales institutionId={institutionId} name={institution.institutionName} token={token} /> : null,
+          },
+          {
             value: 'tasks',
-            label: 'Tasks',
+            label: 'Complaints & requirements',
             count: tasks.length,
             content: (
               <Section description={taskSummary(tasks)} bodyClassName="p-0" action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={openNewTask}><Plus className="mr-1.5 h-3.5 w-3.5" />Add task</Button>}>
-                {tasks.length === 0 ? <EmptyState compact title="No tasks yet. Create a follow-up so nothing slips through." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openEditTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
+                {tasks.length === 0 ? <EmptyState compact title="No complaints or requirements yet. They also appear on the Complaints and Requirements pages." /> : <TaskList tasks={tasks} assignee={(task) => task.assignedEmployeeName || employeeName(task.assignedEmployeeId)} onEdit={(task) => void openEditTask(task)} onDelete={(task) => void removeTask(task)} busy={busy} />}
               </Section>
             ),
           },
@@ -1145,7 +1159,7 @@ export default function InstitutionDetailPage() {
             <FormField label="Region ID"><Input type="number" value={editDraft.regionId} onChange={(e) => updateEditDraft({ ...editDraft, regionId: e.target.value })} /></FormField>
           </FormGroup>
           <FormGroup title="Ownership">
-            <FormField label="Assigned employee"><Select value={editDraft.assignedEmployeeId} onValueChange={(v) => updateEditDraft({ ...editDraft, assignedEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
+            <FormField label="Assigned employee"><SearchableSelect modal triggerId="institution-edit-employee" options={[...employeeOptions].sort((a, b) => a.label.localeCompare(b.label))} value={editDraft.assignedEmployeeId || undefined} onSelect={option => updateEditDraft({ ...editDraft, assignedEmployeeId: option?.value || '' })} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full text-xs" /></FormField>
             <FormField label="File holder (stage owner)" hint="The linked contact who currently holds the file."><Select value={editDraft.currentStageOwnerContactId} onValueChange={(v) => updateEditDraft({ ...editDraft, currentStageOwnerContactId: v === '__none' ? '' : v })}><SelectTrigger><SelectValue placeholder="Choose linked contact" /></SelectTrigger><SelectContent><SelectItem value="__none">None</SelectItem>{contacts.map((c) => <SelectItem key={c.id} value={String(c.contactInfluenceRegisterId || c.id)}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || `Contact #${c.id}`} · {c.designation || '—'}</SelectItem>)}</SelectContent></Select></FormField>
           </FormGroup>
           <FormGroup title="Lifecycle dates">
@@ -1223,7 +1237,7 @@ export default function InstitutionDetailPage() {
               {visits.some((v) => v.actualCheckoutAt) ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <CalendarClock className="h-4 w-4 shrink-0" />}
               {visits.some((v) => v.actualCheckoutAt) ? 'Visit completed (checked out).' : 'No completed visit yet. Plan and check out one from the Visits tab.'}
             </div>
-            <FormField label="Visit report (optional)"><FilePicker onChange={(file) => { (window as unknown as { __advVisitReportFile?: File | null }).__advVisitReportFile = file; }} /></FormField>
+            <FormField label="Visit report (optional)"><FilePicker file={advVisitReportFile} onChange={setAdvVisitReportFile} /></FormField>
           </FormGroup>
         )}
         {advanceForm.toStatus === 'APPROVED' && (
@@ -1299,14 +1313,15 @@ export default function InstitutionDetailPage() {
         open={taskOpen}
         onOpenChange={(open) => !busy && setTaskOpen(open)}
         icon={ListChecks}
-        title={editingTask ? 'Edit task' : 'New follow-up task'}
+        title={editingTask ? 'Edit item' : 'New complaint or requirement'}
         description={editingTask ? editingTask.title : `Follow-up for ${institution.institutionName}.`}
         onSubmit={() => void addTask()}
-        submitLabel={editingTask ? 'Save changes' : 'Create task'}
+        submitLabel={editingTask ? 'Save changes' : 'Create'}
         submitting={busy}
       >
         <FormGroup>
-          <FormField label="Task title" required className="sm:col-span-2"><Input placeholder="e.g. Collect NC closure letter" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></FormField>
+          <FormField label="Type" required className="sm:col-span-2"><Select value={editingTask ? String((editingTask as { taskType?: string }).taskType || taskKind).toUpperCase() : taskKind} onValueChange={(v) => setTaskKind(v as 'COMPLAINT' | 'REQUIREMENT')} disabled={Boolean(editingTask)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="COMPLAINT">Complaint</SelectItem><SelectItem value="REQUIREMENT">Requirement</SelectItem>{editingTask && <SelectItem value="FOLLOW_UP">Follow-up</SelectItem>}</SelectContent></Select></FormField>
+          <FormField label="Title" required className="sm:col-span-2"><Input placeholder="e.g. Collect NC closure letter" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} /></FormField>
           <FormField label="Assignee" required><Select value={taskForm.employeeId} onValueChange={(v) => setTaskForm({ ...taskForm, employeeId: v })}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
           <FormField label="Due date" required><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></FormField>
           <FormField label="Priority"><Select value={taskForm.priority} onValueChange={(v) => setTaskForm({ ...taskForm, priority: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></FormField>

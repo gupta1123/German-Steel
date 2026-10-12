@@ -9,7 +9,8 @@ import {
   XCircle,
   Check,
   X,
-  Calendar
+  Calendar,
+  Eye
 } from "lucide-react";
 import { format } from "date-fns";
 import { Heading, Text } from "@/components/ui/typography";
@@ -42,12 +43,13 @@ interface EmployeeExpenseCardProps {
   showExpenses: boolean;
   onToggleExpenses: () => void;
   onApprove?: (employeeName: string, expenseId: number) => void;
+  onViewReceipts?: (expenseId: number, title: string) => void;
   onReject?: (employeeName: string, expenseId: number) => void;
   onApproveMultiple?: (employeeName: string, expenseIds: number[]) => void;
   onRejectMultiple?: (employeeName: string, expenseIds: number[]) => void;
 }
 
-export default function EmployeeExpenseCard({ employee, showExpenses, onToggleExpenses, onApprove, onReject, onApproveMultiple, onRejectMultiple, busy = false }: EmployeeExpenseCardProps) {
+export default function EmployeeExpenseCard({ employee, showExpenses, onToggleExpenses, onApprove, onViewReceipts, onReject, onApproveMultiple, onRejectMultiple, busy = false }: EmployeeExpenseCardProps) {
   const expenses = employee.expenses;
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<number[]>([]);
 
@@ -195,6 +197,16 @@ export default function EmployeeExpenseCard({ employee, showExpenses, onToggleEx
                     <Heading as="p" size="sm" weight="medium" className="mr-2">
                       ₹{(expense.amount || 0).toFixed(2)}
                     </Heading>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="View receipts"
+                      title="View receipts"
+                      onClick={() => onViewReceipts?.(expense.id, `${employee.name} · ${expense.category} · ₹${(expense.amount || 0).toFixed(2)}`)}
+                    >
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                     {expense.status === "pending" ? (
                       <>
                         <Button

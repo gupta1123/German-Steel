@@ -20,7 +20,7 @@ import Allowance from "@/components/Allowance";
 import WorkingDays from "@/components/WorkingDays";
 import Teams from "@/components/Teams";
 import DailyBreakdown from "@/components/DailyBreakdown";
-import StoreTargets from "@/components/StoreTargets";
+import TargetsTabs from "@/components/TargetsTabs";
 
 function SettingsContent() {
   const searchParams = useSearchParams();
@@ -76,9 +76,9 @@ function SettingsContent() {
 
   return (
     <div className="space-y-4 py-4">
-      <div className="flex justify-end"><Button variant="outline" asChild><Link href="/dashboard/regions">Manage Regions and Districts</Link></Button></div>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <div ref={tabScrollerRef} className="-mx-1 overflow-x-auto px-1 pb-1">
+        <div className="flex items-center justify-between gap-3">
+        <div ref={tabScrollerRef} className="-mx-1 min-w-0 overflow-x-auto px-1 pb-1">
         <TabsList className="h-auto w-max justify-start gap-1 rounded-lg border border-border/70 bg-card p-1 shadow-sm">
           <TabsTrigger value="employeeSummary" className="h-9 gap-1.5 rounded-md px-3 text-xs font-medium whitespace-nowrap data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             <BarChart3 className="h-3.5 w-3.5" />
@@ -106,6 +106,8 @@ function SettingsContent() {
           </TabsTrigger>
         </TabsList>
         </div>
+        <Button variant="outline" size="sm" asChild className="shrink-0"><Link href="/dashboard/regions">Manage Regions and Districts</Link></Button>
+        </div>
         
         <TabsContent value="employeeSummary">
           <EmployeeSummary />
@@ -124,7 +126,7 @@ function SettingsContent() {
         </TabsContent>
 
         <TabsContent value="targets">
-          <StoreTargets />
+          <TargetsTabs />
         </TabsContent>
         
         <TabsContent value="dailyBreakdown">

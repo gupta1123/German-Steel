@@ -434,6 +434,35 @@ export const targetsApi = {
     }
   },
 
+  /**
+   * Full replace of an employee KPI target (PUT /api/hr/targets/{id}).
+   * The backend rebuilds the whole record from the request, so a partial body is rejected;
+   * sending active: true also reactivates a previously deactivated month.
+   */
+  async saveEmployeeKpiTarget(token: string, params: {
+    id?: number | null;
+    employeeId: number;
+    metric: EmployeeKpiMetric;
+    year: number;
+    month: number;
+    targetValue: number;
+  }): Promise<void> {
+    const body = JSON.stringify({
+      targetType: "EMPLOYEE",
+      metric: params.metric,
+      year: params.year,
+      month: params.month,
+      targetValue: params.targetValue,
+      employeeId: params.employeeId,
+      active: true,
+    });
+    if (params.id != null) {
+      await request(`/api/hr/targets/${params.id}`, token, { method: "PUT", body });
+      return;
+    }
+    await request("/api/hr/targets", token, { method: "POST", body });
+  },
+
   async deleteSalesTarget(token: string, id: number): Promise<void> {
     try {
       await request(`/api/hr/targets/${id}`, token, { method: "DELETE" });
@@ -457,7 +486,9 @@ export const targetsApi = {
       month: String(params.month),
     });
     const response = await request(`/api/hr/targets/monthly-employee-kpis?${query}`, token);
-    const listedRows = pageItems(response);
+    // The backend answers with one object per month: { year, month, employeeId, metrics: [{ metric, targetValue, ... }] }.
+    const metricRows = sourceRecord(response)?.metrics;
+    const listedRows = Array.isArray(metricRows) ? metricRows : pageItems(response);
     const singleRow = sourceRecord(response);
     const rows = listedRows.length > 0 ? listedRows : singleRow ? [singleRow] : [];
     return rows.flatMap((value) => {

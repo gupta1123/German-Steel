@@ -6,6 +6,8 @@ import path from 'node:path';
 const filePath = path.join(process.cwd(), 'app/dashboard/requirements/page.tsx');
 const content = fs.readFileSync(filePath, 'utf8');
 const withoutComments = content.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+const tasksApiContent = fs.readFileSync(path.join(process.cwd(), 'lib/tasks-api.ts'), 'utf8');
+const tasksApiWithoutComments = tasksApiContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const legacyMustBeRemoved = [
   '/task/getByVisit',
@@ -38,17 +40,17 @@ test('Requirements does not invoke legacy requirement routes (actual fetch)', ()
 
 test('Requirements uses documented task contract with server-side pagination', () => {
   assert.ok(withoutComments.includes('tasksApi.getRequirementsPage'), 'Should use tasksApi.getRequirementsPage');
-  assert.ok(withoutComments.includes('assignedEmployeeId') && withoutComments.includes('status') && withoutComments.includes('page') && withoutComments.includes('size'), 'Should use GET /api/tasks?assignedEmployeeId&status&page&size');
-  assert.ok(content.includes('totalElements') && content.includes('totalPages'), 'Should handle paginated response totalElements/totalPages');
+  assert.ok(tasksApiWithoutComments.includes('/api/tasks/visible?') && tasksApiWithoutComments.includes('page: String(page)') && tasksApiWithoutComments.includes('size: String(pageSize)'), 'Should fetch the paginated visible-task contract');
+  assert.ok(tasksApiContent.includes('totalElements') && tasksApiContent.includes('totalPages'), 'Should calculate type-specific pagination metadata');
   assert.ok(content.includes('currentPage') && content.includes('pageSize'), 'Should manage currentPage and pageSize state');
 });
 
-test('Requirements handles taskType filter gap (400) correctly', () => {
-  assert.ok(content.includes('taskType') && content.includes('REQUIREMENT'), 'Should attempt taskType=REQUIREMENT');
-  assert.ok(content.includes('400') && content.includes('Backend gap'), 'Should surface 400 as backend gap, not fallback to legacy');
-  assert.ok(content.includes('taskType filter not supported') || content.includes('taskType=REQUIREMENT') && content.includes('returned 400'), 'Gap message should mention taskType 400');
-  // Ensure it does not fallback to legacy getAll and filter in browser
-  assert.equal(withoutComments.includes('tasksApi.getAll') && withoutComments.includes("filter((task) => task.taskType === 'REQUIREMENT')"), false, 'Should not fetch all tasks and filter in browser for type');
+test('Requirements filters mixed task pages by type before slicing', () => {
+  assert.ok(tasksApiWithoutComments.includes("getTaskTypePage(token, 'REQUIREMENT', opts)"), 'Should request the requirement-specific page');
+  assert.ok(tasksApiWithoutComments.includes('getAllVisibleTasks(token, params)'), 'Should inspect all server pages before filtering task type');
+  assert.ok(tasksApiWithoutComments.includes('task.taskType === taskType') && tasksApiWithoutComments.includes('matchingTasks.slice(page * size'), 'Should filter task type before computing page content');
+  assert.ok(tasksApiWithoutComments.includes('/api/Task/getById?id=${task.id}'), 'Should enrich visible cards with the existing task-details API');
+  assert.ok(content.includes('task.taskDesciption'), 'Should show requirement descriptions in cards');
 });
 
 test('Requirements preserves filters/pagination/loading/empty/error and prevents refresh loops', () => {

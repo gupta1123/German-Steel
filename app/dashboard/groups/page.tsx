@@ -32,7 +32,7 @@ const humanize = (value: string | null | undefined) =>
   value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
 
 const typeClassName = (type: string | null | undefined) => {
-  if (type === 'CORPORATE_GROUP') return 'bg-violet-50 text-violet-700 ring-violet-600/15';
+  if (type === 'CORPORATE_GROUP') return 'bg-teal-50 text-teal-700 ring-teal-600/15';
   if (type === 'FAMILY_GROUP') return 'bg-sky-50 text-sky-700 ring-sky-600/15';
   return 'bg-slate-50 text-slate-700 ring-slate-600/15';
 };

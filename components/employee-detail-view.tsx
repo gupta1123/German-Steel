@@ -25,7 +25,7 @@ import { DetailHero, EmptyState, KpiCell, Pill, Section, formatDay, formatPhone,
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getEmployeeRoleLabel } from "@/lib/employee-role";
+import { getEmployeeFullRoleLabel } from "@/lib/employee-role";
 import { resolveVisitClient, type CommonVisitRow } from "@/lib/visits-api";
 import type { ExpenseRow } from "@/lib/expenses-api";
 import type { TeamEmployee } from "@/lib/teams-api";
@@ -113,7 +113,7 @@ export function EmployeeDetailView({ employee, managerName, teamName, regionName
         backLabel="Back to employees"
         badges={<>
           <Pill tone={employee.active ? "success" : "neutral"}>{statusLabel}</Pill>
-          <Pill tone="info">{getEmployeeRoleLabel(employee.role)}</Pill>
+          <Pill tone="info">{getEmployeeFullRoleLabel(employee.role)}</Pill>
           {payload.officeManager && <Pill>Office manager</Pill>}
         </>}
         meta={[

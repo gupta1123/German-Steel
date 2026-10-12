@@ -41,7 +41,7 @@ import { EmployeeUserDto } from "@/lib/api";
 import { teamsApi } from "@/lib/teams-api";
 import { formatCityLabel } from "@/lib/city-options";
 import { getEmployeeRoleFormValue } from "@/lib/employee-role";
-import { fetchFieldOfficerRoles, type EmployeeAccessRole } from "@/lib/employee-access-roles";
+import { fetchFieldOfficerRoles, FIELD_EXECUTIVE_ROLE_LABELS, FIELD_EXECUTIVE_ROLE_DESCRIPTIONS, type EmployeeAccessRole } from "@/lib/employee-access-roles";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { useDashboardHeader } from "@/components/dashboard-header-context";
 
@@ -494,6 +494,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
       const roleForApi = newEmployee.role === 'Manager' || newEmployee.role === 'Regional Manager' 
         ? 'MANAGER' 
         : newEmployee.role === 'Field Officer' ? newEmployee.fieldOfficerRole || 'RETAIL_FE'
+        : newEmployee.role === 'Supervisor' ? 'ZONAL_SUPERVISOR'
         : newEmployee.role;
 
       const mobileNum = Number(newEmployee.mobile);
@@ -738,11 +739,16 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     <SelectItem value="Field Officer">Field Officer</SelectItem>
-                                                    <SelectItem value="Manager">Supervisor</SelectItem>
+                                                    <SelectItem value="Supervisor">Zonal Supervisor</SelectItem><SelectItem value="Manager">Manager</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
 
+                                        {isEditMode && newEmployee.role === 'Field Officer' && newEmployee.fieldOfficerRole && <div className="space-y-2">
+                                            <Label>Field Officer Role</Label>
+                                            <div className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm">{FIELD_EXECUTIVE_ROLE_LABELS[newEmployee.fieldOfficerRole] ?? newEmployee.fieldOfficerRole}</div>
+                                            <p className="text-xs text-muted-foreground">{FIELD_EXECUTIVE_ROLE_DESCRIPTIONS[newEmployee.fieldOfficerRole] ?? ''}</p>
+                                        </div>}
                                         {!isEditMode && newEmployee.role === 'Field Officer' && <div className="space-y-2">
                                             <Label htmlFor="field-officer-role">Field Officer Role <span className="text-red-500">*</span></Label>
                                             <Select value={newEmployee.fieldOfficerRole} onValueChange={value => setNewEmployee({ ...newEmployee, fieldOfficerRole: value })} disabled={rolesLoading || Boolean(rolesError)}>
@@ -783,10 +789,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                                     </div>
                                     </div>
 
-                                    {newEmployee.role === 'Field Officer' && (
+                                    {(newEmployee.role === 'Field Officer' || newEmployee.role === 'Supervisor' || newEmployee.role === 'Manager') && (
                                         <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
                                             <div>
-                                                <Label>Assign Sales Regions to Field Officer</Label>
+                                                <Label>{newEmployee.role === 'Field Officer' ? 'Assign Sales Regions to Field Officer' : 'Assign Sales Regions (zone this role covers)'}</Label>
                                                 <p className="mt-1 text-xs text-muted-foreground">
                                                     Select one or more sales regions. These assignments control zone access and are saved with the profile.
                                                 </p>

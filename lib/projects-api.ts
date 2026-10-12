@@ -115,6 +115,10 @@ export interface ProjectSale {
   quantityMt: number;
   invoiceReference: string;
   sourceSystem: string;
+  outcomeStatus?: 'WIN' | 'LOST' | null;
+  poDate?: string;
+  poNumber?: string;
+  lossReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -123,8 +127,12 @@ export interface ProjectSalePayload {
   projectId: number;
   saleDate: string;
   quantityMt: number;
-  invoiceReference: string;
+  invoiceReference: string | null;
   sourceSystem: 'WEB' | 'MOBILE';
+  outcomeStatus: 'WIN' | 'LOST';
+  poDate: string | null;
+  poNumber: string | null;
+  lossReason: string | null;
 }
 
 export interface ProjectDocument {
@@ -395,7 +403,7 @@ const normalizePipelineEntry = (value: unknown): ProjectPipelineEntry | null => 
     stage: (stage ?? null) as ProjectStage | string,
     enteredAt: stringOf(raw.entryDate, raw.entry_date, raw.enteredAt, raw.entered_at, raw.createdAt, raw.created_at, raw.timestamp, raw.date, item.entryDate, item.enteredAt) || new Date().toISOString(),
     exitedAt: stringOf(raw.exitDate, raw.exit_date, raw.exitedAt, raw.exited_at, raw.completedAt, raw.completed_at, item.exitDate, item.exitedAt) || null,
-    enteredBy: stringOf(raw.responsibleEmployeeId, raw.responsible_employee_id, raw.enteredBy, raw.entered_by, raw.performedBy, raw.employeeName, item.responsibleEmployeeId, item.enteredBy) ? String(stringOf(raw.responsibleEmployeeId, raw.responsible_employee_id, raw.enteredBy, raw.performedBy, raw.employeeName, item.responsibleEmployeeId, item.enteredBy) || '') : 'â€”',
+    enteredBy: String(stringOf(raw.recordedByEmployeeName, raw.recorded_by_employee_name, raw.recordedByEmployeeRoleLabel, raw.recorded_by_employee_role_label, raw.responsibleEmployeeName, raw.responsible_employee_name, raw.enteredBy, raw.entered_by, raw.performedBy, raw.employeeName, raw.responsibleEmployeeId, raw.responsible_employee_id, raw.recordedByEmployeeId, raw.recorded_by_employee_id, item.recordedByEmployeeName, item.recordedByEmployeeRoleLabel, item.responsibleEmployeeName, item.enteredBy, item.responsibleEmployeeId, item.recordedByEmployeeId) || '—'),
     remarks: stringOf(raw.outcomeComment, raw.outcome_comment, raw.remarks, raw.comment, raw.note, item.outcomeComment, item.remarks) || 'â€”',
   };
 };
@@ -441,7 +449,7 @@ const normalizeNcRegister = (value: unknown): ProjectNcRegister | null => {
     id,
     projectId: numberOf(item.projectId) ?? null,
     description: stringOf(item.description, item.title) || 'â€”',
-    raisedDate: stringOf(item.raisedDate, item.createdAt) || new Date().toISOString().slice(0, 10),
+    raisedDate: stringOf(item.raisedDate, item.createdAt) || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
     raisedByOfficialText: toTitleCase(stringOf(item.raisedByOfficialText, item.raisedBy)) || 'â€”',
     targetClosureDate: stringOf(item.targetClosureDate) || null,
     closureMethod: stringOf(item.closureMethod) || null,
@@ -548,7 +556,7 @@ export const ProjectsAPI = {
   async deleteProject(id: number, token: string): Promise<void> {
     await request(`/api/projects/${id}`, token, { method: 'DELETE' });
   },
-  async getProjectSales(projectId: number, token: string, from = '2000-01-01', to = new Date().toISOString().slice(0, 10)): Promise<ProjectSale[]> {
+  async getProjectSales(projectId: number, token: string, from = '2000-01-01', to = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)): Promise<ProjectSale[]> {
     const response = await request(`/api/projects/${projectId}/sales${queryString({ from, to, page: 0, size: 50 })}`, token);
     const values = [...pageItems(response)];
     const pagination = pageOf(response, values, 0, 50);
@@ -566,6 +574,10 @@ export const ProjectsAPI = {
         quantityMt: numberOf(item.quantityMt) ?? 0,
         invoiceReference: stringOf(item.invoiceReference),
         sourceSystem: stringOf(item.sourceSystem),
+        outcomeStatus: item.outcomeStatus === 'WIN' || item.outcomeStatus === 'LOST' ? item.outcomeStatus : null,
+        poDate: stringOf(item.poDate),
+        poNumber: stringOf(item.poNumber),
+        lossReason: stringOf(item.lossReason),
         createdAt: stringOf(item.createdAt),
         updatedAt: stringOf(item.updatedAt),
       }];

@@ -22,7 +22,7 @@ function Ellipsis({ value }: { value: string | number | null | undefined }) {
   const v = value === null || value === undefined || value === '' ? '—' : String(value);
   return <span className="block min-w-0 truncate" title={v}>{v}</span>;
 }
-const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
+const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()).replace(/\bNc\b/g, 'NC') : '—';
 // Compact badge labels — full text stays in the title tooltip.
 const stageShortLabel = (value: Project['sourceApprovalStatus']): string => {
   switch (String(value)) {

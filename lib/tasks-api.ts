@@ -19,6 +19,8 @@ export interface SharedTask {
   clientAccountId: number | null;
   clientAccountName: string;
   clientAccountCity: string;
+  institutionId: number | null;
+  projectId: number | null;
 }
 
 export interface SharedTaskCreatePayload {
@@ -172,6 +174,8 @@ const normalizeTask = (value: unknown): SharedTask | null => {
     clientAccountId: numberOf(item.clientAccountId, item.storeId, client?.id),
     clientAccountName: stringOf(item.clientAccountName, item.accountName, item.storeName, client?.accountName, client?.name),
     clientAccountCity: stringOf(item.clientAccountCity, item.accountCity, item.storeCity, client?.addressCity, client?.city),
+    institutionId: numberOf(item.institutionId),
+    projectId: numberOf(item.projectId),
   };
 };
 
@@ -193,6 +197,96 @@ const normalizePage = (value: unknown, fallbackPage: number, fallbackSize: numbe
     size: numberOf(source.size, fallbackSize) ?? fallbackSize,
     totalPages: Math.max(1, numberOf(source.totalPages) ?? 1),
     totalElements: numberOf(source.totalElements, source.total) ?? content.length,
+  };
+};
+
+const getAllVisibleTasks = async (
+  token: string,
+  params: Record<string, string | number | undefined>,
+): Promise<SharedTask[]> => {
+  const pageSize = 50;
+  const fetchPage = async (page: number): Promise<SharedTaskPage> => {
+    const query = new URLSearchParams({ page: String(page), size: String(pageSize) });
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+    }
+    return normalizePage(await request(`/api/tasks/visible?${query}`, token), page, pageSize);
+  };
+
+  const firstPage = await fetchPage(0);
+  if (firstPage.totalPages <= 1) return firstPage.content;
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: firstPage.totalPages - 1 }, (_, index) => fetchPage(index + 1)),
+  );
+  return [firstPage, ...remainingPages].flatMap((page) => page.content);
+};
+
+const getTaskTypePage = async (
+  token: string,
+  taskType: 'COMPLAINT' | 'REQUIREMENT',
+  opts: {
+    assignedToEmployeeId?: number | string;
+    status?: string;
+    priority?: string;
+    q?: string;
+    dueFrom?: string;
+    dueTo?: string;
+    page?: number;
+    size?: number;
+  },
+): Promise<SharedTaskPage> => {
+  const page = opts.page ?? 0;
+  const size = opts.size ?? 50;
+  const params: Record<string, string | number | undefined> = {};
+
+  if (opts.assignedToEmployeeId !== undefined && opts.assignedToEmployeeId !== '' && opts.assignedToEmployeeId !== 'all') {
+    params.assignedToEmployeeId = opts.assignedToEmployeeId;
+  }
+  if (opts.status && opts.status !== '' && opts.status !== 'all') {
+    params.status = normalizeTaskStatusParam(opts.status);
+  }
+  if (opts.priority && opts.priority !== '' && opts.priority !== 'all') {
+    params.priority = String(opts.priority).toUpperCase();
+  }
+  if (opts.q?.trim()) params.q = opts.q.trim();
+  if (opts.dueFrom) params.dueFrom = opts.dueFrom;
+  if (opts.dueTo) params.dueTo = opts.dueTo;
+
+  // The endpoint pages a mixed task list and has no taskType filter. Read all
+  // matching pages first so type filtering cannot create empty/misnumbered pages.
+  const visibleTasks = await getAllVisibleTasks(token, params);
+  const priority = opts.priority?.trim().toUpperCase();
+  const matchingTasks = visibleTasks.filter((task) =>
+    task.taskType === taskType && (!priority || priority === 'ALL' || task.priority === priority),
+  );
+  const totalElements = matchingTasks.length;
+  const totalPages = Math.ceil(totalElements / size);
+  const pageTasks = matchingTasks.slice(page * size, (page + 1) * size);
+  const content: SharedTask[] = [];
+
+  // The visible-list DTO contains IDs but omits descriptions and related names.
+  // Enrich only the displayed page through the existing task-details endpoint.
+  for (let index = 0; index < pageTasks.length; index += 8) {
+    const batch = pageTasks.slice(index, index + 8);
+    const details = await Promise.all(batch.map(async (task) => {
+      try {
+        const detailedTask = normalizeTask(await request(`/api/Task/getById?id=${task.id}`, token));
+        return detailedTask ? { ...task, ...detailedTask } : task;
+      } catch {
+        // Keep the visible-list record usable if detail enrichment is unavailable.
+        return task;
+      }
+    }));
+    content.push(...details);
+  }
+
+  return {
+    content,
+    number: page,
+    size,
+    totalPages,
+    totalElements,
   };
 };
 
@@ -227,65 +321,14 @@ export const tasksApi = {
     token: string,
     opts: { assignedToEmployeeId?: number | string; status?: string; priority?: string; q?: string; dueFrom?: string; dueTo?: string; page?: number; size?: number } = {}
   ): Promise<SharedTaskPage> {
-    const page = opts.page ?? 0;
-    const size = opts.size ?? 50;
-    const params: Record<string, string | number | undefined> = {};
-    if (opts.assignedToEmployeeId !== undefined && opts.assignedToEmployeeId !== '' && opts.assignedToEmployeeId !== 'all') {
-      params.assignedToEmployeeId = opts.assignedToEmployeeId;
-    }
-    if (opts.status && opts.status !== '' && opts.status !== 'all') {
-      // Exact backend statuses: OPEN, IN_PROGRESS, COMPLETED, CANCELLED (legacy UI labels tolerated).
-      params.status = normalizeTaskStatusParam(opts.status);
-    }
-    if (opts.priority && opts.priority !== '' && opts.priority !== 'all') {
-      params.priority = String(opts.priority).toUpperCase();
-    }
-    if (opts.q && opts.q.trim() !== '') {
-      params.q = opts.q.trim();
-    }
-    if (opts.dueFrom && opts.dueFrom !== '') {
-      params.dueFrom = opts.dueFrom;
-    }
-    if (opts.dueTo && opts.dueTo !== '') {
-      params.dueTo = opts.dueTo;
-    }
-    // Backend has no taskType filter — fetch visible tasks and keep only COMPLAINT client-side.
-    // Date filters are server-side dueFrom/dueTo (verified 25 for 2026-09-01..30).
-    const visible = await this.getVisiblePage(token, page, size, params);
-    const complaints = visible.content.filter((task) => task.taskType === 'COMPLAINT');
-    return { ...visible, content: complaints };
+    return getTaskTypePage(token, 'COMPLAINT', opts);
   },
 
   async getRequirementsPage(
     token: string,
     opts: { assignedToEmployeeId?: number | string; status?: string; priority?: string; q?: string; dueFrom?: string; dueTo?: string; page?: number; size?: number } = {}
   ): Promise<SharedTaskPage> {
-    const page = opts.page ?? 0;
-    const size = opts.size ?? 50;
-    const params: Record<string, string | number | undefined> = {};
-    if (opts.assignedToEmployeeId !== undefined && opts.assignedToEmployeeId !== '' && opts.assignedToEmployeeId !== 'all') {
-      params.assignedToEmployeeId = opts.assignedToEmployeeId;
-    }
-    if (opts.status && opts.status !== '' && opts.status !== 'all') {
-      // Exact backend statuses: OPEN, IN_PROGRESS, COMPLETED, CANCELLED (legacy UI labels tolerated).
-      params.status = normalizeTaskStatusParam(opts.status);
-    }
-    if (opts.priority && opts.priority !== '' && opts.priority !== 'all') {
-      params.priority = String(opts.priority).toUpperCase();
-    }
-    if (opts.q && opts.q.trim() !== '') {
-      params.q = opts.q.trim();
-    }
-    if (opts.dueFrom && opts.dueFrom !== '') {
-      params.dueFrom = opts.dueFrom;
-    }
-    if (opts.dueTo && opts.dueTo !== '') {
-      params.dueTo = opts.dueTo;
-    }
-    // Backend has no taskType filter — fetch visible tasks and keep only REQUIREMENT client-side.
-    const visible = await this.getVisiblePage(token, page, size, params);
-    const requirements = visible.content.filter((task) => task.taskType === 'REQUIREMENT');
-    return { ...visible, content: requirements };
+    return getTaskTypePage(token, 'REQUIREMENT', opts);
   },
 
   async create(payload: SharedTaskCreatePayload, token: string): Promise<void> {

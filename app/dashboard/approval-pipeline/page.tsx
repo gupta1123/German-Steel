@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2 } from 'lucide-react';
 
-const humanize = (v: string | null | undefined) => v ? v.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()) : '—';
+const humanize = (v: string | null | undefined) => v ? v.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()).replace(/\bNc\b/g, 'NC') : '—';
 function Ellipsis({ value }: { value: string | number | null | undefined }) {
   const v = value === null || value === undefined || value === '' ? '—' : String(value);
   return <span className="block min-w-0 truncate" title={v}>{v}</span>;

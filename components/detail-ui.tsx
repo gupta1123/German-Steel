@@ -34,9 +34,9 @@ export const VISIT_PURPOSES = [
   { value: 'OTHER', label: 'Other' },
 ] as const;
 
-const titleCase = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : '—';
+const titleCase = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()).replace(/\bNc\b/g, 'NC') : '—';
 
-export const today = () => new Date().toISOString().slice(0, 10);
+export const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 export const dayKey = (value: string | null | undefined) => (value || '').slice(0, 10);
 export const shortTime = (value: string | null | undefined) => (value || '').slice(0, 5);
 export const formatDay = (value: string | null | undefined) => {

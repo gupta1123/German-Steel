@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { format, subDays, differenceInDays, startOfMonth } from 'date-fns';
+import { format, subDays, addDays, differenceInDays, startOfMonth } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { RetailAPI } from '@/lib/retail-api';
@@ -98,13 +98,13 @@ const toComplaintTask = (task: SharedTask): Task => ({
     taskDesciption: task.taskDescription,
     dueDate: task.dueDate,
     assignedToId: task.assignedToEmployeeId ?? 0,
-    assignedToName: task.assignedToEmployeeName || 'Unknown',
+    assignedToName: task.assignedToEmployeeName || (task.assignedToEmployeeId ? `Employee #${task.assignedToEmployeeId}` : 'Unassigned'),
     assignedById: task.assignedByEmployeeId ?? 0,
     status: normalizeTaskStatus(task.status),
     priority: task.priority.toLowerCase(),
     category: 'Complaint',
     storeId: task.clientAccountId ?? 0,
-    storeName: task.clientAccountName,
+    storeName: task.clientAccountName || (task.clientAccountId ? `Store #${task.clientAccountId}` : task.projectId ? `Project #${task.projectId}` : task.institutionId ? `Institution #${task.institutionId}` : ''),
     storeCity: task.clientAccountCity,
     taskType: task.taskType || 'COMPLAINT',
 });
@@ -131,7 +131,7 @@ const Complaints = () => {
     const router = useGuardedRouter();
     // Bumped to v2: v1 persisted the old today-only default (startDate == endDate == today),
     // which the hydration effect would restore over the new month-to-date default.
-    const FILTER_STATE_KEY = 'complaints.filters.v2';
+    const FILTER_STATE_KEY = 'complaints.filters.v3';
     const [isFiltersHydrated, setIsFiltersHydrated] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
@@ -148,7 +148,7 @@ const Complaints = () => {
         status: 'all',
         search: '',
         startDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-        endDate: format(new Date(), 'yyyy-MM-dd')
+        endDate: format(addDays(new Date(), 60), 'yyyy-MM-dd')
     });
     const [isLoading, setIsLoading] = useState(true);
     const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
@@ -270,6 +270,7 @@ const Complaints = () => {
             const page = await tasksApi.getComplaintsPage(token, {
                     assignedToEmployeeId,
                     status,
+                    priority: filters.priority || undefined,
                     q: filters.search?.trim() || undefined,
                     dueFrom: filters.startDate || undefined,
                     dueTo: filters.endDate || undefined,
@@ -285,6 +286,7 @@ const Complaints = () => {
                 return ta - tb;
             });
             setTasks(tasksArray);
+            setFilteredTasks(tasksArray);
             setTotalPages(page.totalPages);
         } catch (error) {
             console.error('Error fetching tasks:', error);
@@ -423,43 +425,14 @@ const Complaints = () => {
     // Remove automatic store fetching - now only fetches when dropdown is clicked
 
     const applyFilters = useCallback(() => {
-        // Server filters via /api/tasks/visible (status/assignee only).
-        // tasksApi.getComplaintsPage already keeps only taskType==='COMPLAINT'.
-        // Priority/search/date-range stay client-side (date defaults are today–today).
-        const searchLower = (filters.search || '').toLowerCase();
-        const filtered = tasks.filter((task) => {
-            const matchesType = (task.taskType || '').toUpperCase() === 'COMPLAINT';
-            if (!matchesType) return false;
-
-            const matchesSearch =
-                !searchLower ||
-                (task.taskTitle?.toLowerCase() || '').includes(searchLower) ||
-                (task.taskDesciption?.toLowerCase() || '').includes(searchLower) ||
-                (task.storeName?.toLowerCase() || '').includes(searchLower) ||
-                (task.assignedToName?.toLowerCase() || '').includes(searchLower);
-
-            const matchesPriority =
-                !filters.priority ||
-                filters.priority === '' ||
-                filters.priority === 'all' ||
-                (task.priority || '').toLowerCase() === filters.priority.toLowerCase();
-
-            const matchesDateRange =
-                (!filters.startDate || filters.startDate === '' || !task.dueDate || new Date(task.dueDate) >= new Date(filters.startDate)) &&
-                (!filters.endDate || filters.endDate === '' || !task.dueDate || new Date(task.dueDate) <= new Date(filters.endDate));
-
-            return matchesSearch && matchesPriority && matchesDateRange;
-        });
-
-        setFilteredTasks(filtered);
-        // Do not derive pagination from client filtered length — preserve server totalPages from fetchTasks
-        // Only adjust currentPage if it exceeds server totalPages
+        // The API helper filters the complete visible task set before pagination.
+        setFilteredTasks(tasks);
         if (totalPages === 0) {
             if (currentPage !== 0) setCurrentPage(0);
         } else if (currentPage >= totalPages) {
             setCurrentPage(Math.max(0, totalPages - 1));
         }
-    }, [tasks, filters, totalPages, currentPage]);
+    }, [tasks, totalPages, currentPage]);
 
     useEffect(() => {
         const directoryEmployees = allEmployees
@@ -755,15 +728,15 @@ const Complaints = () => {
     };
 
     const paginatedTasks = useMemo(() => {
-        // Server already paginated; filteredTasks is the page content after server status/assignee filter
-        // Client-side search/priority/date filtering already applied in applyFilters; do not slice again
+        // The API helper has already filtered the complete task set by type and
+        // filters, then returned the requested page.
         return filteredTasks;
     }, [filteredTasks]);
 
     const getStatusInfo = (status: string): { icon: React.ReactNode; color: string } => {
         switch (normalizeTaskStatus(status)) {
             case 'OPEN':
-                return { icon: <Clock className="w-4 h-4" />, color: 'bg-purple-100 text-purple-800' };
+                return { icon: <Clock className="w-4 h-4" />, color: 'bg-teal-100 text-teal-800' };
             case 'IN_PROGRESS':
                 return { icon: <Loader className="w-4 h-4 animate-spin" />, color: 'bg-blue-100 text-blue-800' };
             case 'COMPLETED':
@@ -1084,6 +1057,11 @@ const Complaints = () => {
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-3 px-4 pb-4 pt-1">
+                                        {task.taskDesciption?.trim() && (
+                                            <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                                {task.taskDesciption}
+                                            </p>
+                                        )}
                                         <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs">
                                             <div className="flex min-w-0 items-center gap-1.5">
                                                 <User className="h-3.5 w-3.5 shrink-0 text-primary" />

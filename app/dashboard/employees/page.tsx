@@ -24,7 +24,7 @@ import { syncPageQuery } from "@/lib/page-query-sync";
 import { useAuth } from "@/components/auth-provider";
 import { isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
-import { getEmployeeRoleCategory, getEmployeeRoleLabel, isAdminEmployee } from "@/lib/employee-role";
+import { getEmployeeRoleCategory, getEmployeeRoleLabel, getEmployeeFullRoleLabel, isAdminEmployee } from "@/lib/employee-role";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { toast } from "sonner";
@@ -324,34 +324,17 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   const deleteUserById = async (userId: number) => {
     try {
-      const employeeTeams = await API.getTeamByEmployee(userId).catch(() => []);
-      const assignedTeams = (employeeTeams as unknown as TeamData[]).filter((team) =>
-        team.fieldOfficers?.some((officer) => officer.id === userId)
-      );
-
-      for (const team of assignedTeams) {
-        const removeResponse = await fetch(
-          `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/team/deleteFieldOfficer?id=${team.id}`,
-          {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ fieldOfficers: [userId] }),
-          }
-        );
-
-        if (!removeResponse.ok) {
-          const message = await removeResponse.text().catch(() => '');
-          throw new Error(message || 'Could not remove the employee from their team.');
-        }
+      // Leave the team first, then archive (deactivate) the employee with the current API.
+      const { teamsApi } = await import('@/lib/teams-api');
+      const employee = await teamsApi.getEmployeeById(token ?? '', userId).catch(() => null);
+      if (employee?.teamId) {
+        await teamsApi.removeTeamEmployee(token ?? '', employee.teamId, userId);
       }
 
       const response = await fetch(
-        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/employee/delete?id=${userId}`,
+        `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/api/common/employees/${userId}`,
         {
-          method: 'PUT',
+          method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
@@ -366,7 +349,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           ...team,
           fieldOfficers: team.fieldOfficers.filter((officer) => officer.id !== userId),
         })) ?? current);
-        toast.success('Employee archived', { duration: 3000 });
+        toast.success('Employee archived. They can no longer sign in.', { duration: 3000 });
       } else {
         const message = await response.text().catch(() => '');
         throw new Error(message || 'Failed to archive employee');
@@ -418,8 +401,10 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
         setIsResetPasswordOpen(false);
         setNewPassword('');
         setConfirmPassword('');
+        toast.success('Password reset');
       } else {
         console.error('Failed to reset password');
+        toast.error(`Could not reset the password (${response.status}). This action is not available on the current backend.`);
       }
     } catch (error) {
       console.error('Error resetting password:', error);
@@ -480,9 +465,14 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           if (text) {
             console.log('Username update response:', text);
           }
+          toast.success('Username updated');
+        } else {
+          // The legacy username endpoint is no longer served by the backend; tell the admin instead of failing silently.
+          toast.error(`Could not update the username (${response.status}). This action is not available on the current backend.`);
         }
       } catch (error) {
         console.error('Error updating username:', error);
+        toast.error('Could not update the username. Please try again.');
       } finally {
         setIsLoading(false);
       }
@@ -502,9 +492,10 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   // Function to generate role tags with pastel colors
   const getRoleTag = (role: string) => {
-    const transformedRole = getEmployeeRoleLabel(role);
+    const broadRole = getEmployeeRoleLabel(role);
+    const transformedRole = getEmployeeFullRoleLabel(role);
     
-    if (transformedRole === 'Supervisor') {
+    if (broadRole === 'Supervisor') {
       return (
         <Badge 
           variant="secondary" 
@@ -513,7 +504,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           {transformedRole}
         </Badge>
       );
-    } else if (transformedRole === 'Field Officer') {
+    } else if (broadRole === 'Field Officer') {
       return (
         <Badge 
           variant="secondary" 
@@ -816,12 +807,12 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           <div className="hidden min-w-0 md:block">
             <Table className="table-fixed text-xs">
               <colgroup>
-                <col className="w-[22%]" />
-                <col className="w-[14%]" />
-                <col className="w-[14%]" />
+                <col className="w-[18%]" />
+                <col className="w-[26%]" />
                 <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
                 <col className="w-[12%]" />
-                <col className="w-[14%]" />
                 <col className="w-[10%]" />
               </colgroup>
               <TableHeader>
@@ -894,12 +885,12 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           <div className="hidden min-w-0 md:block">
               <Table className="table-fixed text-xs font-poppins">
               <colgroup>
-                {selectedColumns.includes('name') && <col className="w-[22%]" />}
-                {selectedColumns.includes('role') && <col className="w-[14%]" />}
-                {selectedColumns.includes('mobile') && <col className="w-[14%]" />}
-                {selectedColumns.includes('city') && <col className="w-[12%]" />}
-                {selectedColumns.includes('state') && <col className="w-[12%]" />}
-                {selectedColumns.includes('assignedCity') && <col className="w-[14%]" />}
+                {selectedColumns.includes('name') && <col className="w-[18%]" />}
+                {selectedColumns.includes('role') && <col className="w-[26%]" />}
+                {selectedColumns.includes('mobile') && <col className="w-[12%]" />}
+                {selectedColumns.includes('city') && <col className="w-[11%]" />}
+                {selectedColumns.includes('state') && <col className="w-[11%]" />}
+                {selectedColumns.includes('assignedCity') && <col className="w-[12%]" />}
                 {selectedColumns.includes('actions') && <col className="w-[10%]" />}
               </colgroup>
               <TableHeader>

@@ -13,6 +13,7 @@ import VisitDetailsModal from "@/components/visit-details-modal";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select2";
 import { attendanceApi, type AttendanceLog } from "@/lib/attendance-api";
 import { approvalsApi, type ApprovalRequest } from "@/lib/approvals-api";
+import { applyApprovedAttendanceRequests, approvalOrder } from "@/lib/attendance-display";
 import { teamsApi } from "@/lib/teams-api";
 import { useAuth } from "@/components/auth-provider";
 import { getEmployeeRoleCategory, getEmployeeRoleLabel, isAdminEmployeeRole } from "@/lib/employee-role";
@@ -63,6 +64,7 @@ export default function AttendancePage() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const [noDataMessage, setNoDataMessage] = useState<string>("");
+  const [correctionWarning, setCorrectionWarning] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<'all' | 'regional-manager' | 'field-officer'>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -162,7 +164,6 @@ export default function AttendancePage() {
       setIsLoading(false);
       return;
     }
-    if (isFetchingAttendanceRef.current) return;
     isFetchingAttendanceRef.current = true;
     const requestId = ++attendanceRequestIdRef.current;
     setIsLoading(true);
@@ -178,12 +179,25 @@ export default function AttendancePage() {
       const byRole = selectedRoleFilter === 'all' ? allEmployees : allEmployees.filter((e) => getEmployeeRoleCategory(e.role) === selectedRoleFilter);
       const targetEmployees = selectedEmployeeId ? byRole.filter((e) => String(e.id) === selectedEmployeeId) : byRole;
       let allLogs: AttendanceData[] = [];
+      let correctionsUnavailable = false;
       if (targetEmployees.length > 0) {
         const results = await Promise.all(
           targetEmployees.map(async (emp) => {
             try {
               const page = await attendanceApi.getByEmployee(token, emp.id, startDate, endDate, 0, 50);
-              return page.content as unknown as AttendanceData[];
+              const requests: ApprovalRequest[] = [];
+              try {
+                for (let index = 0; ; index += 1) {
+                  const requestPage = await approvalsApi.getRequestsByEmployee(token, emp.id, index, 100);
+                  requests.push(...requestPage.content.filter((request) => request.employeeId === emp.id));
+                  if (requestPage.last || !requestPage.content.length) break;
+                }
+              } catch {
+                correctionsUnavailable = true;
+              }
+              requestsCacheRef.current.set(emp.id, requests);
+              const inMonth = requests.filter((request) => dateKeyOf(request.logDate) >= startDate && dateKeyOf(request.logDate) <= endDate);
+              return applyApprovedAttendanceRequests(page.content, inMonth) as unknown as AttendanceData[];
             } catch {
               return [];
             }
@@ -213,7 +227,7 @@ export default function AttendancePage() {
       const modifiedData = allLogs.map((item: unknown) => {
         const rec = item as Record<string, unknown>;
         const originalStatus = typeof rec.attendanceStatus === "string" ? rec.attendanceStatus as string : "";
-        const normalizedOriginal = originalStatus.trim().toLowerCase();
+        const normalizedOriginal = originalStatus.trim().toLowerCase().replaceAll('_', ' ');
         let normalizedStatus = originalStatus;
         if (normalizedOriginal === "present") {
           normalizedStatus = "absent";
@@ -223,7 +237,7 @@ export default function AttendancePage() {
           normalizedStatus = "absent";
         } else if (normalizedOriginal === "half day") {
           normalizedStatus = "half day";
-        } else if (normalizedOriginal === "paid leave") {
+        } else if (["paid leave", "leave", "week off", "holiday"].includes(normalizedOriginal)) {
           normalizedStatus = "paid";
         } else if (normalizedOriginal === "activity") {
           normalizedStatus = "activity";
@@ -250,6 +264,7 @@ export default function AttendancePage() {
       });
 
       setAttendanceData(modifiedData);
+      setCorrectionWarning(correctionsUnavailable ? 'Some attendance corrections could not be loaded. Totals may not include all approved requests.' : '');
       setNoDataMessage("");
 
       if (modifiedData.length === 0) {
@@ -300,7 +315,8 @@ export default function AttendancePage() {
             cached = page.content;
             requestsCacheRef.current.set(assignedEmployeeId, cached);
           }
-          const dayRequest = cached.find((r) => dateKeyOf(r.logDate) === date) ?? null;
+          const dayRequests = cached.filter((r) => dateKeyOf(r.logDate) === date).sort(approvalOrder).reverse();
+          const dayRequest = dayRequests.find((r) => r.status.toUpperCase() === 'APPROVED' && ['FULL_DAY', 'HALF_DAY'].includes(r.requestedStatus.toUpperCase())) ?? dayRequests[0] ?? null;
           setSelectedDayRequest(dayRequest);
         } catch {
           // 403 for scoped roles or missing contract — visits modal still opens with log case only
@@ -438,7 +454,7 @@ export default function AttendancePage() {
               <p className="whitespace-nowrap text-xs text-muted-foreground">Half Day</p>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-[3px] border border-purple-400 bg-purple-200 dark:border-purple-500 dark:bg-purple-900/40" />
+              <span className="h-2.5 w-2.5 rounded-[3px] border border-violet-400 bg-violet-100 dark:border-violet-400 dark:bg-violet-950/60" />
               <p className="whitespace-nowrap text-xs text-muted-foreground">Paid Leave</p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -450,6 +466,7 @@ export default function AttendancePage() {
       </section>
 
       {noDataMessage && !isLoading && filteredEmployees.length > 0 && attendanceData.length === 0 && <p className="mb-4 text-red-500">{noDataMessage}</p>}
+      {correctionWarning && !isLoading && <p role="alert" className="mb-4 text-sm text-amber-800 dark:text-amber-300">{correctionWarning}</p>}
 
       <div className="space-y-4">
         {isLoading ? (

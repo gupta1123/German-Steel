@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SpacedCalendar } from '@/components/ui/spaced-calendar';
 import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select2';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 const emptyForm = (): RetailPricingPayload => ({ competitorBrandId: 0, pricePerTon: 0, city: '', district: '', state: '', pinCode: '', observationDate: today(), remarks: null });
 

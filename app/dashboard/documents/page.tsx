@@ -27,7 +27,7 @@ type DocumentRow = {
 };
 
 const stringOf = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value.trim() : null;
-const isExpired = (expiry: string | null): boolean => !!expiry && expiry.slice(0, 10) < new Date().toISOString().slice(0, 10);
+const isExpired = (expiry: string | null): boolean => !!expiry && expiry.slice(0, 10) < new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const formatDay = (value: string | null): string | null => {
   if (!value) return null;
   const date = new Date(value.length === 10 ? `${value}T00:00:00` : value);

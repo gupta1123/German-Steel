@@ -40,11 +40,32 @@ export const getEmployeeRoleLabel = (role: unknown): string => {
   return fallback || 'Employee';
 };
 
+const FULL_ROLE_LABELS: Record<string, string> = {
+  RETAIL_FE: 'Field Executive (Retail)',
+  EMPANELMENT_FE: 'Field Executive (Institution)',
+  PROJECT_FE: 'Field Executive (Project)',
+  RETAIL_EMPANELMENT_FE: 'Field Executive (Retail + Institution)',
+  RETAIL_PROJECT_FE: 'Field Executive (Retail + Project)',
+  INSTITUTION_PROJECT_FE: 'Field Executive (Institution + Project)',
+  DUAL_FE: 'Field Executive (Retail + Institution + Project)',
+  ZONAL_SUPERVISOR: 'Zonal Supervisor',
+  MANAGER: 'Manager',
+  HO_ADMIN: 'Head Office Admin',
+};
+
+/** Exact role for display in lists; falls back to the broad label for unknown values. */
+export const getEmployeeFullRoleLabel = (role: unknown): string => {
+  const code = String(role ?? '').trim().toUpperCase().replace(/^ROLE[_\s-]+/, '').replace(/[\s-]+/g, '_');
+  return FULL_ROLE_LABELS[code] ?? getEmployeeRoleLabel(role);
+};
+
 export const isAdminEmployeeRole = (role: unknown) => getEmployeeRoleCategory(role) === 'admin';
 
 /** Match the employee form's option values, not their display labels. */
 export const getEmployeeRoleFormValue = (role: unknown): string => {
   const category = getEmployeeRoleCategory(role);
+  const normalized = String(role ?? '').trim().toUpperCase().replace(/^ROLE[_\s-]+/, '').replace(/[\s-]+/g, '_');
+  if (normalized === 'ZONAL_SUPERVISOR') return 'Supervisor';
   if (category === 'regional-manager') return 'Manager';
   if (category === 'field-officer') return 'Field Officer';
   // Do not silently reassign an unsupported or missing role.

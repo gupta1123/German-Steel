@@ -25,7 +25,7 @@ export function describeDayCase(
 ): DayCase {
   if (request) {
     const reqStatus = upper(request.status);
-    const requested = String(request.requestedStatus ?? '').trim() || '—';
+    const requested = String(request.requestedStatus ?? '').trim().replaceAll('_', ' ').toLowerCase() || '—';
     const actionBy = String(request.actionByEmployeeName ?? '').trim();
     if (reqStatus === 'PENDING') {
       return {
@@ -40,7 +40,7 @@ export function describeDayCase(
         kind: 'requested-approved',
         sourceLabel: 'Approved request',
         badgeClass: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15',
-        explainer: `Admin${actionBy ? ` (${actionBy})` : ''} approved ${requested}. Note: approval does not auto-rewrite the log — log still shows ${String(log?.attendanceStatus ?? '—')}.`,
+        explainer: `Admin${actionBy ? ` (${actionBy})` : ''} approved ${requested}. The attendance calendar and totals use this approved correction.`,
       };
     }
     if (reqStatus === 'REJECTED') {
@@ -86,7 +86,7 @@ export function describeDayCase(
     return {
       kind: 'manual',
       sourceLabel: 'Manual set',
-      badgeClass: 'bg-purple-50 text-purple-700 ring-purple-600/15',
+      badgeClass: 'bg-teal-50 text-teal-700 ring-teal-600/15',
       explainer: `Set directly (admin/self entry · ${visitText} · vehicle ${vehicle}).`,
     };
   }

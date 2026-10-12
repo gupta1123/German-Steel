@@ -153,6 +153,22 @@ export const attendanceRulesApi = {
       .sort((a, b) => a.employeeRole.localeCompare(b.employeeRole) || a.ruleName.localeCompare(b.ruleName));
   },
 
+  async createRule(token: string, rule: Omit<AttendanceRule, 'id'>): Promise<AttendanceRule> {
+    const response = await request('/api/hr/attendance/rules', token, {
+      method: 'POST',
+      body: JSON.stringify({
+        ruleName: rule.ruleName,
+        employeeRole: rule.employeeRole,
+        halfDayVisitCount: rule.halfDayVisitCount,
+        fullDayVisitCount: rule.fullDayVisitCount,
+        active: rule.active,
+      }),
+    });
+    const created = normalizeRule(response);
+    if (!created) throw new AttendanceRulesApiError('The rule was created but the server did not return it.', 500);
+    return created;
+  },
+
   async updateRule(token: string, rule: AttendanceRule): Promise<AttendanceRule> {
     const response = await request(`/api/hr/attendance/rules/${rule.id}`, token, {
       method: 'PUT',

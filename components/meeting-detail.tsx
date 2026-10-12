@@ -256,7 +256,7 @@ const statusBadgeClass = (status?: string) => {
     case "EXECUTED":
     case "EXPENSE_SUBMITTED":
     case "REPORT_SUBMITTED":
-      return "border-purple-200 bg-purple-50 text-purple-700";
+      return "border-teal-200 bg-teal-50 text-teal-700";
     case "CLOSED":
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "REJECTED":
@@ -1022,7 +1022,7 @@ const statusDotClass = (status?: string) => {
     case "EXECUTED":
     case "EXPENSE_SUBMITTED":
     case "REPORT_SUBMITTED":
-      return "bg-purple-500 shadow-purple-500/30";
+      return "bg-teal-500 shadow-teal-500/30";
     case "CLOSED":
       return "bg-emerald-500 shadow-emerald-500/30";
     case "REJECTED":
@@ -1141,7 +1141,7 @@ const getExpenseIndicatorClass = (head?: string) => {
   if (normalized.includes("gift")) return "bg-primary";
   if (normalized.includes("travel")) return "bg-sky-500";
   if (normalized.includes("venue")) return "bg-emerald-500";
-  if (normalized.includes("print") || normalized.includes("material")) return "bg-violet-500";
+  if (normalized.includes("print") || normalized.includes("material")) return "bg-teal-500";
   return "bg-muted-foreground";
 };
 

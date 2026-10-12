@@ -107,7 +107,7 @@ const normalizeApproval = (value: unknown): ApprovalRequest | null => {
     requestDate: stringOf(item.requestDate, item.request_date, item.createdAt) || new Date().toISOString(),
     requestedStatus: stringOf(item.requestedStatus, item.requested_status, item.attendance, item.attendanceStatus) || 'NOT_SPECIFIED',
     logDate: stringOf(item.logDate, item.log_date, item.attendanceDate) || stringOf(item.requestDate) || new Date().toISOString(),
-    actionDate: stringOf(item.actionDate, item.action_date) || null,
+    actionDate: stringOf(item.actionAt, item.actionDate, item.action_date) || null,
     status: stringOf(item.status) || 'PENDING',
     description: stringOf(item.description) || undefined,
     reason: stringOf(item.reason, item.description, item.remarks) || undefined,
