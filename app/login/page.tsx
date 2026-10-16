@@ -134,12 +134,12 @@ export default function LoginPage() {
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="rounded-2xl bg-white/95 px-4 py-3 shadow-2xl backdrop-blur-md dark:bg-white/90">
               <Image
-                src="/GermanTmtLogo.png"
+                src="/german-tmt-logo.png"
                 alt="German TMT logo"
-                width={1190}
-                height={388}
+                width={2095}
+                height={638}
                 className="h-auto w-[min(70vw,280px)] object-contain drop-shadow-sm"
-                priority
+                preload
               />
             </div>
           </div>

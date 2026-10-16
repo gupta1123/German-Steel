@@ -8,12 +8,12 @@ interface BrandLogoProps {
 export default function BrandLogo({ className, priority = false }: BrandLogoProps) {
   return (
     <Image
-      src="/GermanTmtLogo.png"
+      src="/german-tmt-logo.png"
       alt="German TMT"
-      width={1190}
-      height={388}
+      width={2095}
+      height={638}
       className={className}
-      priority={priority}
+      preload={priority}
       sizes="(min-width: 768px) 220px, 180px"
     />
   );
