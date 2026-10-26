@@ -96,7 +96,7 @@ const allSidebarCategories = [
     icon: Settings,
     items: [
       { name: "Settings", href: "/dashboard/settings", icon: Settings },
-      { name: "Attendance Requests", href: "/dashboard/approvals", icon: FileText },
+      { name: "Attendance Correction", href: "/dashboard/approvals", icon: FileText },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
     ]

@@ -128,7 +128,7 @@ export function EmployeeDetailView({ employee, managerName, teamName, regionName
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem asChild><Link href={`/dashboard/approvals?employee=${employee.id}`}><ShieldCheck />Attendance correction</Link></DropdownMenuItem>
+              <DropdownMenuItem asChild><Link href={`/dashboard/approvals?employee=${employee.id}`}><ShieldCheck />Attendance Correction</Link></DropdownMenuItem>
               {employee.email && <DropdownMenuItem asChild><a href={`mailto:${employee.email}`}><Mail />Send email</a></DropdownMenuItem>}
               {employee.mobile && <DropdownMenuItem asChild><a href={`tel:+${employee.mobile}`}><Phone />Call</a></DropdownMenuItem>}
             </DropdownMenuContent>

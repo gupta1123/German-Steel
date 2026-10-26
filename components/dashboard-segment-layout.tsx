@@ -90,7 +90,7 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
       subheading: "Track real-time employee locations"
     },
     "/dashboard/approvals": {
-      heading: "Attendance Requests",
+      heading: "Attendance Correction",
       subheading: "Review requests to correct employee attendance"
     },
     "/dashboard/projects": {
