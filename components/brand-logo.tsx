@@ -14,7 +14,7 @@ export default function BrandLogo({ className, priority = false }: BrandLogoProp
       height={638}
       className={className}
       preload={priority}
-      sizes="(min-width: 768px) 220px, 180px"
+      sizes="(min-width: 1280px) 240px, (min-width: 1024px) 232px, (min-width: 768px) 216px, 180px"
     />
   );
 }

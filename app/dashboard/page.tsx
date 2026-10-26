@@ -617,7 +617,7 @@ export default function DashboardPage() {
   useDashboardHeader({
     heading:
       view === "dashboard"
-        ? "Dashboard"
+        ? "Home"
         : view === "state"
           ? selectedState?.name || "Employees"
           : selectedEmployee?.name || "Employee details",

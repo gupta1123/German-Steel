@@ -18,7 +18,7 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
   // Define headings for each page
   const pageHeadings: Record<string, { heading: string; subheading?: string; backHref?: string }> = {
     "/dashboard": {
-      heading: "Dashboard",
+      heading: "Home",
       subheading: "Welcome to your sales dashboard"
     },
     "/dashboard/visits": {
@@ -58,19 +58,19 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
       subheading: "Track city-wise targets, achievements, and team member performance"
     },
     "/dashboard/customers": {
-      heading: "Retail Accounts",
+      heading: "Retail Customers",
       subheading: "Track and manage dealer and distributor accounts"
     },
     "/dashboard/groups": {
-      heading: "Client Groups",
-      subheading: "Group master — link branches of the same family or corporate group"
+      heading: "Customer Groups",
+      subheading: "Link branches that belong to the same customer or company"
     },
     "/dashboard/regions": {
       heading: "Sales Regions",
       subheading: "Manage sales regions, assigned districts and PIN mappings"
     },
     "/dashboard/employees": {
-      heading: "Employees",
+      heading: "Employees & Teams",
       subheading: "Manage employee information"
     },
     "/dashboard/enquiries": {
@@ -90,8 +90,8 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
       subheading: "Track real-time employee locations"
     },
     "/dashboard/approvals": {
-      heading: "Attendance correction",
-      subheading: "Review and manage attendance correction requests"
+      heading: "Attendance Requests",
+      subheading: "Review requests to correct employee attendance"
     },
     "/dashboard/projects": {
       heading: "Projects",
@@ -106,8 +106,12 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
       subheading: "Review and advance stage approvals"
     },
     "/dashboard/nc-register": {
-      heading: "NC Register",
-      subheading: "Track non-conformities and closures"
+      heading: "Compliance Issues",
+      subheading: "Track and resolve non-conformities (NCs) for institutions and projects"
+    },
+    "/dashboard/documents": {
+      heading: "Documents",
+      subheading: "Find and download uploaded documents"
     }
   };
 

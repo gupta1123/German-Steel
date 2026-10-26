@@ -53,7 +53,7 @@ export default function MoreNavSheet({
     };
   }, [isOpen]);
 
-  // Get all available navigation items (deduped by href — Overview and
+  // Get all available navigation items (deduped by href — Home and
   // Settings are hardcoded below AND present in sidebarCategories, which
   // previously produced duplicate React keys like `/dashboard/settings`).
   const getAllNavItems = () => {
@@ -62,7 +62,7 @@ export default function MoreNavSheet({
       href: string;
       icon: React.ComponentType<{className?: string}>;
     }> = [
-      { name: "Overview", href: "/dashboard", icon: Home }
+      { name: "Home", href: "/dashboard", icon: Home }
     ];
     const seen = new Set(items.map((item) => item.href));
 

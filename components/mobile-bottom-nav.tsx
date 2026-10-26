@@ -37,17 +37,17 @@ export default function MobileBottomNav({ sidebarCategories, isManager }: Mobile
   // Get mobile navigation items - prioritize most important ones
   const getMobileNavItems = () => {
     const items = [
-      { name: "Overview", href: "/dashboard", icon: Home }
+      { name: "Home", href: "/dashboard", icon: Home }
     ];
 
     // Add most important pages first
     const importantPages = [
       { name: "Visits", href: "/dashboard/visits", icon: Calendar },
-      { name: "Retail Accounts", href: "/dashboard/customers", icon: Users },
+      { name: "Retail Customers", href: "/dashboard/customers", icon: Users },
       { name: "Requirements", href: "/dashboard/requirements", icon: ClipboardList },
       { name: "Complaints", href: "/dashboard/complaints", icon: ThumbsUp },
       { name: "Pricing", href: "/dashboard/pricing", icon: Tag },
-      { name: "Attendance correction", href: "/dashboard/approvals", icon: FileText },
+      { name: "Attendance Requests", href: "/dashboard/approvals", icon: FileText },
     ];
 
     // Add important pages that are allowed for the current role
