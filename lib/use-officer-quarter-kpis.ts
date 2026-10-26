@@ -36,20 +36,38 @@ const APPROVALS = new Set(['NEW_APPROVALS', 'APPROVALS']);
  * Targets come from three list calls for the whole team; achieved values need one call per month, but only
  * for officers that actually have a target, so the request count stays small.
  */
-export function useOfficerQuarterKpis(token: string | null | undefined, month: number, year: number) {
+export function useOfficerQuarterKpis(
+  token: string | null | undefined,
+  month: number,
+  year: number,
+  employeeIds?: readonly number[],
+) {
   const [kpis, setKpis] = useState<Map<number, OfficerQuarterKpi>>(new Map());
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const quarter = quarterForMonth(month, year);
+  const scopedEmployeeIds = employeeIds == null
+    ? null
+    : [...new Set(employeeIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))].sort((a, b) => a - b);
+  const employeeScopeKey = scopedEmployeeIds == null ? 'all' : scopedEmployeeIds.join(',');
 
   useEffect(() => {
     if (!token) { setKpis(new Map()); return; }
+    if (scopedEmployeeIds && scopedEmployeeIds.length === 0) { setKpis(new Map()); setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
     (async () => {
       const months = quarterForMonth(month, year).months;
-      const targetLists = await Promise.allSettled(months.map((entry) => targetsApi.searchSalesTargets(token, {
+      // The saved-target list does not enforce hierarchy. Managers therefore request one employee at a time
+      // for their already-scoped directory; administrators may use the unfiltered team-wide request.
+      const targetRequests = months.flatMap((entry) => (
+        scopedEmployeeIds == null
+          ? [{ entry, employeeId: null as number | null }]
+          : scopedEmployeeIds.map((employeeId) => ({ entry, employeeId }))
+      ));
+      const targetLists = await Promise.allSettled(targetRequests.map(({ entry, employeeId }) => targetsApi.searchSalesTargets(token, {
         targetType: 'EMPLOYEE',
+        employeeId: employeeId ?? undefined,
         month: entry.month,
         year: entry.year,
       })));
@@ -57,8 +75,14 @@ export function useOfficerQuarterKpis(token: string | null | undefined, month: n
       const base = new Map<number, OfficerQuarterKpi>();
       targetLists.forEach((result, index) => {
         if (result.status !== 'fulfilled') return;
+        const request = targetRequests[index];
         result.value.forEach((target) => {
-          if (target.status.toUpperCase() === 'INACTIVE' || target.month !== months[index].month || (target.storeId !== 0 && target.storeId != null)) return;
+          if (
+            target.status.toUpperCase() === 'INACTIVE'
+            || target.month !== request.entry.month
+            || (request.employeeId != null && target.employeeId !== request.employeeId)
+            || (target.storeId !== 0 && target.storeId != null)
+          ) return;
           const metric = (target.metric ?? 'SALES_MT').toUpperCase();
           const entry = base.get(target.employeeId) ?? { salesTarget: 0, salesAchieved: 0, approvalsTarget: 0, approvalsAchieved: 0 };
           if (SALES.has(metric)) entry.salesTarget += target.targetTons;
@@ -87,7 +111,7 @@ export function useOfficerQuarterKpis(token: string | null | undefined, month: n
       .catch(() => { if (!cancelled) setKpis(new Map()); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [token, month, year, refreshKey]);
+  }, [token, month, year, employeeScopeKey, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { kpis, loading, quarter, refresh: () => setRefreshKey((value) => value + 1) };
 }

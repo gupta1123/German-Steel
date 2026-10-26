@@ -134,6 +134,7 @@ const normalizeEmployee = (value: unknown): EmployeeUserDto | null => {
   const id = numberOf(item.id, item.employeeId);
   if (id == null) return null;
   const user = recordOf(item.userDto) ?? recordOf(item.user);
+  const designation = recordOf(item.designation);
   const employeeCode = stringOf(item.employeeCode, item.code, item.employeeId);
   const firstName = stringOf(item.firstName, item.givenName);
   const lastName = stringOf(item.lastName, item.surname);
@@ -144,7 +145,7 @@ const normalizeEmployee = (value: unknown): EmployeeUserDto | null => {
     lastName,
     employeeId: employeeCode,
     email: stringOf(item.email),
-    role: stringOf(item.role, item.employeeRole, item.roleName),
+    role: stringOf(item.role, item.employeeRole, item.roleName, item.designationName, designation?.name, user?.role, user?.roles),
     departmentName: stringOf(item.departmentName, item.department),
     userName: stringOf(item.userName, item.username, user?.username),
     password: "",
@@ -306,14 +307,26 @@ const toCreatePayload = (payload: SalesTargetCreatePayload): Record<string, unkn
 };
 
 export const targetsApi = {
-  async getEmployees(token: string): Promise<EmployeeUserDto[]> {
+  async getEmployees(token: string, options: { managerId?: number } = {}): Promise<EmployeeUserDto[]> {
     return (await fetchAllPages(
-      (page) => `/api/common/employees?active=true&page=${page}&size=${PAGE_SIZE}`,
+      (page) => {
+        const query = new URLSearchParams({ active: "true", page: String(page), size: String(PAGE_SIZE) });
+        if (options.managerId != null) query.set("managerId", String(options.managerId));
+        return `/api/common/employees?${query}`;
+      },
       token,
     )).flatMap((value) => {
       const employee = normalizeEmployee(value);
       return employee ? [employee] : [];
     });
+  },
+
+  async getEmployee(token: string, employeeId: number): Promise<EmployeeUserDto> {
+    const response = await request(`/api/common/employees/${employeeId}`, token);
+    const source = sourceRecord(response);
+    const employee = normalizeEmployee(source && (source.id != null || source.employeeId != null) ? source : pageItems(response)[0]);
+    if (!employee) throw new TargetsApiError(`Employee ${employeeId} not found`, 404);
+    return employee;
   },
 
   async getStoresByEmployee(token: string, employeeId: number): Promise<StoreDto[]> {

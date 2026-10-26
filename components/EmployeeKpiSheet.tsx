@@ -66,6 +66,8 @@ interface EmployeeKpiSheetProps {
   onOpenChange: (open: boolean) => void;
   employeeId: number;
   employeeName: string;
+  employeeRoleLabel?: string;
+  readOnly?: boolean;
   /** Called after targets change so surrounding lists can refresh. */
   onChanged?: () => void;
 }
@@ -75,7 +77,15 @@ interface EmployeeKpiSheetProps {
  * Two views in the same panel: an overview of the quarter, and an edit/assign form for one KPI.
  * Targets are entered month by month but always shown as quarter totals.
  */
-export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, employeeName, onChanged }: EmployeeKpiSheetProps) {
+export default function EmployeeKpiSheet({
+  open,
+  onOpenChange,
+  employeeId,
+  employeeName,
+  employeeRoleLabel = 'Employee',
+  readOnly = false,
+  onChanged,
+}: EmployeeKpiSheetProps) {
   const { token } = useAuth();
   const now = new Date();
   const currentFy = fyStartOf(now);
@@ -171,6 +181,7 @@ export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, emplo
   };
 
   const openEditor = (metric: EmployeeKpiMetric) => {
+    if (readOnly) return;
     const values: Record<number, string> = {};
     let total = 0;
     let hasAny = false;
@@ -218,7 +229,7 @@ export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, emplo
   const enteredTotal = quarterMonths.reduce((sum, { month }) => sum + (Number(monthValues[month]) || 0), 0);
 
   const save = async () => {
-    if (!token) return;
+    if (!token || readOnly) return;
     const parsed = quarterMonths.map(({ month }) => ({ month, raw: (monthValues[month] ?? '').trim() }));
     for (const { raw } of parsed) {
       if (raw === '') continue;
@@ -266,7 +277,7 @@ export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, emplo
   };
 
   const deactivateQuarter = async (metric: EmployeeKpiMetric) => {
-    if (!token) return;
+    if (!token || readOnly) return;
     const label = kpiMeta(metric).label;
     if (!window.confirm(`Deactivate the ${label.toLowerCase()} targets for ${quarterLabel(quarter, fyStart)}?`)) return;
     try {
@@ -300,7 +311,9 @@ export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, emplo
           )}
           <SheetTitle className="text-base">{view === 'edit' ? `${formEditing ? 'Edit' : 'Assign'} ${meta.label.toLowerCase()} targets` : employeeName}</SheetTitle>
           <SheetDescription className="text-xs">
-            {view === 'edit' ? `${employeeName} · ${quarterLabel(quarter, fyStart)}` : 'Field officer · quarterly KPI targets'}
+            {view === 'edit'
+              ? `${employeeName} · ${quarterLabel(quarter, fyStart)}`
+              : `${employeeRoleLabel} · quarterly KPI targets${readOnly ? ' · view only' : ''}`}
           </SheetDescription>
         </SheetHeader>
 
@@ -348,7 +361,7 @@ export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, emplo
                           <h4 className="text-sm font-semibold leading-5">{kpi.label}</h4>
                           <p className="mt-0.5 text-xs text-muted-foreground">{kpi.description}</p>
                         </div>
-                        {hasTarget && (
+                        {hasTarget && !readOnly && (
                           <div className="flex shrink-0 gap-1">
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditor(kpi.value)} aria-label={`Edit ${kpi.label} targets`} title="Edit targets"><Pencil className="h-3.5 w-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => void deactivateQuarter(kpi.value)} aria-label={`Deactivate ${kpi.label} targets`} title="Deactivate targets"><Power className="h-3.5 w-3.5" /></Button>
@@ -359,7 +372,7 @@ export default function EmployeeKpiSheet({ open, onOpenChange, employeeId, emplo
                       {!hasTarget ? (
                         <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-3">
                           <p className="text-xs text-muted-foreground">No target set for this quarter.</p>
-                          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openEditor(kpi.value)}><Plus className="mr-1.5 h-3.5 w-3.5" />Assign</Button>
+                          {!readOnly && <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openEditor(kpi.value)}><Plus className="mr-1.5 h-3.5 w-3.5" />Assign</Button>}
                         </div>
                       ) : (
                         <div className="mt-4 space-y-3">

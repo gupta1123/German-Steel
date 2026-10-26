@@ -1,10 +1,33 @@
 import type { EmployeeUserDto, SalesTargetDto } from "./api";
 
+export type TargetRecipientType = "field_officer" | "manager";
+
+const normalizedTargetRole = (role: string | null | undefined) =>
+  role?.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/^role /, "").replace(/\s+/g, " ") ?? "";
+
 export const isTargetFieldOfficer = (employee: Pick<EmployeeUserDto, "role">) => {
-  const role = employee.role?.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/^role /, "");
+  const role = normalizedTargetRole(employee.role);
   // Every field executive role (RETAIL_FE, EMPANELMENT_FE, PROJECT_FE, RETAIL_EMPANELMENT_FE, RETAIL_PROJECT_FE, INSTITUTION_PROJECT_FE, DUAL_FE).
   return Boolean(role?.includes("field officer") || role?.endsWith(" fe"));
 };
+
+export const isTargetManager = (employee: Pick<EmployeeUserDto, "role">) => [
+  "manager",
+  "regional manager",
+  "office manager",
+  "zonal supervisor",
+].includes(normalizedTargetRole(employee.role));
+
+export const getTargetRecipientType = (
+  employee: Pick<EmployeeUserDto, "role">,
+): TargetRecipientType | null => {
+  if (isTargetManager(employee)) return "manager";
+  if (isTargetFieldOfficer(employee)) return "field_officer";
+  return null;
+};
+
+export const targetRecipientTypeLabel = (type: TargetRecipientType) =>
+  type === "manager" ? "Manager" : "Field officer";
 
 export const targetAchieved = (target: SalesTargetDto) =>
   Number(target.effectiveFulfilledTons ?? target.fulfilledTons ?? target.salesTons ?? 0) || 0;

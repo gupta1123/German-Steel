@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupOfficerTargets, isTargetFieldOfficer, summarizeTargets, targetAchieved } from '../lib/officer-targets.ts';
+import {
+  getTargetRecipientType,
+  groupOfficerTargets,
+  isTargetFieldOfficer,
+  isTargetManager,
+  summarizeTargets,
+  targetAchieved,
+  targetRecipientTypeLabel,
+} from '../lib/officer-targets.ts';
 
 const employees = [
   { id: 1, firstName: 'Bangalore', lastName: 'Officer', role: 'ROLE_FIELD_OFFICER', employeeId: 101 },
@@ -14,6 +22,19 @@ test('recognizes the new CRM field-officer roles', () => {
   assert.equal(isTargetFieldOfficer({ role: 'INSTITUTION_PROJECT_FE' }), true);
   assert.equal(isTargetFieldOfficer({ role: 'DUAL_FE' }), true);
   assert.equal(isTargetFieldOfficer({ role: 'ZONAL_SUPERVISOR' }), false);
+});
+
+test('recognizes managers as employee-target recipients without including admins', () => {
+  assert.equal(isTargetManager({ role: 'MANAGER' }), true);
+  assert.equal(isTargetManager({ role: 'ROLE_REGIONAL_MANAGER' }), true);
+  assert.equal(isTargetManager({ role: 'office manager' }), true);
+  assert.equal(isTargetManager({ role: 'ZONAL_SUPERVISOR' }), true);
+  assert.equal(isTargetManager({ role: 'HO_ADMIN' }), false);
+  assert.equal(getTargetRecipientType({ role: 'MANAGER' }), 'manager');
+  assert.equal(getTargetRecipientType({ role: 'RETAIL_PROJECT_FE' }), 'field_officer');
+  assert.equal(getTargetRecipientType({ role: 'HO_ADMIN' }), null);
+  assert.equal(targetRecipientTypeLabel('manager'), 'Manager');
+  assert.equal(targetRecipientTypeLabel('field_officer'), 'Field officer');
 });
 const target = (overrides = {}) => ({ id: 10, employeeId: 1, storeId: 42, targetTons: 10, effectiveFulfilledTons: 2, targetType: 'MONTHLY', month: 8, year: 2026, ...overrides });
 
