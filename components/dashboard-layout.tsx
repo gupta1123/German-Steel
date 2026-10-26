@@ -21,7 +21,8 @@ import {
   FolderOpen,
   CalendarCheck,
   Receipt,
-  ChartNoAxesCombined
+  ChartNoAxesCombined,
+  Target
 } from "lucide-react";
 import Link from "@/components/guarded-link";
 import { usePathname } from "next/navigation";
@@ -77,6 +78,7 @@ const allSidebarCategories = [
     icon: UserCheck,
     items: [
       { name: "Employees and teams", href: "/dashboard/employees", icon: User },
+      { name: "Targets", href: "/dashboard/settings/target", icon: Target },
       { name: "Attendance", href: "/dashboard/attendance", icon: CheckCircle },
       { name: "Expense Claims", href: "/dashboard/expenses", icon: Receipt },
     ]
@@ -113,7 +115,8 @@ const managerAllowedPages = [
   "/dashboard/meetings",
   "/dashboard/requirements",
   "/dashboard/pricing",
-  "/dashboard/approvals"
+  "/dashboard/approvals",
+  "/dashboard/settings/target"
 ];
 
 // Function to filter sidebar categories based on user role

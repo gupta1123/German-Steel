@@ -82,8 +82,8 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
       subheading: "Manage your organization settings and preferences"
     },
     "/dashboard/settings/target": {
-      heading: "Store Targets",
-      subheading: "Manage monthly and daily store sales targets and fulfilment"
+      heading: "Targets",
+      subheading: "View quarterly sales and approvals targets and employee progress"
     },
     "/dashboard/live-locations": {
       heading: "Live Locations",
@@ -178,7 +178,7 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
     }
 
     // Settings subpages: keep Settings heading with specific subheading
-    if (pathname.startsWith("/dashboard/settings/")) {
+    if (pathname.startsWith("/dashboard/settings/") && !pageHeadings[pathname]) {
       const sub = pathname.replace("/dashboard/settings/", "");
       const label = sub.charAt(0).toUpperCase() + sub.slice(1).replace(/-/g, ' ');
       return {
