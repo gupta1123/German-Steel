@@ -23,8 +23,8 @@ test('manager view loads the manager and their direct reports', () => {
   assert.ok(quarterKpis.includes('target.employeeId !== request.employeeId'));
 });
 
-test('admin directory offers manager and field-officer role filters', () => {
-  assert.ok(targetsPage.includes('<SelectItem value="manager">Managers</SelectItem>'));
+test('admin directory offers supervisor and field-officer role filters', () => {
+  assert.ok(targetsPage.includes('<SelectItem value="manager">Supervisors</SelectItem>'));
   assert.ok(targetsPage.includes('<SelectItem value="field_officer">Field officers</SelectItem>'));
   assert.ok(targetsPage.includes('getTargetRecipientType(employee)'));
 });

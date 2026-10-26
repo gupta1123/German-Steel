@@ -123,16 +123,14 @@ const managerAllowedPages = [
 const getFilteredSidebarCategories = (userRole: string | null, currentUser: CurrentUserDto | null) => {
   const isManager = hasManagerPrivileges(userRole, currentUser);
   
-  if (isManager) {
-    // For managers, filter categories to only show allowed pages
-    return allSidebarCategories.map(category => ({
-      ...category,
-      items: category.items.filter(item => item.disabled || managerAllowedPages.includes(item.href))
-    })).filter(category => category.items.length > 0); // Remove empty categories
-  }
-  
-  // For admin and other roles, show all categories
-  return allSidebarCategories;
+  // Managers use the direct Targets link; administrators access it in Settings.
+  return allSidebarCategories.map(category => ({
+    ...category,
+    items: category.items.filter(item => isManager
+      ? item.disabled || managerAllowedPages.includes(item.href)
+      : item.href !== "/dashboard/settings/target"
+    )
+  })).filter(category => category.items.length > 0);
 };
 
 export default function DashboardLayout({ 

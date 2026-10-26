@@ -202,12 +202,12 @@ export default function OfficerTargets() {
   const scopeLabel = selectedTeam
     ? selectedTeam.teamName
     : roleFilter === "manager"
-      ? "Managers"
+      ? "Supervisors"
       : roleFilter === "field_officer"
         ? "Field officers"
         : viewerIsManager
           ? "My targets and direct reports"
-          : "All managers and field officers";
+          : "All supervisors and field officers";
 
   const openOfficer = (id: number) => {
     setSelectedOfficerId(id);
@@ -237,7 +237,7 @@ export default function OfficerTargets() {
             <SelectTrigger className="h-9 w-[155px] text-xs" aria-label="Recipient role"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All roles</SelectItem>
-              <SelectItem value="manager">Managers</SelectItem>
+              <SelectItem value="manager">Supervisors</SelectItem>
               <SelectItem value="field_officer">Field officers</SelectItem>
             </SelectContent>
           </Select>
@@ -324,7 +324,7 @@ export default function OfficerTargets() {
           ) : visibleOfficers.length === 0 ? (
             <div className="space-y-2 p-10 text-center">
               <p className="font-medium">No target recipients found</p>
-              <p className="text-xs text-muted-foreground">{officerFilter || selectedTeam || roleFilter !== "all" ? "Clear the filters to see eligible employees." : "Add a manager or field officer to start assigning targets."}</p>
+              <p className="text-xs text-muted-foreground">{officerFilter || selectedTeam || roleFilter !== "all" ? "Clear the filters to see eligible employees." : "Add a supervisor or field officer to start assigning targets."}</p>
             </div>
           ) : (
             <>

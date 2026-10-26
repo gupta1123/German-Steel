@@ -33,7 +33,7 @@ test('recognizes managers as employee-target recipients without including admins
   assert.equal(getTargetRecipientType({ role: 'MANAGER' }), 'manager');
   assert.equal(getTargetRecipientType({ role: 'RETAIL_PROJECT_FE' }), 'field_officer');
   assert.equal(getTargetRecipientType({ role: 'HO_ADMIN' }), null);
-  assert.equal(targetRecipientTypeLabel('manager'), 'Manager');
+  assert.equal(targetRecipientTypeLabel('manager'), 'Supervisor');
   assert.equal(targetRecipientTypeLabel('field_officer'), 'Field officer');
 });
 const target = (overrides = {}) => ({ id: 10, employeeId: 1, storeId: 42, targetTons: 10, effectiveFulfilledTons: 2, targetType: 'MONTHLY', month: 8, year: 2026, ...overrides });

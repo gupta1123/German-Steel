@@ -27,7 +27,7 @@ export const getTargetRecipientType = (
 };
 
 export const targetRecipientTypeLabel = (type: TargetRecipientType) =>
-  type === "manager" ? "Manager" : "Field officer";
+  type === "manager" ? "Supervisor" : "Field officer";
 
 export const targetAchieved = (target: SalesTargetDto) =>
   Number(target.effectiveFulfilledTons ?? target.fulfilledTons ?? target.salesTons ?? 0) || 0;
