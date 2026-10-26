@@ -209,14 +209,14 @@ export default function DashboardLayout({
   };
 
   return (
-    <div className="min-h-screen w-full bg-background md:grid md:grid-cols-[248px_minmax(0,1fr)] lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]">
+    <div className="min-h-screen w-full bg-background md:grid md:grid-cols-[232px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,1fr)]">
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav sidebarCategories={sidebarCategories} isManager={isManager || false} />
 
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen min-w-0 border-r border-border bg-card md:block">
         <div className="flex h-full max-h-screen flex-col">
-          <div className="shrink-0 px-4 py-5">
+          <div className="shrink-0 px-4 py-4">
             <Link href="/dashboard" className="flex w-full min-w-0 items-center" aria-label="German Steels home">
               <BrandLogo className="h-auto w-full rounded-sm object-contain" priority />
             </Link>
