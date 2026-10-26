@@ -166,3 +166,50 @@ test('does not duplicate requests for same page', async () => {
     global.fetch = originalFetch;
   }
 });
+
+test('the full employee directory follows server pagination and excludes admins before list paging', async t => {
+  const { teamsApi } = await import('../lib/teams-api.ts');
+  const { getEmployeeListPage } = await import('../lib/employee-list.ts');
+  const records = Array.from({ length: 23 }, (_, i) => makeEmployee(i + 1));
+  records[0].role = 'HO_ADMIN';
+  records[4].role = 'ROLE_HO_ADMIN';
+  records[8].userDto = { roles: 'ROLE_ADMIN' };
+  const pages = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    const query = new URL(url).searchParams;
+    assert.equal(query.get('active'), 'true');
+    assert.equal(query.get('managerId'), '59', 'keep the manager scope on every request');
+    assert.equal(query.has('excludeAdmins'), false, 'admin exclusion is a frontend operation');
+    const page = Number(query.get('page'));
+    pages.push(page);
+    // The server may cap the requested size; use its page metadata, not the requested size.
+    return Response.json(mockEmployeesPage(page, 4, records.length, records.slice(page * 4, page * 4 + 4)));
+  });
+  const directory = await teamsApi.getEmployees('test-token', { active: true, managerId: 59, excludeAdmins: true });
+  assert.equal(directory.length, 20);
+  assert.deepEqual(pages.sort((a, b) => a - b), [0, 1, 2, 3, 4, 5]);
+  const first = getEmployeeListPage(directory, { pageSize: 10 });
+  const second = getEmployeeListPage(directory, { pageSize: 10, page: 2 });
+  assert.equal(first.content.length, 10);
+  assert.equal(second.content.length, 10);
+  assert.equal(first.totalElements, 20);
+  assert.equal(new Set([...first.content, ...second.content].map(row => row.id)).size, 20);
+});
+
+test('archived directories fetch every inactive page and fail rather than show partial totals', async t => {
+  const { teamsApi } = await import('../lib/teams-api.ts');
+  const fetchMock = t.mock.method(globalThis, 'fetch', async url => {
+    const query = new URL(url).searchParams;
+    assert.equal(query.get('active'), 'false');
+    const page = Number(query.get('page'));
+    return Response.json(mockEmployeesPage(page, 1, 3, [makeEmployee(page + 1, false)]));
+  });
+  const directory = await teamsApi.getEmployees('test-token', { active: false, excludeAdmins: true });
+  assert.equal(directory.length, 3);
+  assert.equal(directory.every(row => !row.active), true);
+  fetchMock.mock.mockImplementation(async url => {
+    if (new URL(url).searchParams.get('page') === '1') return Response.json({ message: 'Page failed' }, { status: 500 });
+    return Response.json(mockEmployeesPage(0, 1, 2, [makeEmployee(1, false)]));
+  });
+  await assert.rejects(teamsApi.getEmployees('test-token', { active: false }), /Page failed/);
+});

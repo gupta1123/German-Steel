@@ -5,7 +5,8 @@ const normalizeEmployeeRoleValue = (role: unknown) =>
     .trim()
     .toLowerCase()
     .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:employee )?role /, '');
 
 export const getEmployeeRoleCategory = (role: unknown): EmployeeRoleCategory => {
   const normalizedRole = normalizeEmployeeRoleValue(role);

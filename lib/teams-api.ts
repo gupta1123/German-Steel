@@ -1,5 +1,6 @@
 import { getApiErrorMessage } from './api-error.ts';
 import { toTitleCase } from './utils.ts';
+import { isAdminEmployee } from './employee-role.ts';
 
 const TEAMS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const PAGE_SIZE = 500;
@@ -332,13 +333,19 @@ export const teamsApi = {
     return normalized;
   },
 
-  // Legacy bulk fetch — kept for non-paginated consumers; new pages should use paginated variants below
-  async getEmployees(token: string): Promise<TeamEmployee[]> {
+  // Complete scoped directory for views that must exclude account roles before pagination.
+  async getEmployees(token: string, options: { active?: boolean; managerId?: number; excludeAdmins?: boolean } = {}): Promise<TeamEmployee[]> {
     return (await fetchAllPages(
-      (page) => `/api/common/employees?active=true&page=${page}&size=${PAGE_SIZE}`,
+      (page) => {
+        const params = new URLSearchParams({ active: String(options.active ?? true), page: String(page), size: String(PAGE_SIZE) });
+        if (options.managerId != null) params.set('managerId', String(options.managerId));
+        return `/api/common/employees?${params}`;
+      },
       token,
     )).flatMap((value) => {
       const employee = normalizeEmployee(value);
+      // Inspect linked account roles before normalization drops the account data.
+      if (options.excludeAdmins && isAdminEmployee({ role: employee?.role, userDto: recordOf(recordOf(value)?.userDto) })) return [];
       return employee ? [employee] : [];
     });
   },

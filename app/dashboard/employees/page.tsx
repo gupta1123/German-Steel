@@ -24,7 +24,8 @@ import { syncPageQuery } from "@/lib/page-query-sync";
 import { useAuth } from "@/components/auth-provider";
 import { isManagerRoleValue, normalizeRoleValue } from "@/lib/auth";
 import { getUniqueFieldOfficersFromTeams } from "@/lib/team-access";
-import { getEmployeeRoleCategory, getEmployeeRoleLabel, getEmployeeFullRoleLabel, isAdminEmployee } from "@/lib/employee-role";
+import { getEmployeeRoleLabel, getEmployeeFullRoleLabel } from "@/lib/employee-role";
+import { getEmployeeListPage } from "@/lib/employee-list";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useGuardedRouter, useUnsavedChanges } from "@/components/unsaved-changes-provider";
 import { toast } from "sonner";
@@ -115,10 +116,14 @@ function EmployeeList() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.json())
-      .then(data => {
-        const items = Array.isArray(data) ? data : (data as any).content || [];
+      .then((data: unknown) => {
+        const items: unknown[] = Array.isArray(data)
+          ? data
+          : data && typeof data === 'object' && 'content' in data && Array.isArray(data.content) ? data.content : [];
         const map = new Map<number, string>();
-        (items as any[]).forEach((r: any) => {
+        items.forEach(item => {
+          if (!item || typeof item !== 'object') return;
+          const r = item as Record<string, unknown>;
           const id = Number(r.id ?? r.regionId);
           const name = String(r.name ?? r.regionName ?? '').trim();
           if (Number.isFinite(id) && name) map.set(id, name);
@@ -137,8 +142,6 @@ function EmployeeList() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [totalElements, setTotalElements] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
   const [areFiltersVisible, setAreFiltersVisible] = useState(true);
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState(['name', 'email', 'city', 'state', 'role', 'department', 'dateOfJoining', 'mobile', 'assignedCity', 'actions']);
@@ -189,48 +192,25 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     setIsLoading(true);
     setError(null);
     try {
-      // Use new contract: GET /api/common/employees?active=true&page=0&size=50 with optional filters
-      const page = currentPage - 1;
-      const size = itemsPerPage;
-      const q = searchQuery.trim() || undefined;
-      // Map UI role filter to backend role enum; send only if actually selected
-      let role: string | undefined;
-      if (selectedRoleFilter === 'regional-manager') role = 'MANAGER';
-      else if (selectedRoleFilter === 'field-officer') role = 'RETAIL_FE';
-      const params: { active: boolean; page: number; size: number; q?: string; role?: string; managerId?: number } = {
-        active: true,
-        page,
-        size,
-        q,
-        role,
-      };
-      if (isManagerUser && employeeId) {
-        params.managerId = Number(employeeId);
-      }
-      // Remove empty filters per guide: send only filters that are actually selected
-      if (!q) delete (params as Record<string, unknown>).q;
-      if (!role) delete (params as Record<string, unknown>).role;
-      if (!params.managerId) delete (params as Record<string, unknown>).managerId;
-
+      // Backend totals include admin accounts. Load the scoped directory once,
+      // then filter, count, sort and paginate the same eligible employee set.
       const { teamsApi } = await import('@/lib/teams-api');
-      const result = await teamsApi.getEmployeesPage(token, params);
-      // Filter out admins client-side as extra safety; backend should already scope
-      const filtered = result.content.filter((u: unknown) => !isAdminEmployee(u as Parameters<typeof isAdminEmployee>[0])) as unknown as User[];
-      setUsers(filtered as User[]);
-      setTotalElements(result.totalElements);
-      setTotalPages(result.totalPages);
-      setAssignedCities(filtered.filter((u) => (u as User).city).map((u) => (u as User).city));
+      const result = await teamsApi.getEmployees(token, {
+        active: true,
+        managerId: isManagerUser && employeeId ? Number(employeeId) : undefined,
+        excludeAdmins: true,
+      });
+      setUsers(result as unknown as User[]);
+      setAssignedCities(result.filter(user => user.city).map(user => user.city));
       // Clear legacy teamData for non-legacy flow; keep for permission display if needed
       if (!isManagerUser) setTeamData(null);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'An unknown error occurred');
       setUsers([]);
-      setTotalElements(0);
-      setTotalPages(1);
     } finally {
       setIsLoading(false);
     }
-  }, [token, employeeId, isManagerUser, currentPage, itemsPerPage, searchQuery, selectedRoleFilter]);
+  }, [token, employeeId, isManagerUser]);
 
   // Hydrate filters/paging
   useEffect(() => {
@@ -313,10 +293,8 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     if (!token) return;
     try {
       const { teamsApi } = await import('@/lib/teams-api');
-      const result = await teamsApi.getEmployeesPage(token, { active: false, page: 0, size: 50, q: archiveSearchQuery.trim() || undefined });
-      // Filter out admins as extra safety
-      const filtered = (result.content as unknown as User[]).filter((u) => !isAdminEmployee(u as Parameters<typeof isAdminEmployee>[0]));
-      setArchivedEmployees(filtered as User[]);
+      const result = await teamsApi.getEmployees(token, { active: false, excludeAdmins: true });
+      setArchivedEmployees(result as unknown as User[]);
     } catch (error) {
       console.error('Error fetching archived employees:', error);
     }
@@ -526,6 +504,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   };
 
   const handleSort = (column: keyof User) => {
+    setCurrentPage(1);
     if (sortColumn === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -574,34 +553,25 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
     }, usernameDraftIsDirty);
   };
 
-  // With server pagination, users is already the page content filtered by q/role/managerId/active
-  // Keep only admin filter and sort client-side; do not re-filter by q/role
-  const filteredUsers = useMemo(() => {
-    return users.filter((user) => !isAdminEmployee(user));
-  }, [users]);
+  const employeePage = useMemo(() => getEmployeeListPage(users, {
+    query: searchQuery,
+    roleFilter: selectedRoleFilter,
+    sortColumn,
+    sortDirection,
+    page: currentPage,
+    pageSize: itemsPerPage,
+  }), [users, searchQuery, selectedRoleFilter, sortColumn, sortDirection, currentPage, itemsPerPage]);
+  const { content: currentUsers, totalElements, totalPages, page: visiblePage } = employeePage;
 
-  const sortedUsers = useMemo(() => {
-    return [...filteredUsers].sort((a, b) => {
-      const aVal = a[sortColumn] as unknown as string;
-      const bVal = b[sortColumn] as unknown as string;
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [filteredUsers, sortColumn, sortDirection]);
+  // A deletion, restored URL or filter change may leave the requested page out of range.
+  useEffect(() => {
+    if (isHydrated && !isLoading && currentPage !== visiblePage) setCurrentPage(visiblePage);
+  }, [isHydrated, isLoading, currentPage, visiblePage]);
 
-  const currentUsers = sortedUsers;
-
-
-  const filteredArchivedEmployees = useMemo(() => {
-    const filtered = archivedEmployees.filter((employee) => !isAdminEmployee(employee)).filter((employee) =>
-      `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
-      employee.role.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
-      employee.departmentName.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
-      employee.city.toLowerCase().includes(archiveSearchQuery.toLowerCase())
-    );
-    return filtered;
-  }, [archivedEmployees, archiveSearchQuery]);
+  const filteredArchivedEmployees = useMemo(() => getEmployeeListPage(archivedEmployees, {
+    query: archiveSearchQuery,
+    pageSize: Math.max(1, archivedEmployees.length),
+  }).content, [archivedEmployees, archiveSearchQuery]);
 
   return (
     <div className="mx-auto w-full max-w-none py-4">
@@ -624,7 +594,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                   className="h-8 bg-background pr-8 text-xs shadow-none"
                 />
                 {searchQuery && (
-                  <button type="button" onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 flex items-center pr-2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                  <button type="button" onClick={() => { setSearchQuery(''); setCurrentPage(1); }} className="absolute inset-y-0 right-0 flex items-center pr-2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
                     <XCircle className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -1016,8 +986,8 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Label htmlFor="pageSize" className="text-xs">Rows per page:</Label>
-              <Select value={itemsPerPage.toString()} onValueChange={(value) => setItemsPerPage(parseInt(value))}>
-                <SelectTrigger className="h-8 w-20 text-xs">
+              <Select value={itemsPerPage.toString()} onValueChange={(value) => { setItemsPerPage(Number(value)); setCurrentPage(1); }}>
+                <SelectTrigger id="pageSize" className="h-8 w-20 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1033,22 +1003,22 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(Math.max(1, visiblePage - 1))}
+                disabled={visiblePage === 1}
               >
                 <ChevronLeft className="h-4 w-4" />
                 <span className="hidden sm:inline">Previous</span>
               </Button>
               
               <span className="text-xs text-muted-foreground">
-                Page {currentPage} of {Math.max(totalPages, 1)} ({totalElements} total)
+                Page {visiblePage} of {totalPages} ({totalElements} total)
               </span>
               
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(Math.min(totalPages, visiblePage + 1))}
+                disabled={visiblePage >= totalPages}
               >
                 <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-4 w-4" />
