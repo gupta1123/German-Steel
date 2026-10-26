@@ -1,4 +1,4 @@
-import { getApiErrorMessage } from '@/lib/api-error';
+import { getApiErrorMessage } from './api-error.ts';
 
 const API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 const LOGIN_ENDPOINT = `${API_BASE_URL}/api/auth/login`;
@@ -13,7 +13,7 @@ export const normalizeRoleValue = (value: string | null | undefined): string | n
 };
 
 const simpleRole = (value: string | null | undefined): string => (
-  normalizeRoleValue(value)?.replace(/^ROLE[\s_-]+/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+  normalizeRoleValue(value)?.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').replace(/^(?:EMPLOYEE )?ROLE /, '').trim() ?? ''
 );
 
 export const isManagerRoleValue = (value: string | null | undefined): boolean => [
@@ -23,25 +23,18 @@ export const isManagerRoleValue = (value: string | null | undefined): boolean =>
   'ZONAL SUPERVISOR',
 ].includes(simpleRole(value));
 
-export const isFieldOfficerRoleValue = (value: string | null | undefined): boolean => {
-  // Field staff can be FIELD_OFFICER, RETAIL_FE, INSTITUTION_PROJECT_FE,
-  // DUAL_FE or the generic EMPLOYEE job role (with or without a ROLE_
-  // prefix). Generic Employee accounts are field staff for web-access
-  // purposes, so they are blocked from the web portal like Field Officers.
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^role\s+/, '');
-  return (
-    normalized.includes('field officer') ||
-    normalized === 'retail fe' ||
-    normalized === 'institution project fe' ||
-    normalized === 'dual fe' ||
-    normalized === 'employee'
-  );
-};
+// EMPLOYEE / ROLE_EMPLOYEE identifies the account type, not the employee's
+// job. Only an explicit field role should trigger the mobile-only restriction.
+export const isFieldOfficerRoleValue = (value: string | null | undefined): boolean => [
+  'FIELD OFFICER',
+  'RETAIL FE',
+  'EMPANELMENT FE',
+  'PROJECT FE',
+  'RETAIL EMPANELMENT FE',
+  'RETAIL PROJECT FE',
+  'INSTITUTION PROJECT FE',
+  'DUAL FE',
+].includes(simpleRole(value));
 
 export const isAdminSetupRoleValue = (value: string | null | undefined): boolean => [
   'ADMIN',
@@ -199,7 +192,7 @@ const roleListFrom = (profile: Record<string, unknown>, fallbackRole: string): s
       else { const authority = stringOf(objectOf(item)?.authority, objectOf(item)?.role, objectOf(item)?.name); if (authority) roles.push(authority) }
     });
   };
-  collect(profile.roles); collect(profile.role); collect(profile.userRole); collect(profile.authorities);
+  collect(profile.roles); collect(profile.role); collect(profile.userRole); collect(profile.employeeRole); collect(profile.authorities);
   if (roles.length === 0 && fallbackRole) roles.push(fallbackRole);
   return [...new Set(roles)];
 };
@@ -231,7 +224,11 @@ const normalizeProfile = (raw: unknown, username: string, fallbackRole: string) 
   const dedupedRoles = [...new Set(roles.filter(Boolean))];
   const rolesForUse = dedupedRoles.length > 0 ? dedupedRoles : [fallbackRole].filter(Boolean);
   const rolesFinal = rolesForUse.length > 0 ? rolesForUse : ['USER'];
-  const primaryRole = rolesFinal[0] ?? 'USER';
+  // Prefer a job role over generic account roles or permission scopes so the
+  // stored session and dashboard use the same role as the login access check.
+  const primaryRole = rolesFinal.find((role) => (
+    isManagerRoleValue(role) || isAdminSetupRoleValue(role) || isFieldOfficerRoleValue(role)
+  )) ?? rolesFinal[0] ?? 'USER';
   const employeeId = numberOf(profile.employeeId, employee.id) ?? 0;
   const firstName = stringOf(profile.firstName, employee.firstName);
   const lastName = stringOf(profile.lastName, employee.lastName);
