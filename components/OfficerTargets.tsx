@@ -158,6 +158,9 @@ export default function OfficerTargets() {
   }, [token, viewerIsManager]);
 
   const selectedTeam = useMemo(() => viewerIsManager ? null : teams.find((team) => String(team.id) === teamFilter) ?? null, [teams, teamFilter, viewerIsManager]);
+  const selectedTeamLabel = selectedTeam
+    ? `${selectedTeam.teamName}${selectedTeam.officeManagerName ? ` · ${selectedTeam.officeManagerName}` : ""}`
+    : "All teams";
   const teamMemberIds = useMemo(() => new Set([
     ...(selectedTeam?.employees ?? []).map((employee) => Number(employee.id)),
     ...(selectedTeam?.officeManagerId != null ? [Number(selectedTeam.officeManagerId)] : []),
@@ -240,18 +243,26 @@ export default function OfficerTargets() {
           </Select>
         </div>
         {!viewerIsManager && (
-          <div className="space-y-1.5">
+          <div className="w-full min-w-0 space-y-1.5 sm:w-[240px]">
             <Label className="text-xs">Team</Label>
             <Select value={teamFilter} onValueChange={(value) => { setTeamFilter(value); setOfficerFilter(""); }}>
-              <SelectTrigger className="h-9 w-[200px] text-xs" aria-label="Team"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectTrigger className="h-9 w-full min-w-0 overflow-hidden text-xs [&>[data-slot=select-value]]:min-w-0 [&>[data-slot=select-value]]:flex-1 [&>[data-slot=select-value]]:text-left" aria-label="Team" title={selectedTeamLabel}>
+                <SelectValue>
+                  <span className="block truncate">{selectedTeamLabel}</span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="max-w-[min(28rem,calc(100vw-2rem))]">
                 <SelectItem value="all">All teams</SelectItem>
-                {teams.map((team) => <SelectItem key={team.id} value={String(team.id)}>{team.teamName}{team.officeManagerName ? ` · ${team.officeManagerName}` : ""}</SelectItem>)}
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={String(team.id)} className="[&>span:last-child]:min-w-0">
+                    <span className="whitespace-normal break-words">{team.teamName}{team.officeManagerName ? ` · ${team.officeManagerName}` : ""}</span>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         )}
-        <div className="min-w-[220px] flex-1 space-y-1.5 sm:max-w-sm">
+        <div className="min-w-0 flex-1 basis-[220px] space-y-1.5 sm:max-w-sm">
           <Label htmlFor="targets-officer" className="text-xs">Employee</Label>
           <SearchableSelect
             triggerId="targets-officer"
