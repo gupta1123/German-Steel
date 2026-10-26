@@ -149,15 +149,15 @@ export default function OfficerTargets() {
   useEffect(() => { void loadDirectory(); }, [token, viewerEmployeeId, viewerIsManager]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || viewerIsManager) return;
     let cancelled = false;
     teamsApi.getTeams(token)
       .then((list) => { if (!cancelled) setTeams(list.filter((team) => team.active)); })
       .catch(() => { if (!cancelled) setTeams([]); });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, viewerIsManager]);
 
-  const selectedTeam = useMemo(() => teams.find((team) => String(team.id) === teamFilter) ?? null, [teams, teamFilter]);
+  const selectedTeam = useMemo(() => viewerIsManager ? null : teams.find((team) => String(team.id) === teamFilter) ?? null, [teams, teamFilter, viewerIsManager]);
   const teamMemberIds = useMemo(() => new Set([
     ...(selectedTeam?.employees ?? []).map((employee) => Number(employee.id)),
     ...(selectedTeam?.officeManagerId != null ? [Number(selectedTeam.officeManagerId)] : []),
@@ -239,16 +239,18 @@ export default function OfficerTargets() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Team</Label>
-          <Select value={teamFilter} onValueChange={(value) => { setTeamFilter(value); setOfficerFilter(""); }}>
-            <SelectTrigger className="h-9 w-[200px] text-xs" aria-label="Team"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All teams</SelectItem>
-              {teams.map((team) => <SelectItem key={team.id} value={String(team.id)}>{team.teamName}{team.officeManagerName ? ` · ${team.officeManagerName}` : ""}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        {!viewerIsManager && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Team</Label>
+            <Select value={teamFilter} onValueChange={(value) => { setTeamFilter(value); setOfficerFilter(""); }}>
+              <SelectTrigger className="h-9 w-[200px] text-xs" aria-label="Team"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All teams</SelectItem>
+                {teams.map((team) => <SelectItem key={team.id} value={String(team.id)}>{team.teamName}{team.officeManagerName ? ` · ${team.officeManagerName}` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="min-w-[220px] flex-1 space-y-1.5 sm:max-w-sm">
           <Label htmlFor="targets-officer" className="text-xs">Employee</Label>
           <SearchableSelect
