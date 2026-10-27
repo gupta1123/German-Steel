@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/components/auth-provider';
 import { isAdminSetupRoleValue, isManagerRoleValue } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-error';
+import { getDateOfBirthError, localDateInputValue } from '@/lib/contact-validation';
 import { buildRetailAccountPayload, createRetailAccountDraft, type RetailAccountDraft, validateRetailAccountDraft } from '@/lib/retail-account';
 import {
   RetailAPI,
@@ -103,6 +104,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   const [contactOpen, setContactOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<RetailContact | null>(null);
   const [contactForm, setContactForm] = useState<ContactForm>(emptyContact);
+  const contactDateOfBirthError = getDateOfBirthError(contactForm.dateOfBirth);
   const [noteOpen, setNoteOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<RetailNote | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -343,6 +345,8 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
 
   const saveContact = async () => {
     if (!token || !account) return;
+    const dateOfBirthError = getDateOfBirthError(contactForm.dateOfBirth);
+    if (dateOfBirthError) { toast.error(dateOfBirthError); return }
     if (!contactForm.firstName.trim() || !contactForm.lastName.trim() || !contactForm.designation.trim() || contactForm.mobile.replace(/\D/g, '').length !== 10) { toast.error('First name, last name, designation, and a 10-digit mobile number are required.'); return }
     const datesChanged = Boolean(editingContact && (contactForm.dateOfBirth !== editingContact.dateOfBirth.slice(0, 10) || contactForm.anniversaryDate !== editingContact.anniversaryDate.slice(0, 10)));
     if (datesChanged && (!editingContact?.contactInfluenceRegisterId || editingContact.contactInfluenceRegisterId <= 0)) { toast.error('The shared contact ID is missing. Reload the contact and try again.'); return }
@@ -894,7 +898,10 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
           <FormField label="Last name" required><Input disabled={Boolean(editingContact)} value={contactForm.lastName} onChange={(event) => setContactForm({ ...contactForm, lastName: event.target.value })} /></FormField>
           <FormField label="Mobile" required hint={editingContact ? undefined : '10-digit number'}><Input disabled={Boolean(editingContact)} inputMode="numeric" value={contactForm.mobile} onChange={(event) => setContactForm({ ...contactForm, mobile: event.target.value.replace(/\D/g, '').slice(0, 10) })} /></FormField>
           <FormField label="Email"><Input disabled={Boolean(editingContact)} type="email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} /></FormField>
-          <FormField label="Birthday (date of birth)" hint="Optional."><Input aria-label="Birthday (date of birth)" type="date" value={contactForm.dateOfBirth} onChange={(event) => setContactForm({ ...contactForm, dateOfBirth: event.target.value })} /></FormField>
+          <FormField label="Birthday (date of birth)" hint="Optional. Today or an earlier date.">
+            <Input aria-label="Birthday (date of birth)" type="date" max={localDateInputValue()} value={contactForm.dateOfBirth} aria-invalid={Boolean(contactDateOfBirthError)} aria-describedby={contactDateOfBirthError ? 'contact-birth-error' : undefined} onChange={(event) => setContactForm({ ...contactForm, dateOfBirth: event.target.value })} />
+            {contactDateOfBirthError && <p id="contact-birth-error" role="alert" className="text-xs text-destructive">{contactDateOfBirthError}</p>}
+          </FormField>
           <FormField label="Anniversary" hint="Optional."><Input aria-label="Anniversary" type="date" value={contactForm.anniversaryDate} onChange={(event) => setContactForm({ ...contactForm, anniversaryDate: event.target.value })} /></FormField>
         </FormGroup>
         <FormGroup title="Role at this account">

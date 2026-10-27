@@ -1,5 +1,6 @@
-import { getApiErrorMessage } from '@/lib/api-error';
-import { toTitleCase } from '@/lib/utils';
+import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
+import { getDateOfBirthError } from './contact-validation.ts';
 
 export const RETAIL_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -453,9 +454,15 @@ export const RetailAPI = {
   },
   async deleteAccount(accountId: number, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}`, token, { method: 'DELETE' }) },
   async updateMonthlySales(accountId: number, declaredMonthlySalesMt: number, changeReason: string, token: string): Promise<void> { await request(`/api/retail/accounts/${accountId}/monthly-sales`, token, json('PUT', { declaredMonthlySalesMt, changeReason })) },
-  async createMasterContact(payload: MasterContactCreatePayload, token: string): Promise<number> { return extractCreatedId(await request('/api/common/contacts', token, json('POST', payload)), ['id', 'contactId', 'contactInfluenceRegisterId']) },
+  async createMasterContact(payload: MasterContactCreatePayload, token: string): Promise<number> {
+    const dateOfBirthError = getDateOfBirthError(payload.dateOfBirth);
+    if (dateOfBirthError) throw new Error(dateOfBirthError);
+    return extractCreatedId(await request('/api/common/contacts', token, json('POST', payload)), ['id', 'contactId', 'contactInfluenceRegisterId']);
+  },
   async updateMasterContact(contactId: number, payload: MasterContactCreatePayload | Pick<MasterContactCreatePayload, 'dateOfBirth' | 'anniversaryDate'>, token: string): Promise<void> {
     if (!Number.isInteger(contactId) || contactId <= 0) throw new Error('The shared contact ID is missing. Reload the contact and try again.');
+    const dateOfBirthError = getDateOfBirthError(payload.dateOfBirth);
+    if (dateOfBirthError) throw new Error(dateOfBirthError);
     await request(`/api/common/contacts/${contactId}`, token, json('PUT', payload));
   },
   async linkContact(payload: RetailContactLinkPayload, token: string): Promise<void> { await request('/api/retail/contacts', token, json('POST', payload)) },

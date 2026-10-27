@@ -16,6 +16,7 @@ import {
 import { toast } from 'sonner';
 
 import { getErrorMessage } from '@/lib/api-error';
+import { getDateOfBirthError, localDateInputValue } from '@/lib/contact-validation';
 import { isManagerRoleValue } from '@/lib/auth';
 import {
   buildRetailAccountPayload,
@@ -137,6 +138,8 @@ const validateContacts = (contacts: ContactDraft[]): string[] => {
     if (contact.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) {
       errors.push(`${label}: enter a valid email address.`);
     }
+    const dateOfBirthError = getDateOfBirthError(contact.dateOfBirth);
+    if (dateOfBirthError) errors.push(`${label}: ${dateOfBirthError}`);
   });
 
   if (startedContacts.filter((contact) => contact.primaryContact).length !== 1) {
@@ -923,34 +926,40 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
             </TabsContent>
 
             <TabsContent value="contacts" className="m-0 space-y-4">
-              {contacts.map((contact, index) => (
-                <div key={contact.key} className="space-y-4 rounded-lg border p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium">Contact {index + 1}</p>
-                      <label className="mt-1 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                        <Checkbox checked={contact.primaryContact} onCheckedChange={(checked) => updateContact(contact.key, 'primaryContact', checked === true)} />
-                        Primary contact
-                      </label>
+              {contacts.map((contact, index) => {
+                const dateOfBirthError = getDateOfBirthError(contact.dateOfBirth);
+                return (
+                  <div key={contact.key} className="space-y-4 rounded-lg border p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">Contact {index + 1}</p>
+                        <label className="mt-1 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                          <Checkbox checked={contact.primaryContact} onCheckedChange={(checked) => updateContact(contact.key, 'primaryContact', checked === true)} />
+                          Primary contact
+                        </label>
+                      </div>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeContact(contact.key)} aria-label={`Remove contact ${index + 1}`}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeContact(contact.key)} aria-label={`Remove contact ${index + 1}`}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="First Name" required><Input value={contact.firstName} onChange={(event) => updateContact(contact.key, 'firstName', event.target.value)} /></Field>
+                      <Field label="Last Name"><Input value={contact.lastName} onChange={(event) => updateContact(contact.key, 'lastName', event.target.value)} /></Field>
+                      <Field label="Designation / Role" required><Input value={contact.designation} onChange={(event) => updateContact(contact.key, 'designation', event.target.value)} placeholder="e.g. Owner" /></Field>
+                      <Field label="Role Description"><Input value={contact.roleDescription} onChange={(event) => updateContact(contact.key, 'roleDescription', event.target.value)} placeholder="e.g. Primary purchase decision maker" /></Field>
+                      <Field label="Mobile Number" required>
+                        <Input value={contact.mobile} onChange={(event) => updateContact(contact.key, 'mobile', event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" />
+                      </Field>
+                      <Field label="Email Address"><Input type="email" value={contact.email} onChange={(event) => updateContact(contact.key, 'email', event.target.value)} /></Field>
+                      <Field label="Date of Birth" hint="Optional. Today or an earlier date.">
+                        <Input aria-label={`Contact ${index + 1} date of birth`} type="date" max={localDateInputValue()} value={contact.dateOfBirth} aria-invalid={Boolean(dateOfBirthError)} aria-describedby={dateOfBirthError ? `contact-${contact.key}-birth-error` : undefined} onChange={(event) => updateContact(contact.key, 'dateOfBirth', event.target.value)} />
+                        {dateOfBirthError && <p id={`contact-${contact.key}-birth-error`} role="alert" className="text-xs text-destructive">{dateOfBirthError}</p>}
+                      </Field>
+                      <Field label="Date of Anniversary"><Input type="date" value={contact.anniversaryDate} onChange={(event) => updateContact(contact.key, 'anniversaryDate', event.target.value)} /></Field>
+                    </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="First Name" required><Input value={contact.firstName} onChange={(event) => updateContact(contact.key, 'firstName', event.target.value)} /></Field>
-                    <Field label="Last Name"><Input value={contact.lastName} onChange={(event) => updateContact(contact.key, 'lastName', event.target.value)} /></Field>
-                    <Field label="Designation / Role" required><Input value={contact.designation} onChange={(event) => updateContact(contact.key, 'designation', event.target.value)} placeholder="e.g. Owner" /></Field>
-                    <Field label="Role Description"><Input value={contact.roleDescription} onChange={(event) => updateContact(contact.key, 'roleDescription', event.target.value)} placeholder="e.g. Primary purchase decision maker" /></Field>
-                    <Field label="Mobile Number" required>
-                      <Input value={contact.mobile} onChange={(event) => updateContact(contact.key, 'mobile', event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" />
-                    </Field>
-                    <Field label="Email Address"><Input type="email" value={contact.email} onChange={(event) => updateContact(contact.key, 'email', event.target.value)} /></Field>
-                    <Field label="Date of Birth"><Input type="date" value={contact.dateOfBirth} onChange={(event) => updateContact(contact.key, 'dateOfBirth', event.target.value)} /></Field>
-                    <Field label="Date of Anniversary"><Input type="date" value={contact.anniversaryDate} onChange={(event) => updateContact(contact.key, 'anniversaryDate', event.target.value)} /></Field>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               <Button type="button" variant="outline" onClick={addContact}><Plus className="mr-2 h-4 w-4" /> Add Another Contact</Button>
             </TabsContent>
 
