@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 
 import { useAuth } from '@/components/auth-provider';
+import TaskImages from '@/components/task-images';
 import InstitutionSales from '@/components/institution-sales';
 import { getErrorMessage } from '@/lib/api-error';
 import {
@@ -1328,6 +1329,7 @@ export default function InstitutionDetailPage() {
           {editingTask && <FormField label="Status"><Select value={taskForm.status} onValueChange={(v) => setTaskForm({ ...taskForm, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></FormField>}
           <FormField label="Description" className="sm:col-span-2"><Textarea rows={4} value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} placeholder="Optional details" /></FormField>
         </FormGroup>
+        {taskOpen && editingTask && <TaskImages key={editingTask.id} taskId={editingTask.id} />}
       </FormSheet>
 
       <FormSheet

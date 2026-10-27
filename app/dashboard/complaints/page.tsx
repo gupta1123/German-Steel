@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { format, subDays, addDays, differenceInDays, startOfMonth } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
+import TaskImages from '@/components/task-images';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { RetailAPI } from '@/lib/retail-api';
 import { tasksApi, type SharedTask, type SharedTaskPriority, type SharedTaskStatus } from '@/lib/tasks-api';
@@ -23,7 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pagination, PaginationContent, PaginationLink, PaginationItem, PaginationPrevious, PaginationNext } from '@/components/ui/pagination';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from '@/components/ui/sheet';
-import { CalendarIcon, MoreHorizontal, PlusCircle, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, Trash2, Calendar as CalendarIcon2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarIcon, MoreHorizontal, PlusCircle, Filter, Clock, User, Building, MapPin, AlertTriangle, CheckCircle, Loader, Trash2, ImageIcon, Calendar as CalendarIcon2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useGuardedRouter, useUnsavedChanges } from '@/components/unsaved-changes-provider';
 import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-error';
 import { toast } from 'sonner';
@@ -158,6 +159,7 @@ const Complaints = () => {
     const [expandedComplaint, setExpandedComplaint] = useState<number | null>(null);
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+    const [imageTask, setImageTask] = useState<Pick<Task, 'id' | 'taskTitle'> | null>(null);
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState<string>('');
     const [taskToUpdate, setTaskToUpdate] = useState<number | null>(null);
@@ -1115,6 +1117,9 @@ const Complaints = () => {
                                                 </Select>
                                             </div>
                                         </div>
+                                        <Button type="button" variant="outline" size="sm" className="h-8 w-full text-xs" onClick={() => setImageTask(task)}>
+                                            <ImageIcon className="mr-1.5 h-3.5 w-3.5" />View images
+                                        </Button>
                                     </CardContent>
                                 </Card>
                             </div>
@@ -1164,6 +1169,16 @@ const Complaints = () => {
                     </div>
                 </div>
             )}
+
+            <Dialog open={imageTask !== null} onOpenChange={(open) => { if (!open) setImageTask(null); }}>
+                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Complaint images</DialogTitle>
+                        <DialogDescription className="break-words">{imageTask?.taskTitle || 'Images attached to this complaint.'}</DialogDescription>
+                    </DialogHeader>
+                    {imageTask && <TaskImages key={imageTask.id} taskId={imageTask.id} />}
+                </DialogContent>
+            </Dialog>
 
             {/* Status Update Modal */}
             <Dialog
