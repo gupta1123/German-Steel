@@ -1,5 +1,6 @@
-﻿import { getApiErrorMessage } from '@/lib/api-error';
-import { toTitleCase } from '@/lib/utils';
+﻿import { getApiErrorMessage } from './api-error.ts';
+import { toTitleCase } from './utils.ts';
+import { getVisitTimeRangeError } from './visit-time-validation.ts';
 
 export const PROJECTS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -722,6 +723,8 @@ export const ProjectsAPI = {
     await request(`/api/tasks/${taskId}`, token, { method: 'DELETE' });
   },
   async planVisit(payload: { projectId: number; assignedEmployeeId: number; assignedByEmployeeId: number; scheduledVisitDate: string; scheduledStartTime: string; scheduledEndTime: string; purpose: string; description?: string | null; selfGenerated: boolean }, token: string): Promise<void> {
+    const timeError = getVisitTimeRangeError(payload.scheduledStartTime, payload.scheduledEndTime);
+    if (timeError) throw new Error(timeError);
     await request('/api/common/visits', token, { method: 'POST', body: JSON.stringify({
       visitType: 'PROJECT_SITE_VISIT',
       clientAccountId: null,

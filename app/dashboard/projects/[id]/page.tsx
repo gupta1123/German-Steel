@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 import { useAuth } from '@/components/auth-provider';
 import { getErrorMessage } from '@/lib/api-error';
+import { getVisitTimeRangeError } from '@/lib/visit-time-validation';
 import {
   ProjectsAPI,
   type ProjectStage,
@@ -107,6 +108,7 @@ export default function ProjectDetailPage() {
   const [saleForm, setSaleForm] = useState({ saleDate: today(), quantityMt: '', outcomeStatus: 'WIN' as 'WIN' | 'LOST', poDate: today(), poNumber: '', invoiceReference: '', lossReason: '' });
   const [visitOpen, setVisitOpen] = useState(false);
   const [visitForm, setVisitForm] = useState({ employeeId: '', date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), startTime: '10:00', endTime: '10:30', purpose: '', description: '', selfGenerated: true });
+  const visitTimeError = getVisitTimeRangeError(visitForm.startTime, visitForm.endTime);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const employeeOptions: SearchableOption[] = useMemo(() => employees.map(e => ({ value: String(e.id), label: [e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}` })), [employees]);
@@ -348,6 +350,8 @@ export default function ProjectDetailPage() {
 
   const planVisit = async () => {
     if (!token || !project) return;
+    const timeError = getVisitTimeRangeError(visitForm.startTime, visitForm.endTime);
+    if (timeError) { toast.error(timeError); return }
     const assigned = Number(visitForm.employeeId);
     if (!assigned || !visitForm.date || !visitForm.purpose.trim()) { toast.error('Employee, visit date, and purpose are required.'); return }
     setBusy(true);
@@ -1211,12 +1215,15 @@ export default function ProjectDetailPage() {
         onSubmit={() => void planVisit()}
         submitLabel="Plan visit"
         submitting={busy}
+        submitDisabled={Boolean(visitTimeError)}
+        submitTitle={visitTimeError || undefined}
       >
         <FormGroup title="When and who">
           <FormField label="Assigned employee" required className="sm:col-span-2"><SearchableSelect options={employeeOptions} value={visitForm.employeeId || undefined} onSelect={(option) => setVisitForm({ ...visitForm, employeeId: option?.value || '' })} placeholder="Choose employee" searchPlaceholder="Search employees..." triggerClassName="h-9 w-full overflow-hidden text-xs" /></FormField>
           <FormField label="Visit date" required className="sm:col-span-2"><Input type="date" value={visitForm.date} onChange={(e) => setVisitForm({ ...visitForm, date: e.target.value })} /></FormField>
-          <FormField label="Start time"><Input type="time" value={visitForm.startTime} onChange={(e) => setVisitForm({ ...visitForm, startTime: e.target.value })} /></FormField>
-          <FormField label="End time"><Input type="time" value={visitForm.endTime} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></FormField>
+          <FormField label="Start time" required><Input aria-label="Start time" type="time" required value={visitForm.startTime} aria-invalid={Boolean(visitTimeError)} aria-describedby={visitTimeError ? 'project-visit-time-error' : undefined} onChange={(e) => setVisitForm({ ...visitForm, startTime: e.target.value })} /></FormField>
+          <FormField label="End time" required hint="Must be later than the start time."><Input aria-label="End time" type="time" required min={visitForm.startTime || undefined} value={visitForm.endTime} aria-invalid={Boolean(visitTimeError)} aria-describedby={visitTimeError ? 'project-visit-time-error' : undefined} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></FormField>
+          {visitTimeError && <p id="project-visit-time-error" role="alert" className="text-xs text-destructive sm:col-span-2">{visitTimeError}</p>}
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
           <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
