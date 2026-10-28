@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/components/auth-provider';
 import { getErrorMessage } from '@/lib/api-error';
 import { getVisitTimeRangeError } from '@/lib/visit-time-validation';
+import { getNcDateError } from '@/lib/nc-date-validation';
 import {
   ProjectsAPI,
   type ProjectStage,
@@ -126,6 +127,7 @@ export default function ProjectDetailPage() {
 
   const [ncOpen, setNcOpen] = useState(false);
   const [ncForm, setNcForm] = useState<{ description: string; raisedDate: string; raisedByOfficialText: string; targetClosureDate: string; status: NcStatus; responsibleEmployeeId: string }>({ description: '', raisedDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10), raisedByOfficialText: '', targetClosureDate: '', status: 'OPEN', responsibleEmployeeId: '' });
+  const ncDateError = getNcDateError(ncForm.raisedDate, ncForm.targetClosureDate);
   const [ncBusyId, setNcBusyId] = useState<number | null>(null);
   const [submitNc, setSubmitNc] = useState<ProjectNcRegister | null>(null);
   const [submitText, setSubmitText] = useState('');
@@ -455,6 +457,8 @@ export default function ProjectDetailPage() {
   const createNc = async () => {
     if (!token || !project) return;
     if (hasClosedNc) { toast.error('This project already completed its NC lifecycle. Another NC cannot be raised.'); return }
+    const dateError = getNcDateError(ncForm.raisedDate, ncForm.targetClosureDate);
+    if (dateError) { toast.error(dateError); return }
     if (!ncForm.description.trim()) { toast.error('NC description is required.'); return }
     setBusy(true);
     try {
@@ -1129,13 +1133,16 @@ export default function ProjectDetailPage() {
         onSubmit={() => void createNc()}
         submitLabel="Raise NC"
         submitting={busy}
+        submitDisabled={Boolean(ncDateError)}
+        submitTitle={ncDateError || undefined}
       >
         <FormGroup columns={1}>
           <FormField label="Description" required><Textarea rows={4} value={ncForm.description} onChange={(e) => setNcForm({ ...ncForm, description: e.target.value })} placeholder="Describe the non-conformity" /></FormField>
         </FormGroup>
         <FormGroup title="Details">
-          <FormField label="Raised date" required><Input type="date" value={ncForm.raisedDate} onChange={(e) => setNcForm({ ...ncForm, raisedDate: e.target.value })} /></FormField>
-          <FormField label="Target closure date"><Input type="date" value={ncForm.targetClosureDate} onChange={(e) => setNcForm({ ...ncForm, targetClosureDate: e.target.value })} /></FormField>
+          <FormField label="Raised date" required><Input aria-label="Raised date" type="date" required value={ncForm.raisedDate} aria-invalid={Boolean(ncDateError)} aria-describedby={ncDateError ? 'project-nc-date-error' : undefined} onChange={(e) => setNcForm({ ...ncForm, raisedDate: e.target.value })} /></FormField>
+          <FormField label="Target closure date" hint="Optional. On or after the raised date."><Input aria-label="Target closure date" type="date" min={ncForm.raisedDate || undefined} value={ncForm.targetClosureDate} aria-invalid={Boolean(ncDateError)} aria-describedby={ncDateError ? 'project-nc-date-error' : undefined} onChange={(e) => setNcForm({ ...ncForm, targetClosureDate: e.target.value })} /></FormField>
+          {ncDateError && <p id="project-nc-date-error" role="alert" className="text-xs text-destructive sm:col-span-2">{ncDateError}</p>}
           <FormField label="Raised by (official)"><Input value={ncForm.raisedByOfficialText} onChange={(e) => setNcForm({ ...ncForm, raisedByOfficialText: e.target.value })} placeholder="e.g. Consultant QA" /></FormField>
           <FormField label="Responsible employee"><Select value={ncForm.responsibleEmployeeId} onValueChange={(v) => setNcForm({ ...ncForm, responsibleEmployeeId: v })}><SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger><SelectContent>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}</SelectContent></Select></FormField>
         </FormGroup>

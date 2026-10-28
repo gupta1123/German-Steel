@@ -1,6 +1,7 @@
 ﻿import { getApiErrorMessage } from './api-error.ts';
 import { toTitleCase } from './utils.ts';
 import { getVisitTimeRangeError } from './visit-time-validation.ts';
+import { getNcDateError } from './nc-date-validation.ts';
 
 export const PROJECTS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -657,6 +658,8 @@ export const ProjectsAPI = {
     return pageItems(res).flatMap((v) => { const n = normalizeNcRegister(v); return n ? [n] : []; });
   },
   async createNc(payload: ProjectNcCreatePayload, token: string): Promise<number> {
+    const dateError = getNcDateError(payload.raisedDate, payload.targetClosureDate);
+    if (dateError) throw new Error(dateError);
     const body = await request('/api/projects/nc', token, { method: 'POST', body: JSON.stringify(payload) });
     return extractCreatedId(body);
   },
