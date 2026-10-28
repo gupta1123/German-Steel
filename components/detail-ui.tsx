@@ -1,9 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Circle, CircleDot, Edit3, Inbox, Loader2, Paperclip, Trash2, Upload, User, XCircle, type LucideIcon } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Circle, CircleDot, Edit3, ImageIcon, Inbox, Loader2, Paperclip, Trash2, Upload, User, XCircle, type LucideIcon } from 'lucide-react';
+import TaskImages from '@/components/task-images';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -493,8 +495,9 @@ export function VisitList<T extends VisitLike>({ visits, assignee, onOpen }: { v
 
 export interface TaskLike { id: number; title: string; description?: string | null; status: string; priority: string; dueDate: string }
 
-/** Tasks grouped into Open and Completed/Cancelled with status icon, priority and due date. */
+/** Tasks grouped by status, with direct image viewing separate from editing. */
 export function TaskList<T extends TaskLike>({ tasks, assignee, onEdit, onDelete, busy }: { tasks: T[]; assignee: (task: T) => string; onEdit: (task: T) => void; onDelete: (task: T) => void; busy?: boolean }) {
+  const [imageTask, setImageTask] = React.useState<T | null>(null);
   const open = tasks.filter(isOpenTask).sort((left, right) => String(left.dueDate).localeCompare(String(right.dueDate)));
   const closed = tasks.filter((task) => !isOpenTask(task)).sort((left, right) => String(right.dueDate).localeCompare(String(left.dueDate)));
   return (
@@ -507,7 +510,7 @@ export function TaskList<T extends TaskLike>({ tasks, assignee, onEdit, onDelete
               const overdue = isOverdue(task);
               const StatusIcon = task.status === 'COMPLETED' ? CheckCircle2 : task.status === 'CANCELLED' ? XCircle : task.status === 'IN_PROGRESS' ? CircleDot : Circle;
               return (
-                <li key={task.id} className="flex items-start gap-3 px-4 py-2.5">
+                <li key={task.id} className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-3 gap-y-2 px-4 py-2.5 sm:flex sm:items-start sm:gap-3">
                   <StatusIcon className={cn('mt-0.5 h-4 w-4 shrink-0', task.status === 'COMPLETED' ? 'text-emerald-600' : task.status === 'IN_PROGRESS' ? 'text-sky-600' : 'text-muted-foreground')} aria-label={titleCase(task.status)} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -521,7 +524,8 @@ export function TaskList<T extends TaskLike>({ tasks, assignee, onEdit, onDelete
                       <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />{assignee(task)}</span>
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
+                  <div className="col-start-2 flex shrink-0 items-center justify-end gap-0.5 sm:ml-auto">
+                    <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => setImageTask(task)} aria-label={`View images for ${task.title || `Task #${task.id}`}`} title="View task images"><ImageIcon className="mr-1.5 h-3.5 w-3.5" />View images</Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onEdit(task)} aria-label="Edit task" title="Edit task"><Edit3 className="h-3.5 w-3.5" /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(task)} disabled={busy} aria-label="Delete task" title="Delete task"><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
@@ -531,6 +535,15 @@ export function TaskList<T extends TaskLike>({ tasks, assignee, onEdit, onDelete
           </ul>
         </div>
       ))}
+      <Dialog open={imageTask !== null} onOpenChange={(visible) => { if (!visible) setImageTask(null); }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Task images</DialogTitle>
+            <DialogDescription className="break-words">{imageTask?.title || 'Images attached to this task.'}</DialogDescription>
+          </DialogHeader>
+          {imageTask && <TaskImages key={imageTask.id} taskId={imageTask.id} />}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

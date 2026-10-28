@@ -131,10 +131,18 @@ test('even a directly supplied cross-origin image URL is rejected before downloa
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
-test('all account task editors show the read-only gallery only for existing, open tasks', () => {
+test('all account task lists expose image viewing separately from their edit forms', () => {
   for (const file of ['components/customer-detail-page.tsx', 'app/dashboard/institutions/[id]/page.tsx', 'app/dashboard/projects/[id]/page.tsx']) {
-    assert.match(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), /taskOpen && editingTask && <TaskImages key=\{editingTask.id\} taskId=\{editingTask.id\}/, file);
+    const content = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    assert.match(content, /<TaskList tasks=\{tasks\}/, file);
+    assert.doesNotMatch(content, /<TaskImages\b/, 'The image gallery must not require opening the edit form');
   }
+  const taskList = fs.readFileSync(new URL('../components/detail-ui.tsx', import.meta.url), 'utf8').split('export function TaskList')[1].split('export const taskSummary')[0];
+  assert.match(taskList, /onClick=\{\(\) => setImageTask\(task\)\}/);
+  assert.match(taskList, /View images for/);
+  assert.match(taskList, /imageTask && <TaskImages key=\{imageTask.id\} taskId=\{imageTask.id\}/);
+  assert.match(taskList, /Completed and cancelled/);
+  assert.doesNotMatch(taskList, /imageCount\s*[>=]/, 'Viewing must remain available when list DTOs omit image counts');
   const complaints = fs.readFileSync(new URL('../app/dashboard/complaints/page.tsx', import.meta.url), 'utf8');
   assert.match(complaints, /onClick=\{\(\) => setImageTask\(task\)\}/);
   assert.match(complaints, /View images/);

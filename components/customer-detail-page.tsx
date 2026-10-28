@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 
 
 import { useAuth } from '@/components/auth-provider';
-import TaskImages from '@/components/task-images';
 import { isAdminSetupRoleValue, isManagerRoleValue } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-error';
 import { getDateOfBirthError, localDateInputValue } from '@/lib/contact-validation';
@@ -989,7 +988,6 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
           {editingTask && <FormField label="Status"><Select value={taskForm.status} onValueChange={(value) => setTaskForm({ ...taskForm, status: value as RetailTask['status'] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="OPEN">Open</SelectItem><SelectItem value="IN_PROGRESS">In progress</SelectItem><SelectItem value="COMPLETED">Completed</SelectItem><SelectItem value="CANCELLED">Cancelled</SelectItem></SelectContent></Select></FormField>}
           <FormField label="Description" className="sm:col-span-2"><Textarea rows={4} value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} placeholder="Optional details" /></FormField>
         </FormGroup>
-        {taskOpen && editingTask && <TaskImages key={editingTask.id} taskId={editingTask.id} />}
       </FormSheet>
 
       <FormSheet
