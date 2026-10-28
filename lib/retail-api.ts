@@ -26,6 +26,19 @@ export interface RetailPricing { id: number; competitorBrandId: number; brandNam
 export interface RetailPricingPayload { competitorBrandId: number; pricePerTon: number; city: string; district: string; state: string; pinCode: string; observationDate: string; remarks: string | null }
 export interface RetailPricingSummary { competitorBrandId: number; brandName: string; city: string | null; avgPrice: number; minPrice: number; maxPrice: number; count: number }
 
+export const resolvePricingOfficerName = (
+  pricing: Pick<RetailPricing, 'createdByEmployeeId' | 'createdByEmployeeName'>,
+  employees: readonly Pick<RetailEmployee, 'id' | 'firstName' | 'lastName'>[],
+): string => {
+  const suppliedName = pricing.createdByEmployeeName.trim();
+  if (suppliedName) return toTitleCase(suppliedName);
+  const employee = employees.find((candidate) => candidate.id === pricing.createdByEmployeeId);
+  const directoryName = employee ? [employee.firstName.trim(), employee.lastName.trim()].filter(Boolean).join(' ') : '';
+  if (directoryName) return toTitleCase(directoryName);
+  // Never substitute the selected filter or signed-in user for the record's author.
+  return pricing.createdByEmployeeId != null ? `Employee #${pricing.createdByEmployeeId}` : '—';
+};
+
 export type RetailAccountStatus = 'PROSPECT' | 'ACTIVE' | 'DORMANT' | 'LOST';
 export type RetailClientType = 'DEALER' | 'DISTRIBUTOR';
 export type RetailFocusSector = 'RETAIL' | 'GOVERNMENT_PROJECTS' | 'DEVELOPER_PROJECTS' | 'ALL_SECTORS';
@@ -521,7 +534,14 @@ export const RetailAPI = {
   async getPricing(token: string, options: { page?: number; size?: number; from?: string; to?: string; competitorBrandId?: number; city?: string; assignedEmployeeId?: number } = {}): Promise<ApiPage<RetailPricing>> {
     const page = options.page ?? 0; const size = options.size ?? 50;
     const response = await request(`/api/retail/pricing${queryString({ ...options, page, size })}`, token);
-    const items = pageItems(response).flatMap((value) => { const item = recordOf(value); const id = numberOf(item?.id); if (id == null || !item) return []; return [{ id, competitorBrandId: numberOf(item.competitorBrandId) ?? 0, brandName: stringOf(item.brandName), pricePerTon: numberOf(item.pricePerTon) ?? 0, city: stringOf(item.city), district: stringOf(item.district) || null, state: stringOf(item.state), pinCode: stringOf(item.pinCode), regionId: numberOf(item.regionId), regionCode: stringOf(item.regionCode) || null, regionName: stringOf(item.regionName) || null, observationDate: stringOf(item.observationDate), remarks: stringOf(item.remarks) || null, createdByEmployeeId: numberOf(item.createdByEmployeeId), createdByEmployeeName: stringOf(item.createdByEmployeeName), createdAt: stringOf(item.createdAt), active: booleanOf(true, item.active) }]; });
+    const items = pageItems(response).flatMap((value) => {
+      const item = recordOf(value); const id = numberOf(item?.id); if (id == null || !item) return [];
+      const creatorId = numberOf(item.createdByEmployeeId);
+      const employeeId = numberOf(item.employeeId);
+      // Older pricing responses use employeeId/employeeName for the creator.
+      const employeeName = creatorId == null || employeeId == null || creatorId === employeeId ? item.employeeName : undefined;
+      return [{ id, competitorBrandId: numberOf(item.competitorBrandId) ?? 0, brandName: stringOf(item.brandName), pricePerTon: numberOf(item.pricePerTon) ?? 0, city: stringOf(item.city), district: stringOf(item.district) || null, state: stringOf(item.state), pinCode: stringOf(item.pinCode), regionId: numberOf(item.regionId), regionCode: stringOf(item.regionCode) || null, regionName: stringOf(item.regionName) || null, observationDate: stringOf(item.observationDate), remarks: stringOf(item.remarks) || null, createdByEmployeeId: creatorId ?? employeeId, createdByEmployeeName: toTitleCase(stringOf(item.createdByEmployeeName, employeeName)), createdAt: stringOf(item.createdAt), active: booleanOf(true, item.active) }];
+    });
     return pageOf(response, items, page, size);
   },
   async getPricingSummary(token: string, options: { from?: string; to?: string; city?: string; groupBy?: 'brand' | 'city' } = {}): Promise<RetailPricingSummary[]> {
