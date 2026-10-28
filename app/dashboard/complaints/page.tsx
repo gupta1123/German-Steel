@@ -7,6 +7,7 @@ import TaskImages from '@/components/task-images';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { RetailAPI } from '@/lib/retail-api';
 import { tasksApi, type SharedTask, type SharedTaskPriority, type SharedTaskStatus } from '@/lib/tasks-api';
+import { getTaskRelatedRecord, type TaskRelatedRecord } from '@/lib/task-related-record';
 import { getCorrectedRoleFlags } from '@/lib/auth';
 import { getEmployeeRoleCategory } from '@/lib/employee-role';
 import { sortBy } from 'lodash';
@@ -44,6 +45,7 @@ interface Task {
     storeName: string;
     storeCity: string;
     taskType: string;
+    relatedRecord?: TaskRelatedRecord | null;
 }
 
 interface Employee {
@@ -108,6 +110,7 @@ const toComplaintTask = (task: SharedTask): Task => ({
     storeName: task.clientAccountName || (task.clientAccountId ? `Store #${task.clientAccountId}` : task.projectId ? `Project #${task.projectId}` : task.institutionId ? `Institution #${task.institutionId}` : ''),
     storeCity: task.clientAccountCity,
     taskType: task.taskType || 'COMPLAINT',
+    relatedRecord: getTaskRelatedRecord(task),
 });
 
 const Complaints = () => {
@@ -246,11 +249,15 @@ const Complaints = () => {
         setFilters(newFilters);
     };
 
-    const handleViewStore = (storeId: number) => {
+    const handleViewRelatedRecord = (task: Task) => {
+        if (!task.relatedRecord) {
+            toast.error('No linked record is available for this complaint.');
+            return;
+        }
         try {
             sessionStorage.setItem('nav.return.to', JSON.stringify({ page: 'complaints' }));
         } catch {}
-        router.push(`/dashboard/customers/${storeId}`);
+        router.push(task.relatedRecord.href);
     };
 
     const fetchTasks = useCallback(async () => {
@@ -1035,8 +1042,8 @@ const Complaints = () => {
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => handleViewStore(task.storeId)}>
-                                                        <Building className="mr-2 h-4 w-4" /> View Store
+                                                    <DropdownMenuItem disabled={!task.relatedRecord} onClick={() => handleViewRelatedRecord(task)}>
+                                                        <Building className="mr-2 h-4 w-4" /> {task.relatedRecord?.label || 'No linked record'}
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => deleteTask(task.id)} className="text-red-600">

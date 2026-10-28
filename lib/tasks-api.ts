@@ -1,4 +1,4 @@
-import { getApiErrorMessage } from '@/lib/api-error';
+import { getApiErrorMessage } from './api-error.ts';
 
 const TASKS_API_BASE_URL = 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
 
@@ -272,7 +272,14 @@ const getTaskTypePage = async (
     const details = await Promise.all(batch.map(async (task) => {
       try {
         const detailedTask = normalizeTask(await request(`/api/Task/getById?id=${task.id}`, token));
-        return detailedTask ? { ...task, ...detailedTask } : task;
+        return detailedTask ? {
+          ...task,
+          ...detailedTask,
+          // Some detail DTOs omit parent IDs that are present in the visible list.
+          clientAccountId: detailedTask.clientAccountId ?? task.clientAccountId,
+          institutionId: detailedTask.institutionId ?? task.institutionId,
+          projectId: detailedTask.projectId ?? task.projectId,
+        } : task;
       } catch {
         // Keep the visible-list record usable if detail enrichment is unavailable.
         return task;
