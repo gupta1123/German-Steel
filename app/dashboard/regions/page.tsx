@@ -1,5 +1,6 @@
 'use client';
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,6 +28,7 @@ const csvCell = (v: unknown) => `"${String(v ?? '').replaceAll('"','""')}"`;
 
 export default function RegionsPage() {
   const { token, userRole, currentUser } = useAuth();
+  const canRemove = useAdminRemovalAccess();
   const canManage = hasAdminSetupPrivileges(userRole, currentUser) || hasManagerPrivileges(userRole, currentUser) || userRole === 'SCOPE_ALL_ZONES_ALL_MODULES' || Boolean(currentUser?.authorities?.some(item => item.authority === 'SCOPE_ALL_ZONES_ALL_MODULES'));
   const [detailRegion, setDetailRegion] = useState<RetailSalesRegion | null>(null);
   const [activeTab, setActiveTab] = useState<'pins' | 'regions'>('pins');
@@ -228,7 +230,7 @@ export default function RegionsPage() {
                       <TableCell><Ellipsis value={p.active===false ? 'Inactive':'Active'} /></TableCell>
                       <TableCell><div className="flex items-center justify-end gap-1">
                         {canManage && <><Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>openEditPin(p)}>Edit</Button>
-                        <Button aria-label={`Deactivate PIN ${p.pinCode}`} variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={p.active===false} onClick={()=>setPinDeleteTarget(p)}><Trash2 className="h-3.5 w-3.5" /></Button></>}
+                        {canRemove && <Button aria-label={`Deactivate PIN ${p.pinCode}`} variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={p.active===false} onClick={()=>setPinDeleteTarget(p)}><Trash2 className="h-3.5 w-3.5" /></Button>}</>}
                       </div></TableCell>
                     </TableRow>
                   ))}
@@ -283,7 +285,7 @@ export default function RegionsPage() {
                       <TableCell><div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>setDetailRegion(r)}>Details</Button>
                         {canManage && <><Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={()=>openEditRegion(r)}>Edit</Button>
-                        <Button aria-label={`Deactivate ${r.name}`} variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={r.active===false} onClick={()=>setRegionDeleteTarget(r)}><Trash2 className="h-3.5 w-3.5" /></Button></>}
+                        {canRemove && <Button aria-label={`Deactivate ${r.name}`} variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" disabled={r.active===false} onClick={()=>setRegionDeleteTarget(r)}><Trash2 className="h-3.5 w-3.5" /></Button>}</>}
                       </div></TableCell>
                     </TableRow>
                   ))}

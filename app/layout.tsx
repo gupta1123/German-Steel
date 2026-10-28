@@ -6,6 +6,7 @@ import "@/components/custom-calendar.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/auth-provider";
 import { UnsavedChangesProvider } from "@/components/unsaved-changes-provider";
+import { RemovalConfirmationProvider } from "@/components/removal-confirmation-provider";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -49,7 +50,7 @@ export default function RootLayout({
         >
           <UnsavedChangesProvider>
             <AuthProvider>
-              {children}
+              <RemovalConfirmationProvider>{children}</RemovalConfirmationProvider>
             </AuthProvider>
             <Toaster />
           </UnsavedChangesProvider>

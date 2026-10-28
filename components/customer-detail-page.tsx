@@ -1,5 +1,7 @@
 'use client';
 
+import { AdminRemovalAction, useAdminRemovalAccess } from '@/components/admin-removal-action';
+import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, ArrowLeft, ArrowRight, ArrowRightLeft, Building2, CalendarDays, CalendarPlus, Edit3, ExternalLink, Handshake, FileText, Hash, History, ListChecks, Loader2, Mail, MapPin, MapPinned, MoreHorizontal, NotebookPen, Package, PackagePlus, Phone, Plus, RefreshCw, StickyNote, Tag, Trash2, TrendingUp, User, UserPlus, Users, Wallet, X } from 'lucide-react';
@@ -7,7 +9,6 @@ import { toast } from 'sonner';
 
 
 import { useAuth } from '@/components/auth-provider';
-import { isAdminSetupRoleValue, isManagerRoleValue } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-error';
 import { getDateOfBirthError, localDateInputValue } from '@/lib/contact-validation';
 import { buildRetailAccountPayload, createRetailAccountDraft, type RetailAccountDraft, validateRetailAccountDraft } from '@/lib/retail-account';
@@ -72,8 +73,9 @@ const resolveRetailAccountRegionId = (pinCode: string, pinCodes: RetailPinCode[]
 
 export default function CustomerDetailPage({ accountId }: CustomerDetailPageProps) {
   const router = useRouter();
-  const { token, userData, userRole } = useAuth();
-  const canDeactivate = isAdminSetupRoleValue(userRole) || isManagerRoleValue(userRole);
+  const { token, userData } = useAuth();
+  const confirmRemoval = useRemovalConfirmation();
+  const canDeactivate = useAdminRemovalAccess();
   const [account, setAccount] = useState<RetailAccount | null>(null);
   const [contacts, setContacts] = useState<RetailContact[]>([]);
   const [notes, setNotes] = useState<RetailNote[]>([]);
@@ -375,7 +377,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   };
 
   const removeContact = async (contact: RetailContact) => {
-    if (!token || !window.confirm(`Remove ${contact.firstName || 'this contact'} from this customer?`)) return;
+    if (!token || !(await confirmRemoval({ title: "Confirm removal", description: `Remove ${contact.firstName || 'this contact'} from this customer?` }))) return;
     setBusy(true);
     try { await RetailAPI.deleteContact(contact.id, token); toast.success('Contact link removed.'); await loadContactsSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to remove contact.')) } finally { setBusy(false) }
   };
@@ -461,12 +463,12 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
   };
 
   const removeTask = async (task: RetailTask) => {
-    if (!token || !window.confirm(`Delete task “${task.title}”?`)) return;
-    setBusy(true); try { await RetailAPI.deleteTask(task.id, token); toast.success('Task deleted.'); await loadTasksSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')) } finally { setBusy(false) }
+    if (!token || !(await confirmRemoval({ title: "Confirm removal", description: `Cancel task “${task.title}”?` }))) return;
+    setBusy(true); try { await RetailAPI.deleteTask(task.id, token); toast.success('Task cancelled.'); await loadTasksSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')) } finally { setBusy(false) }
   };
 
   const removeBrand = async (usage: RetailBrandUsage) => {
-    if (!token || !assignedByEmployeeId || !window.confirm(`Stop tracking ${brandDisplayName(usage)} as an active brand?`)) return;
+    if (!token || !assignedByEmployeeId || !(await confirmRemoval({ title: "Confirm removal", description: `Stop tracking ${brandDisplayName(usage)} as an active brand?` }))) return;
     setBusy(true); try { await RetailAPI.removeBrandUsage(usage.id, assignedByEmployeeId, token); toast.success('Brand usage closed.'); await loadBrandsSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to remove brand usage.')) } finally { setBusy(false) }
   };
 
@@ -640,13 +642,13 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
                 <Section icon={Activity} title="Activity" className="lg:row-span-2" bodyClassName="p-0" action={<Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => void openTask()}><Plus className="mr-1 h-3.5 w-3.5" />Task</Button>}>
                   <ActivityTimeline upcoming={upNext} recent={recentActivity} viewAllHref="#tasks" />
                 </Section>
-                <Section icon={Users} title="Assigned employees">
+                <Section icon={Users} title="Assigned employees" action={account.secondaryEmployeeId ? <AdminRemovalAction endpoint={`/api/retail/accounts/${accountId}/employees/${account.secondaryEmployeeId}`} label="Remove assignment" name={secondaryName} description="Remove this secondary employee assignment. The employee record and account history will be kept." onRemoved={load} /> : undefined}>
                   <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                     <Info label="Primary employee" value={ownerName} />
                     <Info label="Secondary employee" value={secondaryName || 'Not assigned'} />
                   </dl>
                 </Section>
-                <Section icon={MapPin} title="Outlet and network">
+                <Section icon={MapPin} title="Outlet and network" action={account.storeImageUrl ? <AdminRemovalAction endpoint={`/api/retail/accounts/${accountId}/store-image`} label="Remove store image" name={account.accountName} description="Remove this store image from the customer account." onRemoved={load} /> : undefined}>
                   <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                     <Info className="sm:col-span-2" label="Address" value={[account.addressVillageArea, account.addressTaluka, account.addressCity, account.addressDistrict, account.addressState, account.pinCode].filter(Boolean).join(', ')} />
                     <Info
@@ -702,7 +704,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
                         <span key={brand.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-1 pl-3 pr-1 text-xs" title={`${brand.remarks || 'No remarks'} · Added ${showDate(brand.addedAt)} by ${brandAddedBy(brand)}`}>
                           <span className="truncate font-medium">{brandDisplayName(brand)}</span>
                           {brand.remarks && <span className="hidden max-w-[180px] truncate text-muted-foreground sm:inline">· {brand.remarks}</span>}
-                          <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" onClick={() => void removeBrand(brand)} disabled={busy} aria-label={`Remove ${brandDisplayName(brand)}`} title="Remove brand"><X className="h-3 w-3" /></button>
+                          {canDeactivate && <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" onClick={() => void removeBrand(brand)} disabled={busy} aria-label={`Remove ${brandDisplayName(brand)}`} title="Remove brand"><X className="h-3 w-3" /></button>}
                         </span>
                       ))}
                     </div>
@@ -809,7 +811,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
                 bodyClassName="p-0"
                 action={<Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => openSale()}><PackagePlus className="mr-1.5 h-3.5 w-3.5" />Record sale</Button>}
               >
-                {sales.length === 0 ? <EmptyState compact title="Record the first sale to track won and lost opportunities." /> : <SalesTable sales={sales} showOutcome onEdit={(sale) => openSale(sales.find((item) => item.id === sale.id))} />}
+                {sales.length === 0 ? <EmptyState compact title="Record the first sale to track won and lost opportunities." /> : <SalesTable sales={sales} showOutcome voidEndpoint={(id) => `/api/retail/sales/${id}/void`} onVoided={loadSalesSection} onEdit={(sale) => openSale(sales.find((item) => item.id === sale.id))} />}
               </Section>
             ),
           },

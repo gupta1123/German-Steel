@@ -1,5 +1,6 @@
 'use client';
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Search, X } from 'lucide-react';
@@ -293,6 +294,7 @@ export default function InstitutionsPage() {
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
                         <Link href={`/dashboard/institutions/${r.id}`}>View</Link>
                       </Button>
+                      <AdminRemovalAction endpoint={`/api/empanelment/institutions/${r.id}`} name={r.institutionName} description="This record will become inactive. Its history will be kept." disabled={!r.active} onRemoved={() => { if (page > 0) setPage(0); else return load(); }} />
                     </div>
                   </TableCell>
                 </TableRow>

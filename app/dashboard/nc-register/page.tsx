@@ -1,5 +1,6 @@
 'use client';
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Search, X } from 'lucide-react';
@@ -270,6 +271,7 @@ export default function NcRegisterPage() {
                         <TableCell><Ellipsis value={nc.responsibleEmployeeName || (nc.responsibleEmployeeId ? `Emp #${nc.responsibleEmployeeId}` : '—')} /></TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
+                            {nc.status === 'CLOSED' && <AdminRemovalAction endpoint={`/api/${nc.parentType === 'PROJECT' ? 'projects' : 'empanelment'}/nc/${nc.id}`} name={`Compliance issue #${nc.id}`} description="Archive this closed issue. Closure history will be kept." onRemoved={() => { if (page > 0) setPage(0); else return loadGlobal(); }} />}
                             {nc.status==='OPEN' && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={ncBusyId===nc.id} onClick={()=>void openSubmit(nc)}>{ncBusyId===nc.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}Submit</Button>}
                             {nc.status==='SUBMITTED' && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={ncBusyId===nc.id} onClick={()=>void openAccept(nc)}>{ncBusyId===nc.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}Accept</Button>}
                             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" aria-label={`View NC #${nc.id}`} onClick={() => setDetailNc(nc)}>View</Button>

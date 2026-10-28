@@ -655,8 +655,8 @@ export const meetingsApi = {
     }),
 
   cancelMeeting: (meetingId: number, payload: { remarks: string }) =>
-    meetingRequest<string>(`/meeting/cancel${buildQuery({ id: meetingId })}`, {
-      method: "PUT",
+    meetingRequest<Meeting>(`/api/meetings/${meetingId}/cancel`, {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 

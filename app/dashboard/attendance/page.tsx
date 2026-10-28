@@ -533,6 +533,7 @@ export default function AttendancePage() {
         visitData={visitData as Record<string, unknown>[]}
         selectedDate={selectedDate}
         employeeName={selectedEmployeeName}
+        onAttendanceReset={fetchAttendanceData}
         dayLog={selectedDayLog}
         dayRequest={selectedDayRequest}
       />

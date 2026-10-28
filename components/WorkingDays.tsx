@@ -1,5 +1,7 @@
 "use client";
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
+import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +26,8 @@ interface RuleFormData {
 
 const WorkingDays: React.FC = () => {
     const { token } = useAuth();
+    const confirmRemoval = useRemovalConfirmation();
+    const canRemove = useAdminRemovalAccess();
     const [rules, setRules] = useState<AttendanceRule[]>([]);
     const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
     const [editedData, setEditedData] = useState<RuleFormData | null>(null);
@@ -150,6 +154,7 @@ const WorkingDays: React.FC = () => {
     const saveRule = async () => {
         if (!token || !editingRule || !editedData || !isFormValid || !ruleIsDirty) return;
 
+        if (editingRule.active && !editedData.active && !(await confirmRemoval({ title: "Deactivate attendance rule?", description: "This role will fall back to the default attendance rule. Previous attendance records will be kept.", label: "Deactivate rule" }))) return;
         setIsSaving(true);
         setError(null);
         try {
@@ -268,6 +273,7 @@ const WorkingDays: React.FC = () => {
                                                     <Switch
                                                         id={`active-rule-${rule.id}`}
                                                         aria-label="Rule active"
+                                                        disabled={!canRemove}
                                                         checked={editedData.active}
                                                         onCheckedChange={(active) => setEditedData({ ...editedData, active })}
                                                     />

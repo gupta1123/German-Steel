@@ -654,7 +654,7 @@ export const ProjectsAPI = {
     }
   },
   async getNcRegisters(projectId: number, token: string): Promise<ProjectNcRegister[]> {
-    const res = await request(`/api/empanelment/nc${queryString({ parentType: 'PROJECT', projectId, page: 0, size: 100 })}`, token);
+    const res = await request(`/api/empanelment/nc${queryString({ parentType: 'PROJECT', projectId, active: true, page: 0, size: 100 })}`, token);
     return pageItems(res).flatMap((v) => { const n = normalizeNcRegister(v); return n ? [n] : []; });
   },
   async createNc(payload: ProjectNcCreatePayload, token: string): Promise<number> {

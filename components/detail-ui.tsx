@@ -1,5 +1,6 @@
 'use client';
 
+import { AdminRemovalAction, useAdminRemovalAccess } from '@/components/admin-removal-action';
 import * as React from 'react';
 import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Circle, CircleDot, Edit3, ImageIcon, Inbox, Loader2, Paperclip, Trash2, Upload, User, XCircle, type LucideIcon } from 'lucide-react';
 import TaskImages from '@/components/task-images';
@@ -497,6 +498,7 @@ export interface TaskLike { id: number; title: string; description?: string | nu
 
 /** Tasks grouped by status, with direct image viewing separate from editing. */
 export function TaskList<T extends TaskLike>({ tasks, assignee, onEdit, onDelete, busy }: { tasks: T[]; assignee: (task: T) => string; onEdit: (task: T) => void; onDelete: (task: T) => void; busy?: boolean }) {
+  const canRemove = useAdminRemovalAccess();
   const [imageTask, setImageTask] = React.useState<T | null>(null);
   const open = tasks.filter(isOpenTask).sort((left, right) => String(left.dueDate).localeCompare(String(right.dueDate)));
   const closed = tasks.filter((task) => !isOpenTask(task)).sort((left, right) => String(right.dueDate).localeCompare(String(left.dueDate)));
@@ -527,7 +529,7 @@ export function TaskList<T extends TaskLike>({ tasks, assignee, onEdit, onDelete
                   <div className="col-start-2 flex shrink-0 items-center justify-end gap-0.5 sm:ml-auto">
                     <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => setImageTask(task)} aria-label={`View images for ${task.title || `Task #${task.id}`}`} title="View task images"><ImageIcon className="mr-1.5 h-3.5 w-3.5" />View images</Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onEdit(task)} aria-label="Edit task" title="Edit task"><Edit3 className="h-3.5 w-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(task)} disabled={busy} aria-label="Delete task" title="Delete task"><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {canRemove && isOpenTask(task) && <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(task)} disabled={busy} aria-label="Cancel task" title="Cancel task"><Trash2 className="h-3.5 w-3.5" /></Button>}
                   </div>
                 </li>
               );
@@ -554,7 +556,7 @@ export const taskSummary = (tasks: TaskLike[]) => {
   return `${open.length} open · ${tasks.length - open.length} closed${overdue ? ` · ${overdue} overdue` : ''}`;
 };
 
-export interface SaleLike { id: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem?: string | null; outcomeStatus?: 'WIN' | 'LOST' | null; poDate?: string; poNumber?: string; lossReason?: string }
+export interface SaleLike { id: number; saleDate: string; quantityMt: number; invoiceReference: string; sourceSystem?: string | null; saleStatus?: string; outcomeStatus?: 'WIN' | 'LOST' | null; poDate?: string; poNumber?: string; lossReason?: string }
 
 export const salesSummary = (sales: SaleLike[]): React.ReactNode => {
   if (!sales.length) return 'No purchase orders yet';
@@ -571,13 +573,13 @@ export const salesSummary = (sales: SaleLike[]): React.ReactNode => {
 };
 
 /** PO table, newest first, quantity right-aligned. */
-export function SalesTable({ sales, showOutcome = false, onEdit }: { sales: SaleLike[]; showOutcome?: boolean; onEdit?: (sale: SaleLike) => void }) {
-  const sorted = [...sales].sort((left, right) => String(right.saleDate).localeCompare(String(left.saleDate)));
+export function SalesTable({ sales, showOutcome = false, onEdit, voidEndpoint, onVoided }: { sales: SaleLike[]; showOutcome?: boolean; onEdit?: (sale: SaleLike) => void; voidEndpoint?: (id: number) => string; onVoided?: () => void | Promise<unknown> }) {
+  const sorted = sales.filter(sale => sale.saleStatus !== 'VOIDED').sort((left, right) => String(right.saleDate).localeCompare(String(left.saleDate)));
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[480px] text-sm">
         <thead className="bg-muted/40 text-xs text-muted-foreground">
-          <tr><th className="px-4 py-2 text-left font-medium">{showOutcome ? 'Sale date' : 'PO date'}</th>{showOutcome && <th className="px-4 py-2 text-left font-medium">Outcome</th>}<th className="px-4 py-2 text-left font-medium">{showOutcome ? 'PO / Lost reason' : 'PO number'}</th>{showOutcome && <th className="px-4 py-2 text-left font-medium">Invoice / Reference</th>}<th className="px-4 py-2 text-right font-medium">Quantity</th><th className="px-4 py-2 text-left font-medium">Source</th>{onEdit && <th className="px-4 py-2 text-left font-medium">Actions</th>}</tr>
+          <tr><th className="px-4 py-2 text-left font-medium">{showOutcome ? 'Sale date' : 'PO date'}</th>{showOutcome && <th className="px-4 py-2 text-left font-medium">Outcome</th>}<th className="px-4 py-2 text-left font-medium">{showOutcome ? 'PO / Lost reason' : 'PO number'}</th>{showOutcome && <th className="px-4 py-2 text-left font-medium">Invoice / Reference</th>}<th className="px-4 py-2 text-right font-medium">Quantity</th><th className="px-4 py-2 text-left font-medium">Source</th>{(onEdit || voidEndpoint) && <th className="px-4 py-2 text-left font-medium">Actions</th>}</tr>
         </thead>
         <tbody className="divide-y">
           {sorted.map((sale) => (
@@ -588,7 +590,7 @@ export function SalesTable({ sales, showOutcome = false, onEdit }: { sales: Sale
               {showOutcome && <td className="px-4 py-2">{sale.invoiceReference || '—'}</td>}
               <td className="whitespace-nowrap px-4 py-2 text-right font-semibold tabular-nums">{sale.quantityMt.toLocaleString('en-IN')} MT</td>
               <td className="px-4 py-2"><Pill>{titleCase(sale.sourceSystem || 'Manual')}</Pill></td>
-              {onEdit && <td className="px-4 py-2"><Button variant="outline" size="sm" aria-label={`Edit sale ${sale.id}`} onClick={() => onEdit(sale)}>Edit</Button></td>}
+              {(onEdit || voidEndpoint) && <td className="px-4 py-2"><div className="flex items-center gap-1">{onEdit && <Button variant="outline" size="sm" aria-label={`Edit sale ${sale.id}`} onClick={() => onEdit(sale)}>Edit</Button>}{voidEndpoint && onVoided && <AdminRemovalAction endpoint={voidEndpoint(sale.id)} method="POST" label="Void sale" reasonField="correctionReason" name={`Sale #${sale.id} · ${formatDay(sale.saleDate)} · ${sale.quantityMt} MT`} description="Void this sale and keep the original entry with your correction reason." onRemoved={onVoided} />}</div></td>}
             </tr>
           ))}
         </tbody>
@@ -644,7 +646,7 @@ export function StageHistoryRow({ from, to, remarks, date, by, current }: { from
 export interface NcLike { id: number; status: string; description: string; raisedDate: string; raisedByOfficialText?: string | null; targetClosureDate?: string | null; responsibleEmployeeName?: string | null; closureMethod?: string | null; closureDate?: string | null }
 
 /** Compact NC row with a status rail, dates, closure summary, evidence and the actions valid for its status. */
-export function NcRow({ nc, evidence = [], busy, onSubmitClosure, onAddEvidence, onAccept }: { nc: NcLike; evidence?: { fileName: string }[]; busy?: boolean; onSubmitClosure: () => void; onAddEvidence: () => void; onAccept: () => void }) {
+export function NcRow({ nc, evidence = [], busy, onSubmitClosure, onAddEvidence, onAccept, onArchive, archiveEndpoint }: { onArchive?: () => void | Promise<unknown>; archiveEndpoint?: string; nc: NcLike; evidence?: { fileName: string }[]; busy?: boolean; onSubmitClosure: () => void; onAddEvidence: () => void; onAccept: () => void }) {
   const overdue = Boolean(nc.targetClosureDate && nc.status !== 'CLOSED' && dayKey(nc.targetClosureDate) < today());
   const extra = nc as NcLike & { acceptingOfficialText?: string; acceptanceDate?: string };
   const closure = (nc.status === 'SUBMITTED' || nc.status === 'CLOSED') ? [nc.closureMethod ? titleCase(nc.closureMethod) : null, extra.acceptingOfficialText, extra.acceptanceDate || nc.closureDate].filter(Boolean).join(' · ') : '';
@@ -667,6 +669,7 @@ export function NcRow({ nc, evidence = [], busy, onSubmitClosure, onAddEvidence,
           {evidence.length > 0 && <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><Paperclip className="h-3 w-3 shrink-0" /><span className="truncate" title={evidence.map((file) => file.fileName).join(', ')}>{evidence.length} evidence · {evidence.map((file) => file.fileName).join(', ')}</span></p>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
+          {nc.status === 'CLOSED' && onArchive && archiveEndpoint && <AdminRemovalAction endpoint={archiveEndpoint} name={`Compliance issue #${nc.id}`} description="Archive this closed issue. Its closure history will be kept." onRemoved={onArchive} disabled={busy} compact={false} />}
           {nc.status === 'OPEN' && <>
             <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={onSubmitClosure} disabled={busy}>{busy && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Submit closure</Button>
             <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onAddEvidence} disabled={busy}><Paperclip className="mr-1 h-3 w-3" />Evidence</Button>

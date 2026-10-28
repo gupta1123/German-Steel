@@ -2020,13 +2020,13 @@ export default function VisitDetailPage() {
             value: 'requirements',
             label: 'Requirements',
             count: requirements.length,
-            content: <VisitTasksTab tasks={requirements} type="requirement" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.requirement} error={taskErrors.requirement} />,
+            content: <VisitTasksTab onCancelled={(id) => setRequirements(previous => previous.map(task => task.id === id ? { ...task, status: 'CANCELLED' } : task))} tasks={requirements} type="requirement" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.requirement} error={taskErrors.requirement} />,
           },
           {
             value: 'complaints',
             label: 'Complaints',
             count: complaints.length,
-            content: <VisitTasksTab tasks={complaints} type="complaint" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.complaint} error={taskErrors.complaint} />,
+            content: <VisitTasksTab onCancelled={(id) => setComplaints(previous => previous.map(task => task.id === id ? { ...task, status: 'CANCELLED' } : task))} tasks={complaints} type="complaint" priority={priorityFilter} onPriorityChange={handlePriorityChange} loading={taskLoading.complaint} error={taskErrors.complaint} />,
           },
         ]}
       />

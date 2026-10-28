@@ -1,5 +1,6 @@
 'use client';
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useState, useEffect, useMemo } from 'react';
 import { 
     Check, 
@@ -372,6 +373,7 @@ export default function ApprovalsPage() {
                                                 req={req}
                                                 saving={savingIds.includes(req.id)}
                                                 activeTab={activeTab}
+                                                onCancelled={() => setRequests(previous => previous.filter(item => item.id !== req.id))}
                                                 handleAction={handleAction}
                                                 formatDate={formatDate}
                                                 getInitials={getInitials}
@@ -389,6 +391,7 @@ export default function ApprovalsPage() {
 // --- Sub Components ---
 
 interface RequestRowProps {
+    onCancelled: () => void;
     saving: boolean;
     req: ApprovalRequest;
     activeTab: string;
@@ -398,6 +401,7 @@ interface RequestRowProps {
 }
 
 function RequestRow({ 
+    onCancelled,
     saving,
     req, 
     activeTab, 
@@ -499,7 +503,8 @@ function RequestRow({
             {/* 4. Actions */}
             <div className="col-span-3 flex w-full items-center lg:justify-end">
                 {isPending ? (
-                    <div className="flex w-full gap-2 lg:w-auto">
+                    <div className="flex w-full flex-wrap gap-2 lg:w-auto">
+                        <AdminRemovalAction endpoint={`/api/hr/attendance/requests/${req.id}`} label="Cancel request" name={`${req.employeeName} · ${req.logDate}`} description="Cancel this pending attendance correction request. The current attendance record will stay unchanged." disabled={saving || req.status.toUpperCase() !== 'PENDING'} onRemoved={onCancelled} />
                         <Button 
                             onClick={() => handleAction(req.id, 'approved')}
                             disabled={saving}

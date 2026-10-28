@@ -1,5 +1,7 @@
 'use client';
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
+import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, Loader2, Pencil, Plus, Power } from 'lucide-react';
 import { toast } from 'sonner';
@@ -87,6 +89,8 @@ export default function EmployeeKpiSheet({
   onChanged,
 }: EmployeeKpiSheetProps) {
   const { token } = useAuth();
+  const canRemove = useAdminRemovalAccess();
+  const confirmRemoval = useRemovalConfirmation();
   const now = new Date();
   const currentFy = fyStartOf(now);
   const [quarter, setQuarter] = useState(quarterOfDate(now));
@@ -241,6 +245,11 @@ export default function EmployeeKpiSheet({
       setFormError('Enter a target for at least one month.');
       return;
     }
+    const removesTargets = parsed.some(({ month, raw }) => {
+      const record = monthTargets.get(monthKey(formMetric, month));
+      return Number(raw || 0) === 0 && record && record.status.toUpperCase() !== 'INACTIVE';
+    });
+    if (removesTargets && !(await confirmRemoval({ title: 'Archive cleared targets?', description: 'Saved targets cleared or set to zero will become inactive. Other target changes will also be saved.', label: 'Save and archive' }))) return;
     setIsSaving(true);
     setFormError(null);
     try {
@@ -277,9 +286,10 @@ export default function EmployeeKpiSheet({
   };
 
   const deactivateQuarter = async (metric: EmployeeKpiMetric) => {
-    if (!token || readOnly) return;
+    if (!token || readOnly || isSaving) return;
     const label = kpiMeta(metric).label;
-    if (!window.confirm(`Deactivate the ${label.toLowerCase()} targets for ${quarterLabel(quarter, fyStart)}?`)) return;
+    if (!(await confirmRemoval({ title: "Archive targets?", description: `Deactivate the ${label.toLowerCase()} targets for ${quarterLabel(quarter, fyStart)}?`, label: "Archive targets" }))) return;
+    setIsSaving(true);
     try {
       for (const { month } of quarterMonths) {
         const record = monthTargets.get(monthKey(metric, month));
@@ -292,6 +302,8 @@ export default function EmployeeKpiSheet({
       toast.error(getErrorMessage(error, 'Unable to deactivate targets.'));
       await load();
       onChanged?.();
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -364,7 +376,7 @@ export default function EmployeeKpiSheet({
                         {hasTarget && !readOnly && (
                           <div className="flex shrink-0 gap-1">
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditor(kpi.value)} aria-label={`Edit ${kpi.label} targets`} title="Edit targets"><Pencil className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => void deactivateQuarter(kpi.value)} aria-label={`Deactivate ${kpi.label} targets`} title="Deactivate targets"><Power className="h-3.5 w-3.5" /></Button>
+                            {canRemove && <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" disabled={isSaving} onClick={() => void deactivateQuarter(kpi.value)} aria-label={`Deactivate ${kpi.label} targets`} title="Deactivate targets"><Power className="h-3.5 w-3.5" /></Button>}
                           </div>
                         )}
                       </div>

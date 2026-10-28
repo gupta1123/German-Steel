@@ -1,5 +1,6 @@
 "use client";
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -68,6 +69,7 @@ const displayRoleSentence = (role: string) => toSentenceCase(getEmployeeRoleLabe
 
 const Teams: React.FC = () => {
     const { token } = useAuth();
+    const canRemove = useAdminRemovalAccess();
     const [teams, setTeams] = useState<CrmTeam[]>([]);
     const [activeTeamIds, setActiveTeamIds] = useState<Set<number>>(new Set());
     const [assignedSupervisorIds, setAssignedSupervisorIds] = useState<Set<number>>(new Set());
@@ -794,7 +796,7 @@ const Teams: React.FC = () => {
                                 <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
                                     <p className="text-sm font-semibold text-destructive">Delete team</p>
                                     <p className="mt-1 text-xs text-muted-foreground">Employees remain in the directory and become unassigned.</p>
-                                    <Button variant="destructive" size="sm" className="mt-4" onClick={() => setDeleteTeamOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete team</Button>
+                                    {canRemove && <Button variant="destructive" size="sm" className="mt-4" onClick={() => setDeleteTeamOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete team</Button>}
                                 </section>
                             </TabsContent>
 
@@ -840,7 +842,7 @@ const Teams: React.FC = () => {
                                     <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Team members</h3><Badge variant="secondary">{visibleMembers.length}</Badge></div>
                                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                         {visibleMembers.length === 0 ? <p className="col-span-full rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">No members found.</p> : visibleMembers.map((employee) => (
-                                            <div key={employee.id} className="flex items-center gap-3 rounded-xl border bg-card p-3"><Avatar className="h-8 w-8"><AvatarFallback className="text-[10px]">{`${employee.firstName?.[0] ?? ''}${employee.lastName?.[0] ?? ''}`.toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{employeeName(employee)}</p><p className="truncate text-xs text-muted-foreground">{displayRoleSentence(employee.role)}</p></div><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" aria-label={`Remove ${employeeName(employee)}`} onClick={() => setMemberToRemove(employee)}><X className="h-4 w-4" /></Button></div>
+                                            <div key={employee.id} className="flex items-center gap-3 rounded-xl border bg-card p-3"><Avatar className="h-8 w-8"><AvatarFallback className="text-[10px]">{`${employee.firstName?.[0] ?? ''}${employee.lastName?.[0] ?? ''}`.toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{employeeName(employee)}</p><p className="truncate text-xs text-muted-foreground">{displayRoleSentence(employee.role)}</p></div>{canRemove && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" aria-label={`Remove ${employeeName(employee)}`} onClick={() => setMemberToRemove(employee)}><X className="h-4 w-4" /></Button>}</div>
                                         ))}
                                     </div>
                                 </section>

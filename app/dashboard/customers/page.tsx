@@ -1,5 +1,6 @@
 'use client';
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -46,6 +47,7 @@ const csvCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""'
 
 function CustomersPageContent() {
   const { token, userData, userRole } = useAuth();
+  const canRemove = useAdminRemovalAccess();
   const searchParams = useSearchParams();
   const presetGroupId = searchParams?.get('groupId') ?? '';
   const [pageData, setPageData] = useState<ApiPage<RetailAccount>>(emptyPage);
@@ -379,7 +381,7 @@ function CustomersPageContent() {
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
                         <Link href={`/dashboard/customers/${r.id}`}>View</Link>
                       </Button>
-                      <Button
+                      {canRemove && <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
@@ -388,7 +390,7 @@ function CustomersPageContent() {
                         onClick={() => setDeleteTarget(r)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      </Button>}
                     </div>
                   </TableCell>
                 </TableRow>

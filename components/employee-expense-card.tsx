@@ -1,3 +1,4 @@
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -23,6 +24,7 @@ interface Expense {
   amount: number;
   description: string;
   status: "approved" | "pending" | "rejected";
+  reimbursed?: boolean;
 }
 
 interface Employee {
@@ -39,6 +41,7 @@ interface Employee {
 
 interface EmployeeExpenseCardProps {
   employee: Employee;
+  onRemoved?: () => void | Promise<unknown>;
   busy?: boolean;
   showExpenses: boolean;
   onToggleExpenses: () => void;
@@ -49,7 +52,7 @@ interface EmployeeExpenseCardProps {
   onRejectMultiple?: (employeeName: string, expenseIds: number[]) => void;
 }
 
-export default function EmployeeExpenseCard({ employee, showExpenses, onToggleExpenses, onApprove, onViewReceipts, onReject, onApproveMultiple, onRejectMultiple, busy = false }: EmployeeExpenseCardProps) {
+export default function EmployeeExpenseCard({ employee, showExpenses, onToggleExpenses, onApprove, onViewReceipts, onReject, onApproveMultiple, onRejectMultiple, busy = false, onRemoved }: EmployeeExpenseCardProps) {
   const expenses = employee.expenses;
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<number[]>([]);
 
@@ -207,6 +210,7 @@ export default function EmployeeExpenseCard({ employee, showExpenses, onToggleEx
                     >
                       <Eye className="h-4 w-4 text-muted-foreground" />
                     </Button>
+                    {onRemoved && <AdminRemovalAction endpoint={`/api/hr/expenses/${expense.id}`} name={`${employee.name} · ${expense.category} · ₹${expense.amount}`} description="Archive this claim and keep its history. Reimbursed expenses cannot be archived." disabled={busy || expense.reimbursed} onRemoved={onRemoved} />}
                     {expense.status === "pending" ? (
                       <>
                         <Button

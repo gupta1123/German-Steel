@@ -1,5 +1,6 @@
 'use client';
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Download, Eye, FileText, Loader2, Search } from 'lucide-react';
@@ -135,7 +136,7 @@ export default function DocumentsPage() {
               <TableCell><div className="truncate font-medium" title={document.parentName || undefined}>{href ? <Link href={href} className="hover:underline">{document.parentName || `${humanize(document.parentType)} #${document.parentId}`}</Link> : document.parentName || `${humanize(document.parentType)} #${document.parentId}`}</div><p className="text-[11px] text-muted-foreground">{humanize(document.parentType)} · #{document.parentId}</p></TableCell>
               <TableCell>v{document.versionNumber || 1}<div className="mt-1 flex flex-wrap gap-1"><Badge variant={document.fileAttached ? 'default' : 'outline'} className="text-[10px]">{document.fileAttached ? 'Attached' : 'Missing'}</Badge>{isExpired(document.expiryDate) && <Badge variant="destructive" className="text-[10px]">Expired</Badge>}</div></TableCell>
               <TableCell><p>{document.uploadedAt ? new Date(document.uploadedAt).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—'}</p><p className="truncate text-[11px] text-muted-foreground">{document.uploadedByEmployeeName || 'Unknown uploader'}</p></TableCell>
-              <TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" className="h-8 w-8" disabled={!document.fileAttached || fileLoading} onClick={() => void view(document)} title="Preview"><Eye className="h-4 w-4" /></Button><Button size="icon" variant="ghost" className="h-8 w-8" disabled={!document.fileAttached || fileLoading} onClick={() => void download(document)} title="Download"><Download className="h-4 w-4" /></Button></div></TableCell>
+              <TableCell><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" className="h-8 w-8" disabled={!document.fileAttached || fileLoading} onClick={() => void view(document)} title="Preview"><Eye className="h-4 w-4" /></Button><Button size="icon" variant="ghost" className="h-8 w-8" disabled={!document.fileAttached || fileLoading} onClick={() => void download(document)} title="Download"><Download className="h-4 w-4" /></Button><AdminRemovalAction endpoint={`/api/common/documents/${document.id}`} name={document.fileName} description="Archive this document while keeping its history. Documents used as accepted approval evidence cannot be archived." onRemoved={() => { if (page > 0) setPage(0); else return load(); }} /></div></TableCell>
             </TableRow>;
           })}</TableBody>
         </Table>

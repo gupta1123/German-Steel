@@ -1,5 +1,6 @@
 "use client";
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -1228,6 +1229,7 @@ function ReportPerformanceTable({
 export default function MeetingDetail({ meetingId }: { meetingId: number }) {
   const router = useGuardedRouter();
   const { userRole, currentUser } = useAuth();
+  const canRemove = useAdminRemovalAccess();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [activeTab, setActiveTab] = useState<WorkflowTab>("request");
   const [adminTab, setAdminTab] = useState<AdminReviewTab>("details");
@@ -1526,7 +1528,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
   const canApproveFinalReport = isActionAllowed("APPROVE_FINAL_REPORT", meeting?.status === "REPORT_SUBMITTED");
   const canClose =
     isActionAllowed("APPROVE_AND_CLOSE", false) || isActionAllowed("CLOSE", meeting?.status === "REPORT_SUBMITTED");
-  const canCancel = isActionAllowed("CANCEL", Boolean(meeting && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(meeting.status)));
+  const canCancel = canRemove && isActionAllowed("CANCEL", Boolean(meeting && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(meeting.status)));
 
   const defaultApprovalDecision: ApprovalDecision = canApprove
     ? "approve"

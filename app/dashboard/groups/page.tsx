@@ -1,5 +1,6 @@
 'use client';
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
@@ -43,6 +44,7 @@ const emptyForm = { groupName: '', groupType: 'STANDALONE' as RetailClientGroupT
 
 export default function GroupsPage() {
   const { token } = useAuth();
+  const canRemove = useAdminRemovalAccess();
   const [allGroups, setAllGroups] = useState<RetailClientGroup[]>([]);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -354,7 +356,7 @@ export default function GroupsPage() {
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEdit(g)}>
                         Edit
                       </Button>
-                      <Button
+                      {canRemove && <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
@@ -363,7 +365,7 @@ export default function GroupsPage() {
                         onClick={() => setDeleteTarget(g)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      </Button>}
                     </div>
                   </TableCell>
                 </TableRow>

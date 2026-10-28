@@ -1,5 +1,8 @@
 'use client';
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
+import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Activity, ArrowLeft, Building2, CalendarClock, CalendarDays, CalendarPlus, CheckCircle2, Download, Edit3, Eye, FileText, HardHat, Hash, History, Landmark, ListChecks, Loader2, Mail, MapPin, MoreHorizontal, Package, PackagePlus, Phone, Plus, RefreshCw, ShieldAlert, ShieldCheck, StickyNote, Trash2, User, UserPlus, Users, Workflow } from 'lucide-react';
@@ -87,6 +90,8 @@ export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { token, userData } = useAuth();
+  const canRemove = useAdminRemovalAccess();
+  const confirmRemoval = useRemovalConfirmation();
   const projectId = Number(params?.id);
 
   const [project, setProject] = useState<Project | null>(null);
@@ -576,7 +581,7 @@ export default function ProjectDetailPage() {
   };
 
   const removeParty = async (party: ProjectParty) => {
-    if (!token || !window.confirm(`Remove ${(party as unknown as { partyNameText?: string }).partyNameText ?? (party as unknown as { partyName?: string }).partyName ?? 'this party'} from this project?`)) return;
+    if (!token || !(await confirmRemoval({ title: "Confirm removal", description: `Remove ${(party as unknown as { partyNameText?: string }).partyNameText ?? (party as unknown as { partyName?: string }).partyName ?? 'this party'} from this project?` }))) return;
     setBusy(true);
     try { await ProjectsAPI.deactivateProjectParty(party.id, token); toast.success('Party removed.'); try { setParties((await ProjectsAPI.getProjectParties(projectId, token)).content); } catch { await load(); } } catch (error) { toast.error(getErrorMessage(error, 'Unable to remove party.')); } finally { setBusy(false) }
   };
@@ -680,9 +685,9 @@ export default function ProjectDetailPage() {
   };
 
   const removeTask = async (task: ProjectTask) => {
-    if (!token || !window.confirm(`Delete task "${task.title}"?`)) return;
+    if (!token || !(await confirmRemoval({ title: "Confirm removal", description: `Cancel task "${task.title}"?` }))) return;
     setBusy(true);
-    try { await ProjectsAPI.deleteTask(task.id, token); toast.success('Task deleted.'); await reloadTasks(); } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')); } finally { setBusy(false); }
+    try { await ProjectsAPI.deleteTask(task.id, token); toast.success('Task cancelled.'); await reloadTasks(); } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')); } finally { setBusy(false); }
   };
 
   if (isLoading) return <DetailSkeleton />;
@@ -831,7 +836,7 @@ export default function ProjectDetailPage() {
               <DropdownMenuItem onSelect={() => openParty()}><Building2 />Add party</DropdownMenuItem>
               {canRaiseNc && <DropdownMenuItem onSelect={openRaiseNc}><ShieldAlert />Raise NC</DropdownMenuItem>}
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" disabled={!project.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate project</DropdownMenuItem>
+              {canRemove && <DropdownMenuItem variant="destructive" disabled={!project.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate project</DropdownMenuItem>}
             </DropdownMenuContent>
           </DropdownMenu>
         </>}
@@ -922,7 +927,7 @@ export default function ProjectDetailPage() {
                   >
                     {ncRegisters.length === 0 ? <EmptyState compact title="No NCs raised." /> : (
                       <ul className="max-h-[420px] divide-y overflow-y-auto">
-                        {ncRegisters.map((nc) => <NcRow key={nc.id} nc={nc} evidence={ncDocsMap[nc.id] || []} busy={ncBusyId === nc.id} onSubmitClosure={() => void openSubmitNc(nc)} onAddEvidence={() => addNcEvidence(nc)} onAccept={() => void openAcceptNc(nc)} />)}
+                        {ncRegisters.map((nc) => <NcRow key={nc.id} nc={nc} evidence={ncDocsMap[nc.id] || []} busy={ncBusyId === nc.id} onSubmitClosure={() => void openSubmitNc(nc)} onAddEvidence={() => addNcEvidence(nc)} onAccept={() => void openAcceptNc(nc)} onArchive={load} archiveEndpoint={`/api/projects/nc/${nc.id}`} />)}
                       </ul>
                     )}
                   </Section>
@@ -950,7 +955,7 @@ export default function ProjectDetailPage() {
                           </div>
                           <div className="flex shrink-0 items-center gap-0.5">
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openParty(party)} aria-label={`Edit ${name}`} title="Edit party"><Edit3 className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => void removeParty(party)} disabled={busy} aria-label={`Remove ${name}`} title="Remove party"><Trash2 className="h-3.5 w-3.5" /></Button>
+                            {canRemove && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => void removeParty(party)} disabled={busy} aria-label={`Remove ${name}`} title="Remove party"><Trash2 className="h-3.5 w-3.5" /></Button>}
                           </div>
                         </li>
                       );
@@ -988,7 +993,7 @@ export default function ProjectDetailPage() {
                             <span className="hidden truncate text-xs lg:block" title={partyLabel}>{partyLabel}</span>
                             <span className="hidden text-xs tabular-nums lg:block">{view.mobile ? <a href={`tel:${view.mobile}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3 w-3 text-muted-foreground" />{view.mobile}</a> : <span className="text-muted-foreground">—</span>}</span>
                             <span className="hidden min-w-0 text-xs lg:block">{view.email ? <a href={`mailto:${view.email}`} className="flex min-w-0 items-center gap-1.5 hover:underline" title={view.email}><Mail className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{view.email}</span></a> : <span className="text-muted-foreground">—</span>}</span>
-                            <div className="flex items-center justify-end gap-0.5"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${view.name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setContactToRemove(contact)} disabled={busy} aria-label={`Remove ${view.name}`} title="Remove contact"><Trash2 className="h-3.5 w-3.5" /></Button></div>
+                            <div className="flex items-center justify-end gap-0.5"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${view.name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button>{canRemove && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setContactToRemove(contact)} disabled={busy} aria-label={`Remove ${view.name}`} title="Remove contact"><Trash2 className="h-3.5 w-3.5" /></Button>}</div>
                           </li>
                         );
                       })}
@@ -1028,6 +1033,7 @@ export default function ProjectDetailPage() {
                         <div className="flex shrink-0 items-center gap-0.5">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openDocEdit(doc)} aria-label={`Edit dates for ${doc.fileName}`} title="Edit approval/expiry dates"><Edit3 className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
+                          <AdminRemovalAction endpoint={`/api/common/documents/${doc.id}`} name={doc.fileName} description="Archive this document. Accepted approval evidence is protected." onRemoved={load} />
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
                         </div>
                       </li>

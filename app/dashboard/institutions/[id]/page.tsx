@@ -1,5 +1,8 @@
 'use client';
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
+import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Activity, ArrowLeft, Building2, CalendarClock, CalendarDays, CalendarPlus, CheckCircle2, Circle, Download, Edit3, Eye, FileText, FileUser, Hash, History, Landmark, ListChecks, Loader2, Mail, MapPin, MapPinned, MoreHorizontal, NotebookPen, Phone, Plus, RefreshCw, ShieldAlert, ShieldCheck, StickyNote, Trash2, Upload, User, UserPlus, Workflow } from 'lucide-react';
@@ -91,6 +94,8 @@ export default function InstitutionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { token, userData } = useAuth();
+  const canRemove = useAdminRemovalAccess();
+  const confirmRemoval = useRemovalConfirmation();
   const institutionId = Number(params?.id);
 
   const [institution, setInstitution] = useState<Institution | null>(null);
@@ -788,9 +793,9 @@ export default function InstitutionDetailPage() {
   };
 
   const removeTask = async (task: InstitutionTask) => {
-    if (!token || !window.confirm(`Delete task "${task.title}"?`)) return;
+    if (!token || !(await confirmRemoval({ title: "Confirm removal", description: `Cancel task "${task.title}"?` }))) return;
     setBusy(true);
-    try { await InstitutionsAPI.deleteTask(task.id, token); toast.success('Task deleted.'); await reloadTasks(); } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')); } finally { setBusy(false); }
+    try { await InstitutionsAPI.deleteTask(task.id, token); toast.success('Task cancelled.'); await reloadTasks(); } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')); } finally { setBusy(false); }
   };
 
   if (isLoading) return <DetailSkeleton />;
@@ -935,7 +940,7 @@ export default function InstitutionDetailPage() {
               <DropdownMenuItem onSelect={() => setDocOpen(true)}><Upload />Upload document</DropdownMenuItem>
               {canRaiseNc && <DropdownMenuItem onSelect={openRaiseNc}><ShieldAlert />Raise NC</DropdownMenuItem>}
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" disabled={!institution.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate institution</DropdownMenuItem>
+              {canRemove && <DropdownMenuItem variant="destructive" disabled={!institution.active} onSelect={() => setDeleteOpen(true)}><Trash2 />Deactivate institution</DropdownMenuItem>}
             </DropdownMenuContent>
           </DropdownMenu>
         </>}
@@ -1020,7 +1025,7 @@ export default function InstitutionDetailPage() {
                   >
                     {ncRegisters.length === 0 ? <EmptyState compact title="No NCs raised." /> : (
                       <ul className="max-h-[420px] divide-y overflow-y-auto">
-                        {ncRegisters.map((nc) => <NcRow key={nc.id} nc={nc} evidence={ncDocsMap[nc.id] || []} busy={ncBusyId === nc.id} onSubmitClosure={() => void openSubmitNc(nc)} onAddEvidence={() => pickNcEvidence(nc)} onAccept={() => void openAcceptNc(nc)} />)}
+                        {ncRegisters.map((nc) => <NcRow key={nc.id} nc={nc} evidence={ncDocsMap[nc.id] || []} busy={ncBusyId === nc.id} onSubmitClosure={() => void openSubmitNc(nc)} onAddEvidence={() => pickNcEvidence(nc)} onAccept={() => void openAcceptNc(nc)} onArchive={load} archiveEndpoint={`/api/empanelment/nc/${nc.id}`} />)}
                       </ul>
                     )}
                   </Section>
@@ -1058,7 +1063,7 @@ export default function InstitutionDetailPage() {
                             </div>
                             <span className="hidden text-xs tabular-nums md:block">{mobile ? <a href={`tel:${mobile}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3 w-3 text-muted-foreground" />{mobile}</a> : <span className="text-muted-foreground">—</span>}</span>
                             <span className="hidden min-w-0 text-xs md:block">{email ? <a href={`mailto:${email}`} className="flex min-w-0 items-center gap-1.5 hover:underline" title={email}><Mail className="h-3 w-3 shrink-0 text-muted-foreground" /><span className="truncate">{email}</span></a> : <span className="text-muted-foreground">—</span>}</span>
-                            <div className="flex items-center justify-end"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button></div>
+                            <div className="flex items-center justify-end"><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openContactForm(contact)} aria-label={`Edit ${name}`} title="Edit contact"><Edit3 className="h-3.5 w-3.5" /></Button><AdminRemovalAction endpoint={`/api/empanelment/contacts/${contact.id}`} label="Remove contact" name={name} description="Remove this contact link from the institution. The shared person record will be kept." onRemoved={load} /></div>
                           </li>
                         );
                       })}
@@ -1098,6 +1103,7 @@ export default function InstitutionDetailPage() {
                         <div className="flex shrink-0 items-center gap-0.5">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openDocEdit(doc)} aria-label={`Edit dates for ${doc.fileName}`} title="Edit approval/expiry dates"><Edit3 className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
+                          <AdminRemovalAction endpoint={`/api/common/documents/${doc.id}`} name={doc.fileName} description="Archive this document. Accepted approval evidence is protected." onRemoved={load} />
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
                         </div>
                       </li>

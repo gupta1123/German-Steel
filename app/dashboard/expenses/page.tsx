@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from 'sonner';
 import { expenseApprovalPayload, localExpenseDate } from '@/lib/expense-review';
@@ -42,6 +43,7 @@ interface Expense {
   amount: number;
   description: string;
   status: "approved" | "pending" | "rejected";
+  reimbursed?: boolean;
 }
 
 interface Employee {
@@ -382,7 +384,8 @@ export default function ExpensesPage() {
           expenses = await apiService.getExpensesByDateRange(startDate, endDate);
         }
       }
-      const transformedEmployees = transformExpenseData(expenses, directory);
+      const paidIds = new Set(expenses.filter((expense) => String(expense.approvalStatus).toUpperCase() === 'REIMBURSED').map((expense) => expense.id));
+      const transformedEmployees = transformExpenseData(expenses, directory).map(employee => ({ ...employee, expenses: employee.expenses.map(expense => ({ ...expense, reimbursed: paidIds.has(expense.id) })) }));
       setEmployees(transformedEmployees);
     } catch (err) {
       console.error('Error loading expenses:', err);
@@ -647,6 +650,7 @@ export default function ExpensesPage() {
             employee={employee} 
             showExpenses={expandedCardId === employee.id}
             onToggleExpenses={() => toggleCardExpansion(employee.id)}
+                onRemoved={loadExpenses}
                 onApprove={handleApprove}
                 onViewReceipts={(expenseId, title) => setReceiptExpense({ id: expenseId, title })}
                 busy={reviewBusy}
@@ -706,6 +710,7 @@ export default function ExpensesPage() {
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
                               <div className="flex gap-2">
+                                <AdminRemovalAction endpoint={`/api/hr/expenses/${expense.id}`} name={`${expense.employeeName} · ${expense.category} · ₹${expense.amount}`} description="Archive this claim and keep its history. Reimbursed expenses cannot be archived." disabled={reviewBusy || expense.reimbursed} onRemoved={loadExpenses} />
                                 <Button
                                   size="sm"
                                   variant="outline"

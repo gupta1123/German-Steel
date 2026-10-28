@@ -1,5 +1,7 @@
 'use client';
 
+import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { format, subDays, addDays, differenceInDays, startOfMonth } from 'date-fns';
 import { useAuth } from '@/components/auth-provider';
@@ -110,6 +112,8 @@ const toRequirementTask = (task: SharedTask): Task => ({
 });
 
 const Requirements = () => {
+    const confirmRemoval = useRemovalConfirmation();
+    const canRemove = useAdminRemovalAccess();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [newTask, setNewTask] = useState<Task>({
         id: 0,
@@ -630,12 +634,13 @@ const Requirements = () => {
     };
 
     const deleteTask = async (taskId: number) => {
-        if (!token) return;
+        if (!token || !canRemove) return;
+        if (!(await confirmRemoval({ title: "Cancel requirement?", description: "This item will be marked cancelled. Its history will be kept. Completed items cannot be cancelled.", label: "Cancel item" }))) return;
         
         try {
             await tasksApi.delete(taskId, token);
             await fetchTasks();
-            toast.success('Requirement deleted');
+            toast.success('Requirement cancelled');
         } catch (error) {
             console.error('Error deleting task:', error);
             setErrorMessage(error instanceof Error ? error.message : 'Failed to delete requirement');
@@ -1021,9 +1026,9 @@ const Requirements = () => {
                                                         <Building className="mr-2 h-4 w-4" /> View Store
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem onClick={() => deleteTask(task.id)} className="text-red-600">
-                                                        <Trash2 className="mr-2 h-4 w-4" /> Delete Requirement
-                                                    </DropdownMenuItem>
+                                                    {canRemove && !["COMPLETED", "CANCELLED"].includes(String(task.status).toUpperCase()) && <DropdownMenuItem onClick={() => deleteTask(task.id)} className="text-red-600">
+                                                        <Trash2 className="mr-2 h-4 w-4" /> Cancel Requirement
+                                                    </DropdownMenuItem>}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </div>

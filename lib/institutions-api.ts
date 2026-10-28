@@ -517,13 +517,13 @@ export const InstitutionsAPI = {
     await request(`/api/empanelment/contacts/${contactLinkId}`, token, json('PUT', payload));
   },
   async getNcRegisters(id: number, token: string): Promise<NcRegister[]> {
-    const response = await request(`/api/empanelment/nc${queryString({ parentType: 'INSTITUTION', institutionId: id, page: 0, size: 100 })}`, token);
+    const response = await request(`/api/empanelment/nc${queryString({ parentType: 'INSTITUTION', institutionId: id, active: true, page: 0, size: 100 })}`, token);
     return pageItems(response).flatMap((v) => { const nc = normalizeNc(v); return nc ? [nc] : []; });
   },
   async getCombinedNcRegister(token: string, filters: CombinedNcFilters = {}): Promise<ApiPage<CombinedNcRegister>> {
     const page = filters.page ?? 0;
     const size = filters.size ?? 50;
-    const response = await request(`/api/empanelment/nc${queryString({ ...filters, page, size })}`, token);
+    const response = await request(`/api/empanelment/nc${queryString({ active: true, ...filters, page, size })}`, token);
     const items = pageItems(response).flatMap((value) => {
       const item = recordOf(value);
       const nc = normalizeNc(value);

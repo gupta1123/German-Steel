@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -24,6 +25,7 @@ interface VisitDetailsModalProps {
     visitData: Record<string, unknown>[];
     selectedDate: string;
     employeeName: string;
+    onAttendanceReset?: () => void | Promise<unknown>;
     dayLog?: AttendanceLog | null;
     dayRequest?: ApprovalRequest | null;
 }
@@ -82,7 +84,7 @@ const clientKindLabel = (kind?: VisitClientKind) => {
 const textOf = (value: unknown): string =>
   typeof value === 'string' && value.trim() ? value.trim() : '';
 
-const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, visitData, selectedDate, employeeName, dayLog, dayRequest }) => {
+const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, visitData, selectedDate, employeeName, dayLog, dayRequest, onAttendanceReset }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [navigatingVisitId, setNavigatingVisitId] = useState<number | null>(null);
     const visitsPerPage = 7;
@@ -245,7 +247,7 @@ const VisitDetailsModal: React.FC<VisitDetailsModalProps> = ({ isOpen, onClose, 
                         <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}>
                             <span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" className="h-8" onClick={onClose}>Close</Button>
+                        <div className="flex items-center gap-2">{dayLog && onAttendanceReset && <AdminRemovalAction endpoint={`/api/hr/attendance/logs/${dayLog.id}`} label="Reset attendance" name={`${employeeName} · ${selectedDate}`} description="Reset this day to absent and clear its attendance allowances. Approved corrections cannot be reset; use the correction process." disabled={dayRequest?.status.toUpperCase() === 'APPROVED'} compact={false} onRemoved={async () => { await onAttendanceReset(); onClose(); }} />}<Button size="sm" className="h-8" onClick={onClose}>Close</Button></div>
                     </div>
                 </div>
             </DialogContent>

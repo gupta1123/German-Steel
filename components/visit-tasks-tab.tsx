@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { AlertCircle, Calendar, ClipboardList, User, ImageIcon } from 'lucide-react';
 import { format, isValid, parseISO } from 'date-fns';
 import type { Task } from '@/lib/api';
@@ -24,8 +25,9 @@ function statusStyle(status: string) {
   return 'border-border bg-muted/50 text-muted-foreground';
 }
 
-export default function VisitTasksTab({ tasks, type, priority, onPriorityChange, loading, error }: {
+export default function VisitTasksTab({ tasks, type, priority, onPriorityChange, loading, error, onCancelled }: {
   tasks: Task[];
+  onCancelled?: (id: number) => void;
   type: 'requirement' | 'complaint';
   priority: string;
   onPriorityChange: (value: string) => void;
@@ -77,7 +79,7 @@ export default function VisitTasksTab({ tasks, type, priority, onPriorityChange,
                   <div className="flex flex-wrap items-center gap-1.5">
                     <p className="text-sm font-medium">{task.title || `${type === 'requirement' ? 'Requirement' : 'Complaint'} #${task.id}`}</p>
                     <span className={`inline-flex items-center rounded-full border px-2 py-0 text-[11px] font-medium leading-5 ${priorityStyles[task.priority] || 'border-border bg-muted text-muted-foreground'}`}>{priorityLabel}</span>
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0 text-[11px] font-medium leading-5 ${statusStyle(task.status || '')}`}>{statusLabel}</span>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0 text-[11px] font-medium leading-5 ${statusStyle(task.status || '')}`}>{statusLabel}</span>{onCancelled && !['COMPLETED', 'CANCELLED', 'RESOLVED', 'CLOSED'].includes(String(task.status).toUpperCase()) && <AdminRemovalAction endpoint={`/api/tasks/${task.id}`} label="Cancel task" name={task.title || `Task #${task.id}`} description="Cancel this linked task. Its history and attachments will be kept." onRemoved={() => onCancelled(task.id)} />}
                   </div>
                   {task.description && <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs text-foreground/80" title={task.description}>{task.description}</p>}
                   <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">

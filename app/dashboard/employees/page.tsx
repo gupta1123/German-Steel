@@ -1,5 +1,6 @@
 "use client";
 
+import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -176,6 +177,8 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
   const { requestDiscard, markSaved } = useUnsavedChanges(employeeAccountDraftIsDirty);
 
   const { token, userRole, userData, currentUser } = useAuth();
+
+  const canRemove = useAdminRemovalAccess();
   const employeeId = userData?.employeeId ? String(userData.employeeId) : (typeof window !== 'undefined' ? localStorage.getItem('employeeId') : null);
   const officeManagerId = typeof window !== 'undefined' ? localStorage.getItem('officeManagerId') : null;
   const normalizedRole = normalizeRoleValue(userRole);
@@ -302,13 +305,6 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   const deleteUserById = async (userId: number) => {
     try {
-      // Leave the team first, then archive (deactivate) the employee with the current API.
-      const { teamsApi } = await import('@/lib/teams-api');
-      const employee = await teamsApi.getEmployeeById(token ?? '', userId).catch(() => null);
-      if (employee?.teamId) {
-        await teamsApi.removeTeamEmployee(token ?? '', employee.teamId, userId);
-      }
-
       const response = await fetch(
         `http://ec2-18-211-58-135.compute-1.amazonaws.com:8081/api/common/employees/${userId}`,
         {
@@ -842,7 +838,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName ?? '')}>Edit Username</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>Reset Password</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>Delete</DropdownMenuItem>
+                        {canRemove && <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>Archive</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -969,9 +965,9 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                             <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>
                               Reset Password
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>
-                              Delete
-                            </DropdownMenuItem>
+                            {canRemove && <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>
+                              Archive
+                            </DropdownMenuItem>}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -1078,9 +1074,9 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
       >
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Delete Employee</DialogTitle>
+            <DialogTitle>Archive Employee</DialogTitle>
             <DialogDescription>
-              {`Are you sure you want to delete ${deleteCandidate ? formatPersonName(deleteCandidate.firstName, deleteCandidate.lastName) || 'this employee' : 'this employee'}? This action cannot be undone.`}
+              {`Are you sure you want to archive ${deleteCandidate ? formatPersonName(deleteCandidate.firstName, deleteCandidate.lastName) || 'this employee' : 'this employee'}? Their login will be disabled and their history will be kept.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1098,7 +1094,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
               className="flex items-center gap-2"
             >
               {isDeletingUser && <Loader2 className="h-4 w-4 animate-spin" />}
-              Delete
+              Archive
             </Button>
           </DialogFooter>
         </DialogContent>
