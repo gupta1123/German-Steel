@@ -243,7 +243,7 @@ export const visitsApi = {
     });
   },
 
-  async getCommonVisits(token: string, params: CommonVisitsParams): Promise<CommonVisitsPage> {
+  async getCommonVisits(token: string, params: CommonVisitsParams, signal?: AbortSignal): Promise<CommonVisitsPage> {
     const search = new URLSearchParams({
       page: String(params.page),
       size: String(params.size),
@@ -253,7 +253,7 @@ export const visitsApi = {
     if (params.visitType) search.set('visitType', params.visitType);
     if (params.assignedEmployeeId != null) search.set('assignedEmployeeId', String(params.assignedEmployeeId));
 
-    const data = await request(`/api/common/visits?${search.toString()}`, token);
+    const data = await request(`/api/common/visits?${search.toString()}`, token, { signal });
 
     // Handle Spring Data Page envelope (content, totalElements, etc.) and fallback array
     if (Array.isArray(data)) {

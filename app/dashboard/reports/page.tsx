@@ -45,6 +45,8 @@ import { DateRangeError, isDateRangeInvalid } from '@/components/date-range-erro
 import { SearchableSelect } from '@/components/ui/searchable-select2';
 import { formatCityLabel } from '@/lib/city-options';
 import { reportsApi } from '@/lib/reports-api';
+import { visitsApi } from '@/lib/visits-api';
+import { buildVisitReport, loadVisitReportRows, VISIT_REPORT_CATEGORIES as CUSTOMER_CATEGORIES, type VisitReportCategory, type VisitReportDetail } from '@/lib/visit-report';
 
 interface AttendanceStats {
     absences: number;
@@ -52,18 +54,11 @@ interface AttendanceStats {
     fullDays: number;
 }
 
-interface VisitsByCustomerType {
-    [key: string]: number; 
-}
-
 interface FieldOfficerStatsResponse {
     totalVisits: number;
     attendanceStats: AttendanceStats;
     completedVisits: number;
-    visitsByCustomerType: VisitsByCustomerType;
 }
-
-const CUSTOMER_CATEGORIES = ["Shop", "Site Visit", "Architect", "Engineer", "Builder", "Others"] as const;
 
 type ReportSummaryData = FieldOfficerStatsResponse & {
     categorizedVisits: Record<(typeof CUSTOMER_CATEGORIES)[number], number>;
@@ -117,19 +112,6 @@ type FieldOfficerOption = {
     label: string;
 };
 
-interface VisitDetail {
-    avgIntentLevel: number;
-    avgMonthlySales: number;
-    visitCount: number;
-    lastVisited: string; 
-    city: string;
-    taluka: string;
-    state: string;
-    customerName: string;
-    customerType: string; 
-    storeId: number; 
-}
-
 const formatSalesNumber = (num: number): string => {
     if (num >= 10000000) { // Crores
         const val = num / 10000000;
@@ -169,10 +151,10 @@ const ReportsPage: React.FC = () => {
     const [showReport, setShowReport] = useState<boolean>(false);
     const [reportSummary, setReportSummary] = useState<ReportSummaryData | null>(null);
 
-    const [visitDetails, setVisitDetails] = useState<VisitDetail[] | null>(null);
-    const [detailsLoading, setDetailsLoading] = useState<boolean>(false);
-    const [detailsError, setDetailsError] = useState<string | null>(null);
-    const [selectedCustomerTypeForDetails, setSelectedCustomerTypeForDetails] = useState<string | null>(null);
+    const [reportVisits, setReportVisits] = useState<VisitReportDetail[]>([]);
+    const [reportContext, setReportContext] = useState<{ employeeName: string; from: string; to: string } | null>(null);
+    const [selectedCustomerTypeForDetails, setSelectedCustomerTypeForDetails] = useState<VisitReportCategory | null>(null);
+    const visitDetails = useMemo(() => reportVisits.filter(visit => visit.category === selectedCustomerTypeForDetails), [reportVisits, selectedCustomerTypeForDetails]);
     const [dateRangeError, setDateRangeError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -242,49 +224,6 @@ const ReportsPage: React.FC = () => {
         setEndDate(dayjs(endDt).format('YYYY-MM-DD'));
     }, [rangeSelect]);
 
-    const fetchCustomerTypeDetails = async (displayCategory: string) => {
-        if (!token || !selectedEmployeeId || !startDate || !endDate) return;
-        setDetailsLoading(true);
-        setDetailsError(null);
-        setVisitDetails(null);
-        setSelectedCustomerTypeForDetails(displayCategory);
-        try {
-            const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
-            const response = await fetch(`${base}/api/common/visits?assignedEmployeeId=${selectedEmployeeId}&from=${startDate}&to=${endDate}&page=0&size=100`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-            if (!response.ok) throw new Error(`Visit details failed (${response.status})`);
-            const body = await response.json() as Record<string, unknown>;
-            const content = Array.isArray(body) ? body : Array.isArray(body.content) ? body.content : [];
-            const details = content.flatMap((value) => {
-                const row = value as Record<string, unknown>;
-                const rawType = String(row.clientType || row.customerType || row.visitType || row.type || 'Others');
-                const normalized = rawType.toLowerCase();
-                const category = normalized.includes('dealer') || normalized.includes('retail') || normalized.includes('shop') ? 'Shop'
-                    : normalized.includes('project') || normalized.includes('site') ? 'Site Visit'
-                    : normalized.includes('architect') ? 'Architect'
-                    : normalized.includes('engineer') ? 'Engineer'
-                    : normalized.includes('builder') ? 'Builder' : 'Others';
-                if (category !== displayCategory) return [];
-                return [{
-                    avgIntentLevel: 0,
-                    avgMonthlySales: 0,
-                    visitCount: 1,
-                    lastVisited: String(row.actualCheckoutAt || row.actualCheckinAt || row.scheduledVisitDate || ''),
-                    city: String(row.locationCity || row.city || ''),
-                    taluka: String(row.locationTaluka || row.taluka || ''),
-                    state: String(row.locationState || row.state || ''),
-                    customerName: String(row.retailAccountName || row.institutionName || row.projectName || row.customerName || 'Unknown'),
-                    customerType: rawType,
-                    storeId: Number(row.clientAccountId || row.institutionId || row.projectId || row.id || 0),
-                }];
-            });
-            setVisitDetails(details);
-        } catch (detailError) {
-            setDetailsError(detailError instanceof Error ? detailError.message : 'Failed to load visit details.');
-        } finally {
-            setDetailsLoading(false);
-        }
-    };
-
     const handleGenerateReport = async () => {
         if (!rangeSelect) {
             setDateRangeError('Please select a Date Range.');
@@ -302,19 +241,20 @@ const ReportsPage: React.FC = () => {
         // Prevent duplicate in-flight report generation
         if (reportLoading) return;
         setReportLoading(true); setReportError(null); setShowReport(false);
-        // Use AbortController to cancel stale report requests when filters change
+        setSelectedCustomerTypeForDetails(null);
+        setReportVisits([]);
+        // Bound the time spent retrieving the report, including all visit pages.
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         try {
             if (!token) throw new Error('Your session has expired. Please sign in again.');
-            const visitsUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081'}/api/common/visits?assignedEmployeeId=${selectedEmployeeId}&from=${startDate}&to=${endDate}&page=0&size=50`;
-            const [visitsRes, countsPage] = await Promise.all([
-                fetch(visitsUrl, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, signal: controller.signal }),
+            const [visitsContent, countsPage] = await Promise.all([
+                loadVisitReportRows(page => visitsApi.getCommonVisits(token, {
+                    assignedEmployeeId: Number(selectedEmployeeId), from: startDate, to: endDate, page, size: 100,
+                }, controller.signal)),
                 reportsApi.employeeCounts(token, { from: startDate, to: endDate, employeeId: Number(selectedEmployeeId), recordType: 'ALL', page: 0, size: 1 }),
             ]);
-            if (!visitsRes.ok) throw new Error(`Visits failed (${visitsRes.status})`);
-            const visitsData = await visitsRes.json();
-            const visitsContent: unknown[] = Array.isArray(visitsData) ? visitsData : Array.isArray((visitsData as Record<string, unknown>).content) ? (visitsData as Record<string, unknown>).content as unknown[] : [];
+            controller.signal.throwIfAborted();
             const counts = countsPage.content[0];
             const activity = counts?.activity;
             const statusCounts = counts?.attendanceCountByStatus || {};
@@ -323,56 +263,19 @@ const ReportsPage: React.FC = () => {
             const halfDays = Number(statusCounts.HALF_DAY ?? statusCounts.HALF ?? 0);
             const absences = Number(statusCounts.ABSENT ?? 0);
             const fullDays = Math.max(0, Number(counts?.attendanceDays || statusCounts.PRESENT || 0) - halfDays - absences);
-            const visitsByCustomerType: Record<string, number> = {};
-            for (const v of visitsContent) {
-                const r = v as Record<string, unknown>;
-                const t = String(r.clientType || r.customerType || r.type || 'others').toLowerCase();
-                visitsByCustomerType[t] = (visitsByCustomerType[t] || 0) + 1;
-            }
-            if (activity && visitsContent.length === 0) {
-                visitsByCustomerType.shop = Number(activity.retailVisitCount) || 0;
-                visitsByCustomerType['site visit'] = Number(activity.projectVisitCount) || 0;
-                visitsByCustomerType.others = Number(activity.institutionVisitCount) || 0;
-            }
-
             const data: FieldOfficerStatsResponse = {
                 totalVisits,
                 completedVisits,
                 attendanceStats: { fullDays, halfDays, absences },
-                visitsByCustomerType,
             };
-
-            const apiTypeToDisplayCategoryMap: Record<string, (typeof CUSTOMER_CATEGORIES)[number]> = {
-                "shop": "Shop",
-                "site visit": "Site Visit",
-                "architect": "Architect", 
-                "engineer": "Engineer",
-                "builder": "Builder"
-            };
-
-            const categorizedVisits = Object.fromEntries(
-                CUSTOMER_CATEGORIES.map((category) => [category, 0])
-            ) as ReportSummaryData["categorizedVisits"];
-
-            for (const apiType in data.visitsByCustomerType) {
-                const count = data.visitsByCustomerType[apiType];
-                const targetDisplayCategory = apiTypeToDisplayCategoryMap[apiType.toLowerCase()];
-
-                if (targetDisplayCategory) {
-                    categorizedVisits[targetDisplayCategory] += count;
-                } else {
-                    categorizedVisits["Others"] += count;
-                }
-            }
-
+            const { categorizedVisits, details } = buildVisitReport(visitsContent);
             setReportSummary({ ...data, categorizedVisits });
+            setReportVisits(details);
+            setReportContext({ employeeName: selectedEmployeeName, from: startDate, to: endDate });
             setShowReport(true);
-            setVisitDetails(null);
-            setDetailsError(null);
-            setSelectedCustomerTypeForDetails(null);
         } catch (err) {
             if ((err as Error).name === 'AbortError') {
-                setReportError('Report request was cancelled due to filter change.');
+                setReportError('Report request timed out. Please try again.');
             } else {
                 setReportError((err as Error).message || 'Failed to fetch report data.');
             }
@@ -615,8 +518,8 @@ const ReportsPage: React.FC = () => {
                                             <button
                                                 key={category}
                                                 type="button"
-                                                disabled={reportLoading || detailsLoading}
-                                                onClick={() => fetchCustomerTypeDetails(category)}
+                                                disabled={reportLoading}
+                                                onClick={() => setSelectedCustomerTypeForDetails(category)}
                                                 className={cn(
                                                     "group flex min-h-16 cursor-pointer flex-col items-center justify-center rounded-md border bg-background px-2 py-2 text-center transition-[border-color,background-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.04] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60",
                                                     selectedCustomerTypeForDetails === category && "border-primary bg-primary/10 text-primary shadow-sm"
@@ -639,26 +542,11 @@ const ReportsPage: React.FC = () => {
                                     {selectedCustomerTypeForDetails} visits
                                 </h3>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
-                                    {selectedEmployeeName !== "Select Field Officer" && `${selectedEmployeeName} · ${dayjs(startDate).format('MMM DD, YYYY')} – ${dayjs(endDate).format('MMM DD, YYYY')}`}
+                                    {reportContext && `${reportContext.employeeName} · ${dayjs(reportContext.from).format('MMM DD, YYYY')} – ${dayjs(reportContext.to).format('MMM DD, YYYY')}`}
                                 </p>
                             </div>
                             
-                            {detailsLoading && (
-                                <div className="flex justify-center items-center py-12">
-                                    <div className="flex flex-col items-center gap-3">
-                                        <Loader className="w-8 h-8 animate-spin text-primary" />
-                                        <p className="text-sm text-muted-foreground">Loading visit details...</p>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {detailsError && (
-                                <div className="p-4 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md m-4">
-                                    <p><strong>Error:</strong> {detailsError}</p>
-                                </div>
-                            )}
-                            
-                            {!detailsLoading && !detailsError && visitDetails && (
+                            {(
                                 visitDetails.length > 0 ? (
                                     <div className="overflow-x-auto">
                   <Table>
@@ -685,9 +573,11 @@ const ReportsPage: React.FC = () => {
                                                     .map((detail, index) => (
                                                         <TableRow key={index}>
                                                             <TableCell className="font-medium">
-                                                                <Link href={`/CustomerDetailPage/${detail.storeId}`} className="text-primary hover:text-primary/80 hover:underline">
-                                                                    {detail.customerName}
-                                                                </Link>
+                                                                {detail.customerHref ? (
+                                                                    <Link href={detail.customerHref} className="text-primary hover:text-primary/80 hover:underline">
+                                                                        {detail.customerName}
+                                                                    </Link>
+                                                                ) : detail.customerName}
                                                             </TableCell>
                                                             <TableCell>{formatCityLabel(detail.city)}</TableCell>
                                                             <TableCell>{detail.taluka}</TableCell>
