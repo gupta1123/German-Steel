@@ -1,5 +1,7 @@
 'use client';
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
 import { useEffect, useState } from 'react';
 import { ExternalLink, FileText, ImageOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
@@ -31,6 +33,7 @@ const isImage = (mimeType: string) => mimeType.toLowerCase().startsWith('image/'
  */
 export default function ExpenseReceiptsDialog({ expenseId, title, onClose }: ExpenseReceiptsDialogProps) {
   const { token } = useAuth();
+  const [removalVersion, setRemovalVersion] = useState(0);
   const [files, setFiles] = useState<ReceiptFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +55,7 @@ export default function ExpenseReceiptsDialog({ expenseId, title, onClose }: Exp
         if (!listResponse.ok) throw new Error(`Could not load receipts (${listResponse.status}).`);
         const body = await listResponse.json();
         const items: Record<string, unknown>[] = Array.isArray(body) ? body : Array.isArray(body?.content) ? body.content : [];
-        const loaded = await Promise.all(items.map(async (item): Promise<ReceiptFile | null> => {
+        const loaded = await Promise.all(items.filter(item => item.active !== false).map(async (item): Promise<ReceiptFile | null> => {
           const id = Number(item.id);
           if (!Number.isFinite(id)) return null;
           const name = typeof item.originalFileName === 'string' && item.originalFileName ? item.originalFileName : `Receipt ${id}`;
@@ -83,7 +86,7 @@ export default function ExpenseReceiptsDialog({ expenseId, title, onClose }: Exp
       controller.abort();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [expenseId, token]);
+  }, [expenseId, token, removalVersion]);
 
   const active = files.find((file) => file.id === activeId) ?? null;
 
@@ -148,6 +151,7 @@ export default function ExpenseReceiptsDialog({ expenseId, title, onClose }: Exp
                       <ImageOff className="h-5 w-5 text-muted-foreground" aria-hidden />
                     )}
                   </button>
+                  <AdminRemovalAction endpoint={adminRemovalPaths.file(file.id)} label="Remove receipt" name={file.name} description="Remove this receipt attachment. The expense claim itself will be kept." onRemoved={() => setRemovalVersion(value => value + 1)} />
                 </li>
               ))}
             </ul>

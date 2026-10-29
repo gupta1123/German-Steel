@@ -1,5 +1,7 @@
 'use client';
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, ImageIcon, ImageOff, Loader2, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
@@ -9,7 +11,7 @@ import { downloadTaskImage, listTaskImages, type TaskImage } from '@/lib/task-im
 
 interface LoadedImage extends TaskImage { url: string | null; failed: boolean }
 
-/** Read-only: never uploads, edits, or deletes a task attachment. */
+/** Authenticated task images with confirmed admin file removal. */
 export default function TaskImages({ taskId }: { taskId: number }) {
   const { token } = useAuth();
   const [images, setImages] = useState<LoadedImage[]>([]);
@@ -104,7 +106,7 @@ export default function TaskImages({ taskId }: { taskId: number }) {
                     <img src={image.url} alt={image.name} className="h-full w-full object-cover" onError={() => markFailed(image.id)} />
                   ) : <ImageOff className="h-6 w-6 text-muted-foreground" aria-hidden />}
                 </button>
-                <p className="truncate text-xs text-muted-foreground" title={image.name}>{image.name}</p>
+                <div className="flex items-center justify-between gap-1"><p className="truncate text-xs text-muted-foreground" title={image.name}>{image.name}</p><AdminRemovalAction endpoint={adminRemovalPaths.file(image.id)} label="Remove image" name={image.name} description="Remove this image from the task. Its stored file and history will be kept." onRemoved={() => { setSelectedId(null); retry(); }} /></div>
                 {image.failed && <p className="text-xs text-destructive">Could not load image.</p>}
               </li>
             ))}

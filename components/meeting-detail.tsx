@@ -1,5 +1,8 @@
 "use client";
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
+import { MeetingRemovalItems } from '@/components/meeting-removal-items';
 import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -1869,10 +1872,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
   const removeGift = async (index: number) => {
     if (!meeting) return;
     const gift = gifts[index];
-    if (gift?.id) {
-      await runAction(() => meetingsApi.deleteGift(meeting.id, gift.id as number), "Gift removed.");
-      return;
-    }
+    if (gift?.id) return;
     setGifts((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
   };
 
@@ -1956,10 +1956,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
   const removeExpense = async (index: number) => {
     if (!meeting) return;
     const expense = expenses[index];
-    if (expense?.id) {
-      await runAction(() => meetingsApi.deleteExpense(meeting.id, expense.id as number), "Expense removed.");
-      return;
-    }
+    if (expense?.id) return;
     setExpenses((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
   };
 
@@ -2411,7 +2408,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
         <div className="flex shrink-0 flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-xl font-extrabold text-foreground">{meeting.meetingType} Meeting</h1>
+              <h1 className="text-xl font-extrabold text-foreground">{meeting.meetingType} Meeting</h1><MeetingRemovalItems meetingId={meeting.id} onChanged={loadMeeting} disabled={hasMeetingDraftChanges || isSaving} />
               <Badge variant="outline" className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${statusBadgeClass(meeting.status)}`}>
                 {getMeetingStatusLabel(meeting)}
               </Badge>
@@ -3492,6 +3489,7 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <MeetingRemovalItems meetingId={meeting.id} onChanged={loadMeeting} disabled={hasMeetingDraftChanges || isSaving} />
           <Button variant="outline" size="sm" onClick={loadMeeting} disabled={isSaving} className="rounded-xl h-9">
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isSaving ? "animate-spin" : ""}`} />
             Refresh
@@ -3685,11 +3683,9 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                       <div key={index} className="rounded-xl border border-border/20 bg-muted/5 p-4 relative group hover:border-border/40 transition-all">
                         <div className="mb-3.5 flex items-center justify-between">
                           <span className="text-xs font-extrabold text-primary capitalize tracking-wider">Attendee #{index + 1}</span>
-                          {attendees.length > 1 && (
-                            <Button variant="ghost" size="sm" onClick={() => setAttendees((prev) => prev.filter((_, currentIndex) => currentIndex !== index))} className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50 text-[11px] font-bold rounded-md">
+                          {attendee.id ? <AdminRemovalAction endpoint={adminRemovalPaths.meetingAttendee(meeting.id, attendee.id)} label="Remove attendee" name={attendee.name} description="Remove this attendee. Active gifts assigned to them must be removed first." disabled={isSaving || hasMeetingDraftChanges} onRemoved={loadMeeting} /> : (attendees.length > 1 && (<Button variant="ghost" size="sm" onClick={() => setAttendees((prev) => prev.filter((_, currentIndex) => currentIndex !== index))} className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50 text-[11px] font-bold rounded-md">
                               Remove
-                            </Button>
-                          )}
+                            </Button>))}
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                           <Input placeholder="Full Name" className="rounded-lg h-9 text-xs" value={attendee.name} onChange={(event) => setAttendees((prev) => prev.map((item, currentIndex) => currentIndex === index ? { ...item, name: event.target.value } : item))} />
@@ -3977,11 +3973,9 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                           <Label className="text-[10px] font-bold text-muted-foreground">Quantity</Label>
                           <Input type="number" min="1" className="rounded-lg h-9 text-xs" placeholder="Qty" value={gift.quantity} onChange={(event) => setGifts((prev) => prev.map((item, currentIndex) => currentIndex === index ? { ...item, quantity: Number(event.target.value) } : item))} />
                         </div>
-                        {gifts.length > 1 && (
-                          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700 shrink-0 justify-self-end" onClick={() => removeGift(index)} disabled={isSaving} aria-label="Remove gift line">
+                        {gift.id ? <AdminRemovalAction endpoint={adminRemovalPaths.meetingGift(meeting.id, gift.id)} label="Remove gift" name={gift.giftItem || "gift"} description="Remove this saved gift and update the meeting totals. Its history will be kept." disabled={isSaving || hasMeetingDraftChanges} onRemoved={loadMeeting} /> : (gifts.length > 1 && (<Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700 shrink-0 justify-self-end" onClick={() => removeGift(index)} disabled={isSaving} aria-label="Remove gift line">
                             <XCircle className="h-4 w-4" />
-                          </Button>
-                        )}
+                          </Button>))}
                       </div>
                     ))}
                   </div>
@@ -4052,11 +4046,9 @@ export default function MeetingDetail({ meetingId }: { meetingId: number }) {
                       <div key={index} className="rounded-xl border border-border/20 p-4 bg-muted/5 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-extrabold text-muted-foreground capitalize tracking-wider">Expense Line #{index + 1}</span>
-                          {expenses.length > 1 && (
-                            <Button variant="ghost" size="sm" className="h-6 text-red-600 hover:bg-red-50 text-[10px] font-bold rounded-md" disabled={isSaving} onClick={() => removeExpense(index)}>
+                          {expense.id ? <AdminRemovalAction endpoint={adminRemovalPaths.meetingExpense(meeting.id, expense.id)} label="Remove expense" name={expense.expenseHead || "expense"} description="Remove this saved expense and update the meeting totals. Its history will be kept." disabled={isSaving || hasMeetingDraftChanges} onRemoved={loadMeeting} /> : (expenses.length > 1 && (<Button variant="ghost" size="sm" className="h-6 text-red-600 hover:bg-red-50 text-[10px] font-bold rounded-md" disabled={isSaving} onClick={() => removeExpense(index)}>
                               Delete Line
-                            </Button>
-                          )}
+                            </Button>))}
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 items-end">
                           <div className="space-y-1">

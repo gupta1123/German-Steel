@@ -1,5 +1,7 @@
 'use client';
 
+import { RecordFileManager } from '@/components/record-file-manager';
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
 import { AdminRemovalAction, useAdminRemovalAccess } from '@/components/admin-removal-action';
 import * as React from 'react';
 import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Circle, CircleDot, Edit3, ImageIcon, Inbox, Loader2, Paperclip, Trash2, Upload, User, XCircle, type LucideIcon } from 'lucide-react';
@@ -222,7 +224,7 @@ export function ActivityTimeline({ upcoming, recent, upcomingLimit = 3, viewAllH
 export interface FeedNote { id: number; text: string; author: string; date: string; edited?: boolean }
 
 /** Notes as a responsive grid of soft tiles with a slim inline composer; long notes clamp to five lines. */
-export function NotesFeed({ notes, onAdd, onEdit, placeholder = 'Write a note…' }: { notes: FeedNote[]; onAdd: (text: string) => Promise<boolean>; onEdit?: (id: number) => void; placeholder?: string }) {
+export function NotesFeed({ notes, onAdd, onEdit, onRemoved, placeholder = 'Write a note…' }: { notes: FeedNote[]; onAdd: (text: string) => Promise<boolean>; onEdit?: (id: number) => void; onRemoved?: () => void | Promise<unknown>; placeholder?: string }) {
   const [draft, setDraft] = React.useState('');
   const [focused, setFocused] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -269,6 +271,7 @@ export function NotesFeed({ notes, onAdd, onEdit, placeholder = 'Write a note…
                 {long && <button type="button" onClick={() => toggle(note.id)} className="mt-0.5 self-start text-[11px] font-medium text-muted-foreground hover:text-foreground">{isOpen ? 'Show less' : 'Show more'}</button>}
                 <footer className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                   <span className="min-w-0 truncate" title={`${note.author} · ${formatDay(note.date)}`}><span className="font-medium text-foreground/80">{note.author}</span> · {formatDay(note.date)}{note.edited ? ' · edited' : ''}</span>
+                  <RecordFileManager parentType="RECORD_NOTE" parentId={note.id} />{onRemoved && <AdminRemovalAction endpoint={adminRemovalPaths.note(note.id)} label="Remove note" name={note.text} description="Remove this note from the active list. Its previous text and edit history will be kept." onRemoved={onRemoved} />}
                   {onEdit && <button type="button" onClick={() => onEdit(note.id)} className="shrink-0 font-medium hover:text-foreground md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100">Edit</button>}
                 </footer>
               </article>
@@ -573,7 +576,7 @@ export const salesSummary = (sales: SaleLike[]): React.ReactNode => {
 };
 
 /** PO table, newest first, quantity right-aligned. */
-export function SalesTable({ sales, showOutcome = false, onEdit, voidEndpoint, onVoided }: { sales: SaleLike[]; showOutcome?: boolean; onEdit?: (sale: SaleLike) => void; voidEndpoint?: (id: number) => string; onVoided?: () => void | Promise<unknown> }) {
+export function SalesTable({ sales, showOutcome = false, onEdit, voidEndpoint, voidReasonField = 'correctionReason', onVoided }: { voidReasonField?: string; sales: SaleLike[]; showOutcome?: boolean; onEdit?: (sale: SaleLike) => void; voidEndpoint?: (id: number) => string; onVoided?: () => void | Promise<unknown> }) {
   const sorted = sales.filter(sale => sale.saleStatus !== 'VOIDED').sort((left, right) => String(right.saleDate).localeCompare(String(left.saleDate)));
   return (
     <div className="overflow-x-auto">
@@ -590,7 +593,7 @@ export function SalesTable({ sales, showOutcome = false, onEdit, voidEndpoint, o
               {showOutcome && <td className="px-4 py-2">{sale.invoiceReference || '—'}</td>}
               <td className="whitespace-nowrap px-4 py-2 text-right font-semibold tabular-nums">{sale.quantityMt.toLocaleString('en-IN')} MT</td>
               <td className="px-4 py-2"><Pill>{titleCase(sale.sourceSystem || 'Manual')}</Pill></td>
-              {(onEdit || voidEndpoint) && <td className="px-4 py-2"><div className="flex items-center gap-1">{onEdit && <Button variant="outline" size="sm" aria-label={`Edit sale ${sale.id}`} onClick={() => onEdit(sale)}>Edit</Button>}{voidEndpoint && onVoided && <AdminRemovalAction endpoint={voidEndpoint(sale.id)} method="POST" label="Void sale" reasonField="correctionReason" name={`Sale #${sale.id} · ${formatDay(sale.saleDate)} · ${sale.quantityMt} MT`} description="Void this sale and keep the original entry with your correction reason." onRemoved={onVoided} />}</div></td>}
+              {(onEdit || voidEndpoint) && <td className="px-4 py-2"><div className="flex items-center gap-1">{onEdit && <Button variant="outline" size="sm" aria-label={`Edit sale ${sale.id}`} onClick={() => onEdit(sale)}>Edit</Button>}{voidEndpoint && onVoided && <AdminRemovalAction endpoint={voidEndpoint(sale.id)} method="POST" label="Void sale" reasonField={voidReasonField} name={`Sale #${sale.id} · ${formatDay(sale.saleDate)} · ${sale.quantityMt} MT`} description="Void this sale and keep the original entry with your correction reason." onRemoved={onVoided} />}</div></td>}
             </tr>
           ))}
         </tbody>

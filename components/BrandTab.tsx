@@ -1,13 +1,13 @@
 "use client";
 
+import { RetailAccountBrandRemoval } from '@/components/retail-account-brand-removal';
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Plus, Edit, Trash2, CheckCircle, XCircle, Building2, Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Heading, Text } from "@/components/ui/typography";
+import { Plus, Edit, CheckCircle, XCircle, Building2, Loader2 } from "lucide-react";
+import { Text } from "@/components/ui/typography";
 import { useUnsavedChanges } from "@/components/unsaved-changes-provider";
 
 type Brand = {
@@ -24,6 +24,7 @@ type NewBrand = {
 };
 
 interface BrandTabProps {
+    retailAccountId?: number;
     brands: Brand[];
     setBrands: React.Dispatch<React.SetStateAction<Brand[]>>;
     visitId: string;
@@ -31,7 +32,7 @@ interface BrandTabProps {
     fetchVisitDetail: () => Promise<void>;
 }
 
-export default function BrandTab({ brands, setBrands, visitId, token, fetchVisitDetail }: BrandTabProps) {
+export default function BrandTab({ brands, setBrands, visitId, token, fetchVisitDetail, retailAccountId }: BrandTabProps) {
     const [isAdding, setIsAdding] = useState<boolean>(false);
     const [isEditing, setIsEditing] = useState<boolean>(false);
     const [newBrand, setNewBrand] = useState<NewBrand>({
@@ -41,9 +42,6 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
     });
     const [editingBrandId, setEditingBrandId] = useState<number | null>(null);
     const [isSaving, setIsSaving] = useState<boolean>(false);
-    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState<boolean>(false);
-    const [brandPendingDelete, setBrandPendingDelete] = useState<Brand | null>(null);
-    const [isDeleting, setIsDeleting] = useState<boolean>(false);
     const emptyBrand: NewBrand = { brandName: "", pros: [], cons: [] };
     const originalBrand = editingBrandId == null
         ? emptyBrand
@@ -145,19 +143,10 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
         }
     };
 
-    const confirmDelete = async () => {
-        if (!brandPendingDelete) return;
-        const deletedBrand = brandPendingDelete;
-        const updatedBrands = brands.filter((brand) => brand.id !== deletedBrand.id);
-        // Backend gap: no delete contract — keep local
-        setBrands(updatedBrands);
-        setConfirmDeleteOpen(false);
-        setBrandPendingDelete(null);
-    };
-
     return (
         <>
         <section className="w-full space-y-3" aria-labelledby="brand-insights-heading">
+            {retailAccountId && <RetailAccountBrandRemoval accountId={retailAccountId} />}
             {!isAdding && !isEditing && brands.length > 0 && (
                 <div className="flex items-center justify-between gap-3">
                     <div>
@@ -322,15 +311,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
                                         >
                                             <Edit className="h-3 w-3" />
                                         </Button>
-                                        <Button
-                                            onClick={() => { setBrandPendingDelete(brand); setConfirmDeleteOpen(true); }}
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                            aria-label={`Delete ${brand.brandName}`}
-                                        >
-                                            <Trash2 className="h-3 w-3" />
-                                        </Button>
+
                                     </div>
                                 </div>
 
@@ -383,26 +364,7 @@ export default function BrandTab({ brands, setBrands, visitId, token, fetchVisit
             )}
 
         </section>
-        {/* Delete Confirmation Modal */}
-        <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Delete Brand</DialogTitle>
-                    <DialogDescription>
-                        This will remove the brand and its pros/cons for this visit. This action cannot be undone.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="py-2">
-                    <Text size="sm">Brand: <span className="font-medium">{brandPendingDelete?.brandName}</span></Text>
-                </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => setConfirmDeleteOpen(false)} disabled={isDeleting}>Cancel</Button>
-                    <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
-                        {isDeleting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Deleting...</>) : ("Delete")}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+
         </>
     );
 }

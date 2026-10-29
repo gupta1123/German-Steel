@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/auth-provider";
 import { hasAdminSetupPrivileges } from "@/lib/auth";
 import { removeRecord } from "@/lib/removal-api";
+import { hasAdminRemovalRole, removalReference } from "@/lib/admin-removals-api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -37,16 +38,20 @@ export function AdminRemovalAction({ endpoint, label = "Archive", name, descript
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const allowed = !isLoading && hasAdminSetupPrivileges(userRole, currentUser);
+  const isAdminEndpoint = endpoint.startsWith('/api/admin/');
+  const requiredReasonField = isAdminEndpoint ? 'reason' : reasonField;
+  const allowed = !isLoading && (isAdminEndpoint ? hasAdminRemovalRole(userRole, currentUser) : hasAdminSetupPrivileges(userRole, currentUser));
   if (!allowed) return null;
 
   const submit = async () => {
-    if (!token || !allowed || disabled || inFlight.current || (reasonField && !reason.trim())) return;
+    if (!token || !allowed || disabled || inFlight.current || (requiredReasonField && !reason.trim())) return;
     inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
-      await removeRecord(token, endpoint, { method, reasonField, reason });
+      await removeRecord(token, endpoint, { method, reasonField: requiredReasonField, reason });
+      const reference = removalReference(endpoint);
+      if (reference) window.dispatchEvent(new CustomEvent('admin-record-removed', { detail: { ...reference, name } }));
       setOpen(false);
       setReason("");
       toast.success(`${label} completed.`);
@@ -67,9 +72,9 @@ export function AdminRemovalAction({ endpoint, label = "Archive", name, descript
       <DialogContent onClick={(event) => event.stopPropagation()}>
         <DialogHeader><DialogTitle>{label} this record?</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
         <p className="break-words rounded-md border bg-muted/40 p-3 text-sm font-medium">{name}</p>
-        {reasonField && <div className="space-y-2"><Label>Reason (required)<Textarea value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy} maxLength={500} placeholder="Explain why this record should be removed" /></Label></div>}
+        {requiredReasonField && <div className="space-y-2"><Label>Reason (required)<Textarea value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy} maxLength={500} placeholder="Explain why this record should be removed" /></Label><p className="text-xs text-muted-foreground">{reason.length}/500 characters</p></div>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>Keep record</Button><Button variant="destructive" disabled={busy || !token || Boolean(reasonField && !reason.trim())} onClick={() => void submit()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{label}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>Keep record</Button><Button variant="destructive" disabled={busy || !token || Boolean(requiredReasonField && !reason.trim())} onClick={() => void submit()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{label}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </>;

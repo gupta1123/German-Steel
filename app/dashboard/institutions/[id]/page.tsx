@@ -1,5 +1,6 @@
 'use client';
 
+import { RecordFileManager } from '@/components/record-file-manager';
 import { useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
 import { AdminRemovalAction } from '@/components/admin-removal-action';
@@ -1103,7 +1104,7 @@ export default function InstitutionDetailPage() {
                         <div className="flex shrink-0 items-center gap-0.5">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openDocEdit(doc)} aria-label={`Edit dates for ${doc.fileName}`} title="Edit approval/expiry dates"><Edit3 className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'view')} aria-label={`View ${doc.fileName}`} title="View"><Eye className="h-3.5 w-3.5" /></Button>
-                          <AdminRemovalAction endpoint={`/api/common/documents/${doc.id}`} name={doc.fileName} description="Archive this document. Accepted approval evidence is protected." onRemoved={load} />
+                          <RecordFileManager parentType="DOCUMENT_DEPOSITORY" parentId={doc.id} onFilesChanged={load} /><AdminRemovalAction endpoint={`/api/common/documents/${doc.id}`} name={doc.fileName} description="Archive this document. Accepted approval evidence is protected." onRemoved={load} />
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!doc.fileAttached} onClick={() => void openDocumentFile(doc, 'download')} aria-label={`Download ${doc.fileName}`} title="Download"><Download className="h-3.5 w-3.5" /></Button>
                         </div>
                       </li>
@@ -1135,6 +1136,7 @@ export default function InstitutionDetailPage() {
             count: notes.length,
             content: (
               <NotesFeed
+                onRemoved={reloadNotes}
                 notes={sortedNotes.map((note) => ({ id: note.id, text: note.noteText, author: noteAuthor(note), date: note.createdAt, edited: Boolean(note.updatedAt && note.updatedAt !== note.createdAt) }))}
                 onAdd={async (text) => { if (!token) return false; try { await InstitutionsAPI.createNote(institutionId, text, token); toast.success('Note added.'); await reloadNotes(); return true; } catch (error) { toast.error(getErrorMessage(error, 'Unable to add note.')); return false; } }}
                 placeholder="Write a note for the team… e.g. outcome of the meeting with the department"

@@ -1,5 +1,7 @@
 "use client";
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,6 +143,8 @@ const deriveVisitStatus = (visit: Pick<VisitDto, "checkinTime" | "checkoutTime">
 
 export default function VisitsTable() {
   const { userRole, userData, currentUser, teamId, correctedRoleFlags, token } = useAuth();
+  const [removalVersion, setRemovalVersion] = useState(0);
+  const onVisitRemoved = () => { setCurrentPage(0); setRemovalVersion(value => value + 1); };
   const router = useRouter();
   const [navigatingVisitId, setNavigatingVisitId] = useState<number | null>(null);
   const [isNavigating, startTransition] = useTransition();
@@ -599,7 +603,7 @@ export default function VisitsTable() {
       }
     };
     run();
-  }, [isStateHydrated, token, startDate, endDate, dateRangeInvalid, selectedVisitType, selectedExecutive, currentPage, pageSize]);
+  }, [isStateHydrated, token, startDate, endDate, dateRangeInvalid, selectedVisitType, selectedExecutive, currentPage, pageSize, removalVersion]);
 
   // Reset to first page when filters change — server-side filters use new endpoint
   useEffect(() => {
@@ -1016,11 +1020,12 @@ export default function VisitsTable() {
                   <TableCell><Ellipsis value={visit.purpose} /></TableCell>
                   <TableCell><Ellipsis value={visit.visitStart ? formatTimeTo12Hour(visit.visitStart) : '—'} /></TableCell>
                   <TableCell><Ellipsis value={visit.visitEnd ? formatTimeTo12Hour(visit.visitEnd) : '—'} /></TableCell>
-                  <TableCell>
+                  <TableCell><div className="flex items-center gap-1">
+                    <AdminRemovalAction endpoint={adminRemovalPaths.visit(visit.id)} label="Cancel visit" name={`${visit.customerName} · ${visit.date} · Visit #${visit.id}`} description="Cancel this visit and keep its history. Linked tasks will be cancelled. Active expenses linked to this visit must be archived first." onRemoved={onVisitRemoved} />
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleViewDetails(visit.id)} disabled={navigatingVisitId !== null}>
                       {navigatingVisitId === visit.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "View"}
                     </Button>
-                  </TableCell>
+                  </div></TableCell>
                 </TableRow>
               ))
             ) : (
@@ -1063,7 +1068,7 @@ export default function VisitsTable() {
                     <div><span className="text-muted-foreground">End</span><p className="font-medium">{visit.visitEnd ? formatTimeTo12Hour(visit.visitEnd) : '—'}</p></div>
                   </div>
                 )}
-                <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex justify-end gap-1"><AdminRemovalAction endpoint={adminRemovalPaths.visit(visit.id)} label="Cancel visit" name={`${visit.customerName} · ${visit.date} · Visit #${visit.id}`} description="Cancel this visit. Linked tasks will be cancelled; active linked expenses must be archived first." onRemoved={onVisitRemoved} compact={false} />
                   <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={() => handleViewDetails(visit.id)} disabled={navigatingVisitId !== null}>
                     {navigatingVisitId === visit.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "View details"}
                   </Button>

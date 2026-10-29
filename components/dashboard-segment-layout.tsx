@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminRemovalHistory } from '@/components/admin-removal-history';
 import DashboardLayout from "@/components/dashboard-layout";
 import { ReactNode, useCallback, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -206,6 +207,7 @@ export default function DashboardSegmentLayout({ children }: { children: ReactNo
         backHref={headerOverride ? undefined : basePage.backHref}
         onBack={headerOverride?.onBack}
       >
+        <div className="mb-3 flex justify-end"><AdminRemovalHistory /></div>
         {children}
       </DashboardLayout>
     </DashboardHeaderOverrideProvider>

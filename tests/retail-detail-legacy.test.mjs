@@ -92,7 +92,8 @@ test('Detail page preserves contact, note, visit, sale, task, and brand CRUD', (
   assert.ok(detailContent.includes('RetailAPI.createVisit'), 'Must create visits');
   assert.ok(detailContent.includes('RetailAPI.createSale'), 'Must create sales');
   assert.ok(detailContent.includes('RetailAPI.createTask'), 'Must create tasks');
-  assert.ok(detailContent.includes('RetailAPI.removeBrandUsage'), 'Must remove brand usage');
+  assert.ok(detailContent.includes('adminRemovalPaths.retailBrand(brand.id)'), 'Must remove the actual account brand usage through the new admin contract');
+  assert.ok(detailContent.includes('label="Remove brand"'), 'Must expose the confirmed brand removal action');
 });
 
 test('Detail page uses assignedEmployeeId for tasks (not employeeId)', () => {

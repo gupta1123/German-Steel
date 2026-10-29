@@ -568,7 +568,7 @@ export const ProjectsAPI = {
     return values.flatMap((value) => {
       const item = recordOf(value);
       const id = item ? numberOf(item.id) : null;
-      if (!item || id == null) return [];
+      if (!item || id == null || item.active === false) return [];
       return [{
         id,
         projectId: numberOf(item.projectId) ?? projectId,

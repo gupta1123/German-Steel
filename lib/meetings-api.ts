@@ -1,3 +1,5 @@
+import { getApiErrorMessage } from './api-error.ts';
+
 const MEETINGS_API_BASE_URL = "http://ec2-18-211-58-135.compute-1.amazonaws.com:8081";
 
 export const MEETING_TYPES = [
@@ -233,6 +235,35 @@ export interface Meeting {
   auditHistory?: MeetingAuditHistory[];
   tabs?: MeetingTabs;
   allowedActions?: MeetingAction[];
+}
+
+type BackendMeeting = Omit<Meeting, 'attendees' | 'expenses' | 'gifts'> & {
+  createdByEmployeeId?: number;
+  ownerEmployeeId?: number;
+  approvalEmployeeId?: number;
+  clientAccountId?: number;
+  totalExpenseAmount?: number;
+  totalGiftQuantity?: number;
+  attendees?: (MeetingAttendee & { attendeeName?: string; organizationText?: string; active?: boolean })[];
+  expenses?: (MeetingExpense & { active?: boolean })[];
+  gifts?: (MeetingGift & { attendeeId?: number; active?: boolean })[];
+};
+
+/** Keep the existing screen's field names while accepting the current backend DTO. */
+export function normalizeMeetingDetails(raw: BackendMeeting): Meeting {
+  const attendees = raw.attendees?.filter(item => item.active !== false).map(item => ({ ...item, name: item.name || item.attendeeName || `Attendee #${item.id}`, companyShopProject: item.companyShopProject || item.organizationText }));
+  const expenses = raw.expenses?.filter(item => item.active !== false);
+  const gifts = raw.gifts?.filter(item => item.active !== false).map(item => ({ ...item, meetingAttendeeId: item.meetingAttendeeId ?? item.attendeeId }));
+  return {
+    ...raw,
+    creatorId: raw.creatorId ?? raw.createdByEmployeeId ?? raw.ownerEmployeeId,
+    approvalPersonId: raw.approvalPersonId ?? raw.approvalEmployeeId,
+    storeId: raw.storeId ?? raw.clientAccountId,
+    attendees, expenses, gifts,
+    actualAttendeeCount: raw.actualAttendeeCount ?? attendees?.filter(item => item.present).length,
+    actualExpenseTotal: raw.totalExpenseAmount ?? (expenses ? expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0) : raw.actualExpenseTotal),
+    actualGiftQuantity: raw.totalGiftQuantity ?? (gifts ? gifts.reduce((sum, item) => sum + Number(item.quantity || 0), 0) : raw.actualGiftQuantity),
+  };
 }
 
 export interface MeetingFilters {
@@ -660,8 +691,16 @@ export const meetingsApi = {
       body: JSON.stringify(payload),
     }),
 
-  getMeetingById: (meetingId: number) =>
-    meetingRequest<Meeting>(`/meeting/getById${buildQuery({ id: meetingId })}`),
+  getMeetingById: async (meetingId: number): Promise<Meeting> => {
+    const token = getAuthToken();
+    if (!token) throw new Error('Please sign in again.');
+    const response = await fetch(`${MEETINGS_API_BASE_URL}/api/meetings/${meetingId}`, { cache: 'no-store', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    // Older deployments still expose the legacy read route. Never fall back on
+    // authorization failures or failed removal requests.
+    if ([404, 405].includes(response.status)) return normalizeMeetingDetails(await meetingRequest<BackendMeeting>(`/meeting/getById${buildQuery({ id: meetingId })}`));
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load the meeting.'));
+    return normalizeMeetingDetails(await response.json() as BackendMeeting);
+  },
 
   getMeetingsPage: (filters: MeetingFilters = {}) =>
     meetingRequest<MeetingPageResponse<Meeting> | Meeting[]>(

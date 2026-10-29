@@ -1,5 +1,8 @@
 "use client";
 
+import { AdminRemovalAction } from '@/components/admin-removal-action';
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
+import { RecordFileManager } from '@/components/record-file-manager';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from "@/components/ui/button";
@@ -22,7 +25,6 @@ import {
   Plus,
   MoreHorizontal,
   Edit,
-  Trash2,
   MessageSquare,
   FileText,
   AlertCircle,
@@ -393,7 +395,7 @@ const listVisitFiles = async (visitId: number, authToken: string | null): Promis
   const items = Array.isArray(data) ? data : Array.isArray((data as Record<string, unknown>).content) ? (data as Record<string, unknown>).content as Record<string, unknown>[] : [];
   return items.flatMap((item) => {
     const id = typeof item.id === 'number' ? item.id : Number(item.id);
-    if (!Number.isFinite(id)) return [];
+    if (!Number.isFinite(id) || item.active === false) return [];
     return [{
       id,
       originalFileName: typeof item.originalFileName === 'string' ? item.originalFileName : '',
@@ -657,7 +659,6 @@ export default function VisitDetailPage() {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteDetails, setEditingNoteDetails] = useState<{ employeeId: number; storeId: number } | null>(null);
   const [isNoteSaving, setIsNoteSaving] = useState(false);
-  const [notePendingDelete, setNotePendingDelete] = useState<ApiNote | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [checkoutOutcome, setCheckoutOutcome] = useState("");
   const [checkoutFeedback, setCheckoutFeedback] = useState("");
@@ -1517,23 +1518,6 @@ export default function VisitDetailPage() {
     }
   };
 
-  const deleteNote = async (id: number) => {
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://ec2-18-211-58-135.compute-1.amazonaws.com:8081';
-      const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
-      const res = await fetch(`${baseUrl}/api/common/notes/${id}`, {
-        method: 'DELETE',
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
-      });
-      if (!res.ok) throw new Error(`Failed to delete note (${res.status})`);
-      await refreshNotes();
-    } catch (error) {
-      console.error('Error deleting note:', error);
-    } finally {
-      setNotePendingDelete(null);
-    }
-  };
-
   // Brands functionality
   const handleAddBrandProCon = async (brandName: string, pros: string[], cons: string[]) => {
     try {
@@ -1826,6 +1810,8 @@ export default function VisitDetailPage() {
         ]}
         description={visitDetail?.purpose ? <span className="font-medium text-foreground">{visitDetail.purpose}</span> : undefined}
         actions={<>
+          <AdminRemovalAction endpoint={adminRemovalPaths.visit(Number(visitId))} label="Cancel visit" name={`Visit #${visitId}`} description="Cancel this visit. Linked tasks will be cancelled and the completed visit’s daily report will be updated. Active linked expenses must be archived first." onRemoved={() => { router.push('/dashboard/visits'); }} compact={false} />
+          <RecordFileManager parentType="VISIT_ACTIVITY" parentId={Number(visitId)} onFilesChanged={() => fetchVisitImages(Number(visitId))} />
           {canCheckoutVisit && <Button size="sm" className="h-8" onClick={openCheckoutModal} disabled={isCheckingOut}>{isCheckingOut ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <LogOut className="mr-1.5 h-3.5 w-3.5" />}Check out</Button>}
           <Button variant="outline" size="sm" className="h-8" onClick={addNote}><MessageSquare className="mr-1.5 h-3.5 w-3.5" />Add note</Button>
           <DropdownMenu>
@@ -1886,7 +1872,7 @@ export default function VisitDetailPage() {
                                 <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-5">{note.content}</p>
                                 <div className="flex shrink-0 items-center md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                                   <Button variant="ghost" size="icon" onClick={() => editNote(note)} className="h-6 w-6 text-muted-foreground hover:text-foreground" aria-label="Edit note"><Edit className="h-3 w-3" /></Button>
-                                  <Button variant="ghost" size="icon" onClick={() => setNotePendingDelete(note)} className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Delete note"><Trash2 className="h-3 w-3" /></Button>
+                                  <AdminRemovalAction endpoint={adminRemovalPaths.note(note.id)} label="Remove note" name={note.content} description="Remove this note from the active list. The original text and history will be kept." onRemoved={refreshNotes} /><RecordFileManager parentType="RECORD_NOTE" parentId={note.id} />
                                 </div>
                               </div>
                               <p className="text-[11px] text-muted-foreground">{['Note', formatNoteDate(note.createdDate), author].filter(Boolean).join(' · ')}</p>
@@ -2008,6 +1994,7 @@ export default function VisitDetailPage() {
             count: brandProCons.length,
             content: (
               <BrandTab
+                retailAccountId={visitDetail?.clientKind === 'RETAIL' ? visitDetail.storeId : undefined}
                 brands={brandProCons}
                 setBrands={setBrandProCons}
                 visitId={visitId}
@@ -2046,21 +2033,7 @@ export default function VisitDetailPage() {
         <FormField label="Note" required><Textarea id="visitNoteContent" rows={8} autoFocus value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="What happened on this visit…" /></FormField>
       </FormSheet>
 
-      <Dialog open={notePendingDelete != null} onOpenChange={(open) => { if (!open) setNotePendingDelete(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete note?</DialogTitle>
-            <DialogDescription>This note will be removed permanently from this visit.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">{notePendingDelete?.content || 'Note content unavailable'}</div>
-            <div className="flex flex-col justify-end gap-2 sm:flex-row">
-              <Button variant="outline" onClick={() => setNotePendingDelete(null)} className="w-full sm:w-auto">Cancel</Button>
-              <Button variant="destructive" onClick={() => notePendingDelete && deleteNote(notePendingDelete.id)} className="w-full sm:w-auto">Delete</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+
 
       <FormSheet
         open={isCheckoutModalOpen}

@@ -1,62 +1,59 @@
-# Admin removal controls — frontend handoff
+# Admin removal handoff
 
-Implemented against the backend checkout at `fcb948e` (28 October 2026).
-No backend code or production records were changed.
+Updated 29 October 2026 after the backend team supplied the new contracts.
+The new routes are local backend changes and **are not deployed yet**, according to the supplied note. Frontend integration does not deploy the backend.
 
-## Pages changed
+Tester-facing instructions are in [the release notes](German-Steels-Delete-Release-Notes-2026-10-29.txt). A copy is saved in the user's Downloads folder.
 
-| Web page | Changes |
-| --- | --- |
-| `/dashboard/customers` | Existing archive control is restricted to admin web accounts. |
-| `/dashboard/customers/[id]` | Added confirmed retail sale voiding with a required correction reason, secondary-assignment removal, and store-image removal. Contact, brand, and task removals use confirmation modals. Voided sales are excluded from active sale totals. |
-| `/dashboard/groups` | Existing group archive control is restricted to admins; its confirmation remains. |
-| `/dashboard/institutions` | Added archive directly to each list row. |
-| `/dashboard/institutions/[id]` | Added document archiving, contact-link removal, and closed-NC archiving. Task cancellations use the shared modal. Existing institution archive and sale-void actions are restricted to admins. |
-| `/dashboard/projects` | Added archive directly to each list row. |
-| `/dashboard/projects/[id]` | Added document and closed-NC archiving. Party removal and task cancellation use the shared modal; existing project/contact removals are restricted to admins. |
-| `/dashboard/expenses` | Added confirmed expense archiving in card and table views. Reimbursed claims are disabled; server errors remain visible. |
-| `/dashboard/documents` | Added document archive confirmation. Backend protects accepted decision evidence. |
-| `/dashboard/nc-register` | Added archive for closed issues, with the correct institution/project endpoint. Active-record queries prevent archived issues from reappearing. |
-| `/dashboard/approvals` | Added confirmed cancellation of pending attendance correction requests. |
-| `/dashboard/attendance` | Added reset-to-absent confirmation inside the selected day's dialog. Approved corrections are protected. |
-| `/dashboard/complaints` | Existing delete now opens a modal and is labelled Cancel. Completed/cancelled items cannot be cancelled again. |
-| `/dashboard/requirements` | Same cancellation behavior as Complaints. |
-| `/dashboard/visits/[id]` | Added cancellation with confirmation for linked complaints/requirements. This does not delete the visit. |
-| `/dashboard/employees` | Existing employee archive is restricted to admins, with corrected confirmation wording. Removed the preceding team mutation so failed archival cannot partially unassign an employee. |
-| `/dashboard/regions` | Region/PIN removals are restricted to admins. Added confirmed district deactivation inside Region Details. |
-| `/dashboard/settings` → Teams | Existing team/member removal confirmations are restricted to admins. |
-| `/dashboard/settings` → Working Days | Deactivating an attendance rule requires confirmation. Managers can still edit counts, but cannot deactivate rules. |
-| `/dashboard/settings` → Targets and `/dashboard/settings/target` | Target deactivation uses a modal; clearing saved monthly targets also requires confirmation. |
-| `/dashboard/meetings/[id]` | Existing cancellation confirmation is admin-only; cancellation now uses `POST /api/meetings/{id}/cancel`. Other legacy meeting API integration remains separate work. |
+## New contracts connected
 
-Shared new actions wait for confirmation, block repeat submission, include the bearer token, keep backend errors visible, and refresh affected data after success. They do not automatically retry destructive requests. The backend remains responsible for enforcing authorization; several current backend endpoints also permit managers.
+All nine mutations below use `POST`, `Authorization: Bearer <admin-token>`, `Content-Type: application/json`, and a required JSON body:
 
-## New backend calls still required
+```json
+{"reason":"Duplicate or incorrect entry"}
+```
 
-The following endpoint names are proposals to agree with the backend team, not implemented contracts:
+The reason must contain non-whitespace text and be at most 500 characters. The UI blocks blank reasons and repeated submissions. Requests are not automatically retried or redirected to older removal endpoints. All successful mutations return HTTP 200 according to the backend contract.
 
-| Proposed contract | Used by | Required behavior |
+| Route | Web entry points | Important behavior |
 | --- | --- | --- |
-| `DELETE /api/common/visits/{visitId}` (or an agreed cancel/invalidate action) | Visit list/details; customer, institution, project and employee visit history | Preserve execution evidence; define planned cancellation versus completed-visit invalidation and effects on attendance, allowances, expenses, targets and reports. |
-| `DELETE /api/retail/pricing/{pricingId}` | Pricing | Mark the observation inactive and exclude it from current averages/summaries. |
-| `DELETE /api/common/notes/{noteId}` | Visit/customer/institution/project notes and other supported note parents | Archive the note while preserving revisions and relationships. The existing visit-note delete button currently targets this missing contract. |
-| `POST /api/projects/sales/{saleId}/void` | Project Details → Sales | Match retail/institution sale voiding; require `correctionReason`, record actor/time, and exclude voided sales from relevant totals. |
+| `/api/admin/visits/{visitId}/cancel` | Visits list, Visit Details | Cancel linked tasks; active linked HR expenses must be archived first. The backend regenerates a completed visit's daily report. |
+| `/api/admin/pricing/{pricingId}/remove` | Pricing | Refresh recorded prices and price summary after success. |
+| `/api/admin/notes/{noteId}/remove` | Retail Customer, Institution, Project and Visit notes | Use the actual shared note ID. Keep edit history. |
+| `/api/admin/project-sales/{saleId}/void` | Project Details > Sales | Refresh active sales and totals; backend excludes removed sales from achievements. |
+| `/api/admin/files/{fileId}/remove` | Visit attachment manager, document file manager, note attachments, task images, expense receipts | Use the individual file ID. Accepted decision evidence is protected; the last active document file also deactivates its document version. |
+| `/api/admin/retail-brands/{brandUsageId}/remove` | Customer Details > Relationship; retail Visit Details > Brands > Retail account brands | Use the actual account-brand usage ID. Removal affects the whole account, not only a visit's remarks. The legacy local-only visit-insight delete button was removed. |
+| `/api/admin/meetings/{meetingId}/attendees/{attendeeId}/remove` | Meeting Details > Manage meeting items; saved attendee rows | Active gifts linked to the attendee must be removed first. |
+| `/api/admin/meetings/{meetingId}/expenses/{expenseId}/remove` | Meeting Details > Manage meeting items; saved expense rows | Refresh active expenses and meeting totals. |
+| `/api/admin/meetings/{meetingId}/gifts/{giftId}/remove` | Meeting Details > Manage meeting items; saved gift rows | Refresh active gifts and gift total. |
 
-## Additional contracts requiring agreement
+These endpoints require the actual `ADMIN`/`ROLE_ADMIN` role. Setup access such as OWNER, DEVELOPER, HO_ADMIN or broad scopes alone is not treated as authorization for these routes. HO_ADMIN with a separate ROLE_ADMIN authority is supported. The backend remains authoritative.
 
-- **Individual attachments:** propose `DELETE /api/hr/files/{fileId}` if admins must remove visit photos, task attachments, receipts or note files individually. Define protected evidence and physical-file retention. Document archive already exists separately.
-- **Visit brands/pros and cons:** agree the supported record model and persisted removal route. The legacy visit-brand deletion only changes local screen state; do not treat it as a completed server deletion.
-- **Meeting attendees/gifts/expense lines:** the new backend supports list replacement during draft/execution/report operations, while the web still contains older per-item `/meeting/.../delete` calls. Agree whether to migrate to list replacement or add dedicated item endpoints; do not invent additional DELETE calls unnecessarily.
-- **Meeting configuration:** legacy web calls exist for deleting meeting types, gift items and expense heads; equivalent configuration controllers are absent from this checkout. Confirm whether those catalogs are still required.
-- **Enquiries:** the web uses `/enquiry/filtered`, which is absent from this backend. Identify the owning service and whether rows are stored enquiries or calculated summaries before defining deletion.
+## History calls connected
 
-Existing expense/document/NC/task/attendance protections remain in force. Removing reimbursed expenses, accepted approval evidence, unresolved NCs or completed tasks would require a separately agreed correction workflow, not merely another frontend button.
+- `GET /api/admin/removals/{recordType}/{recordId}`: the Removal history button on dashboard pages lets admins choose a type and ID. Successful actions also add browser-session shortcuts for the removed record. The view shows reason, actor employee ID and removal time. The snapshot is retained by the API; raw JSON is not shown to testers.
+- `GET /api/admin/meetings/{meetingId}/items/history`: Manage meeting items shows active and inactive attendees, expenses and gifts. Individual history buttons use the removal-history endpoint. Inactive items cannot be removed again from this view.
 
-## Validation
+Supported history types: VISIT, PRICING, NOTE, PROJECT_SALE, FILE, RETAIL_BRAND_USAGE, MEETING_ATTENDEE, MEETING_EXPENSE, MEETING_GIFT.
 
-- TypeScript check and production build passed.
-- Focused authentication, removal, expense-review and approval tests: 20 passed.
-- Mocked browser checks: modal dismissal issues no request; protected-record errors remain visible; successful archive refreshes; sale voiding requires a reason; managers cannot see new controls; mobile modal fits the viewport.
-- Full suite: 327 passed, 41 failed. An unchanged checkout of HEAD has the same 41 failures (322 passed before the five new tests).
-- Full lint: 46 existing `no-explicit-any` errors, reproduced on unchanged HEAD. No additional lint errors were introduced.
-- Browser tests intercepted backend requests; no production records were deleted.
+The meeting detail reader now prefers `GET /api/meetings/{id}`, normalizes the current DTO's attendee and employee fields, and updates counts/totals using active items. A read-only fallback to the legacy meeting detail route is retained for 404/405 responses. Authorization failures do not trigger this fallback. Existing unrelated meeting write routes have not been migrated in this change.
+
+## Existing controls retained
+
+Customer/group/institution/project/employee archives; expense/document/closed-NC archives; complaint/requirement cancellations; attendance reset and pending correction cancellation; region/PIN/district deactivation; team/member removal; target deactivation; attendance-rule deactivation; retail/institution sale voiding; meeting cancellation.
+
+These older contracts retain their existing rules and do not all write events into the new admin removal-history system. In particular, reimbursed expenses, accepted approval evidence, unresolved NCs and completed tasks remain protected.
+
+## Remaining separate backend questions
+
+- There is no new delete contract for visit-only pros and cons. The supplied brand endpoint removes the whole account-brand usage. It must not be called with a locally generated insight ID.
+- The legacy meeting configuration APIs (meeting types, gift items, expense heads) still need confirmation if those catalogs remain editable.
+- The Enquiries screen's `/enquiry/filtered` service and deletion semantics remain unconfirmed.
+- Deployment of the supplied 11 routes remains backend-team work. Live verification is pending that deployment.
+
+## Validation approach
+
+- Automated requests and browser checks use mocked backend responses; no production records are removed.
+- Contract tests cover all nine POST paths, the exact reason body, bearer headers, the 500-character limit, permission rules, both history GET routes, backend errors without fallback/retry, and normalization of active meeting items/totals.
+- Browser checks exercise reason confirmation, dismissing without mutation, linked-record errors, refreshes, role visibility and history views.
+- The repository already has unrelated legacy test failures and `no-explicit-any` lint errors. Compare against the unchanged base rather than treating those as failures introduced by this feature.

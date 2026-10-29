@@ -1,0 +1,125 @@
+GERMAN STEELS — ADMIN DELETE AND REMOVE CHANGES
+Release date: 29 October 2026
+For the testing team
+
+IMPORTANT BEFORE TESTING
+The backend team said the new removal APIs are not deployed yet. The new actions
+will work on the test/live site only after those APIs are deployed there.
+Use an Admin account and test records. Do not remove real business records.
+
+HOW THE NEW REMOVE BUTTONS WORK
+1. Open the page and click its remove, cancel, or void button.
+2. A confirmation box opens and shows the record being removed.
+3. Enter a reason. A reason is required and can be up to 500 characters.
+4. Click the final confirm button once.
+5. The list refreshes after success. The original record is kept for history.
+6. Click Keep record or close the box to leave everything unchanged.
+7. If the server blocks the action, the reason is shown in the box.
+
+NEW ACTIONS TO CHECK
+
+1. VISITS
+Go to Visits and click the cancel icon beside a visit.
+You can also open Visit Details and click Cancel visit at the top.
+Expected: the visit leaves the active list. Linked tasks are cancelled.
+If active expenses are linked to the visit, archive those expenses first.
+The backend updates the daily report for a completed visit.
+
+2. PRICING
+Go to Pricing and click the remove icon beside a recorded price.
+Expected: the entry disappears from the active list and price summary refreshes.
+
+3. NOTES
+Open a Retail Customer, Institution, Project, or Visit and open Notes.
+Click the remove icon beside the note and enter a reason.
+Expected: the note disappears from the normal list. Its history is kept.
+
+4. PROJECT SALES
+Open Projects, choose a project, and open Sales.
+Click the Void sale icon beside the sale and enter a reason.
+Expected: the sale leaves the active list and the project sales total refreshes.
+The backend also excludes it from target achievement totals.
+
+5. ATTACHMENTS
+Visit Details: click Manage attachments at the top.
+Documents: preview a document, then click Manage attachments.
+Institution or Project Details: open Documents, then Manage attachments.
+Notes: click Manage attachments beside the note.
+Complaints or Requirements: open View images and click the remove icon.
+Expenses: open the receipts window and click the remove icon under a receipt.
+Expected: only the selected file is removed from the active files.
+The server keeps the stored file for history.
+A file used as accepted approval evidence cannot be removed.
+Removing the last file from a document version also makes that version inactive.
+Removing a receipt does not remove the expense claim itself.
+
+6. RETAIL ACCOUNT BRANDS
+Open Retail Customers, choose a customer, and open Relationship.
+Under Active brands, click the remove icon beside a brand.
+You can also open a retail Visit, open Brands, and use Retail account brands.
+Expected: the brand leaves the whole customer's active brand list.
+IMPORTANT: this affects the whole customer account, not only the current visit.
+The old visit-only brand/pros-and-cons delete button has been removed because it
+did not save a deletion to the server. Visit-only pros and cons stay in history.
+
+7. MEETING ATTENDEES, GIFTS, AND EXPENSES
+Open Meetings and choose a meeting. Click Manage meeting items.
+Save or discard any unfinished meeting edits first.
+The window lists Attendees, Expenses, and Gifts, including inactive items.
+Click the remove icon beside one item and enter a reason.
+Expected: the item becomes Inactive in history and the meeting totals refresh.
+Remove active gifts linked to an attendee before removing that attendee.
+Saved items in the meeting edit screens also use the new confirmation box.
+Unsaved rows can still be removed locally before saving.
+
+8. REMOVAL HISTORY
+Click Removal history near the top of a dashboard page.
+Choose a record type, enter its ID, and click Check history.
+Or choose a record under Recently removed in this browser.
+Expected: the history shows the reason, employee ID, and removal time.
+An ID without history shows a clear empty message.
+The browser's recent list is a shortcut; server history can be checked by ID.
+The meeting item window also has history buttons for individual items.
+This new history view covers the new removal actions above, not all older
+archive actions in the application.
+
+PREVIOUSLY ADDED CONTROLS TO RECHECK
+- Retail Customers and Customer Groups: archive/deactivate with confirmation.
+- Institutions and Projects: archive from the list or the detail-page menu.
+- Employees: archive from the three-dot menu. History stays; login is disabled.
+- Expenses: archive from card or table view. Reimbursed claims are protected.
+- Documents: archive a document. Accepted approval evidence is protected.
+- Compliance Issues: archive closed issues only.
+- Attendance Correction: cancel pending requests only.
+- Attendance: open a calendar day and use Reset attendance.
+  Approved attendance corrections must use the correction process instead.
+- Complaints and Requirements: cancel open items with confirmation.
+  Completed items cannot be cancelled.
+- Sales Regions: deactivate regions, PIN mappings, and districts.
+- Settings > Teams: confirm before removing a member or deactivating a team.
+- Settings > Working Days: confirm before making a rule inactive.
+- Settings > Targets: confirm before deactivating or clearing saved targets.
+- Meeting Details: cancel a meeting with confirmation; closed meetings are protected.
+- Retail Customer and Institution Sales: the existing sale-void actions remain.
+
+COMMON TEST CHECKS
+- Keep record, Escape, and the close button must not remove anything.
+- Empty or spaces-only reasons must not be accepted.
+- The reason field must stop at 500 characters.
+- Repeated clicks must not send duplicate removal requests.
+- Check the item is gone from active lists after refreshing the page.
+- Check the related count or total updates where applicable.
+- Check removal history shows the correct record and reason.
+- A Manager account must not see the new admin-only removal controls.
+- Check the confirmation box on both desktop and mobile.
+- If an endpoint is not deployed, an error must appear; the item must not be
+  removed only from the screen or falsely reported as deleted.
+
+REMAINING SEPARATE ITEMS
+Meeting configuration (meeting types, gift items, expense heads) and the old
+Enquiries page still need a confirmed backend contract. They are not new delete
+features in this release. Do not treat them as completed removal features.
+
+TESTING DONE BEFORE HANDOFF
+Requests were mocked for testing. No production records were deleted.
+Live testing of the new APIs remains pending backend deployment.

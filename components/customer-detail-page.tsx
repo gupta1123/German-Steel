@@ -1,5 +1,6 @@
 'use client';
 
+import { adminRemovalPaths } from '@/lib/admin-removals-api';
 import { AdminRemovalAction, useAdminRemovalAccess } from '@/components/admin-removal-action';
 import { useRemovalConfirmation } from '@/components/removal-confirmation-provider';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -467,10 +468,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
     setBusy(true); try { await RetailAPI.deleteTask(task.id, token); toast.success('Task cancelled.'); await loadTasksSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to delete task.')) } finally { setBusy(false) }
   };
 
-  const removeBrand = async (usage: RetailBrandUsage) => {
-    if (!token || !assignedByEmployeeId || !(await confirmRemoval({ title: "Confirm removal", description: `Stop tracking ${brandDisplayName(usage)} as an active brand?` }))) return;
-    setBusy(true); try { await RetailAPI.removeBrandUsage(usage.id, assignedByEmployeeId, token); toast.success('Brand usage closed.'); await loadBrandsSection() } catch (error) { toast.error(getErrorMessage(error, 'Unable to remove brand usage.')) } finally { setBusy(false) }
-  };
+
 
   const saveMonthlySales = async () => {
     if (!token || !account) return;
@@ -704,7 +702,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
                         <span key={brand.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-1 pl-3 pr-1 text-xs" title={`${brand.remarks || 'No remarks'} · Added ${showDate(brand.addedAt)} by ${brandAddedBy(brand)}`}>
                           <span className="truncate font-medium">{brandDisplayName(brand)}</span>
                           {brand.remarks && <span className="hidden max-w-[180px] truncate text-muted-foreground sm:inline">· {brand.remarks}</span>}
-                          {canDeactivate && <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" onClick={() => void removeBrand(brand)} disabled={busy} aria-label={`Remove ${brandDisplayName(brand)}`} title="Remove brand"><X className="h-3 w-3" /></button>}
+                          <AdminRemovalAction endpoint={adminRemovalPaths.retailBrand(brand.id)} label="Remove brand" name={brandDisplayName(brand)} description="Remove this brand from this customer account’s active brands. This affects the whole account, even if the brand was added during a visit." disabled={busy} onRemoved={async () => { await loadBrandsSection(); await loadCommercialSection(); }} />
                         </span>
                       ))}
                     </div>
@@ -831,6 +829,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
             count: notes.length,
             content: (
               <NotesFeed
+                onRemoved={loadNotesSection}
                 notes={sortedNotes.map((note) => ({ id: note.id, text: note.noteText, author: note.authorName || employeeName(note.authorEmployeeId) || 'System', date: note.updatedAt || note.createdAt, edited: Boolean(note.updatedAt && note.updatedAt !== note.createdAt) }))}
                 onAdd={async (text) => { if (!token) return false; try { await RetailAPI.createNote(accountId, text, token); toast.success('Note added.'); await loadNotesSection(); return true; } catch (error) { toast.error(getErrorMessage(error, 'Unable to save note.')); return false; } }}
                 onEdit={(id) => { const note = notes.find((item) => item.id === id); if (note) openNote(note); }} placeholder="Write a note for the team… e.g. what was discussed on the call"
