@@ -21,9 +21,9 @@ const endpoint = (employeeId: number, token: string): string => {
 
 export const employeePhotoApi = {
   async get(employeeId: number, token: string): Promise<Blob | null> {
-    const response = await fetch(endpoint(employeeId, token), { cache: 'no-store', headers: { Authorization: `Bearer ${token}`, Accept: 'image/jpeg, image/png' } });
+    const response = await fetch(endpoint(employeeId, token), { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
     if (response.status === 404 || response.status === 204) return null;
-    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load the profile picture.'));
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, `Unable to load the profile picture (HTTP ${response.status}).`));
     const blob = await response.blob();
     return blob.size ? blob : null;
   },
