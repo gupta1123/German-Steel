@@ -1,6 +1,7 @@
 "use client";
 
 import { useAdminRemovalAccess } from '@/components/admin-removal-action';
+import { EmployeePhotoAvatar, EmployeePhotoMenuItems, EmployeeProfilePhotoDialog } from '@/components/employee-profile-photo';
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,6 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { API } from "@/lib/api";
 import { syncPageQuery } from "@/lib/page-query-sync";
@@ -109,6 +109,7 @@ function EmployeeList() {
   const searchParamsString = searchParams.toString();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [photoTarget, setPhotoTarget] = useState<{ id: number; name: string; intent: 'view' | 'add' | 'replace' | 'remove' } | null>(null);
   const [regionMap, setRegionMap] = useState<Map<number, string>>(new Map());
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
@@ -816,9 +817,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <Avatar className="h-9 w-9 shrink-0">
-                        <AvatarFallback className="bg-muted text-xs font-semibold">{getInitials(user.firstName, user.lastName)}</AvatarFallback>
-                      </Avatar>
+                      <EmployeePhotoAvatar employeeId={user.id} name={formatPersonName(user.firstName, user.lastName)} initials={getInitials(user.firstName, user.lastName)} />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold" title={formatPersonName(user.firstName, user.lastName)}>{formatPersonName(user.firstName, user.lastName)}</p>
                         <p className="truncate text-xs text-muted-foreground" title={user.email}>{user.email || user.departmentName || ''}</p>
@@ -836,6 +835,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="More employee actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <EmployeePhotoMenuItems employeeId={user.id} onAction={intent => setPhotoTarget({ id: user.id, name: formatPersonName(user.firstName, user.lastName), intent })} />
                         <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName ?? '')}>Edit Username</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>Reset Password</DropdownMenuItem>
                         {canRemove && <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>Archive</DropdownMenuItem>}
@@ -925,7 +925,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                 {currentUsers.map((user) => (
                   <TableRow key={user.id}>
                     {selectedColumns.includes('name') && (
-                      <TableCell className="font-medium"><Ellipsis value={formatPersonName(user.firstName, user.lastName)} /></TableCell>
+                      <TableCell className="font-medium"><div className="flex min-w-0 items-center gap-2"><EmployeePhotoAvatar employeeId={user.id} name={formatPersonName(user.firstName, user.lastName)} initials={getInitials(user.firstName, user.lastName)} /><Ellipsis value={formatPersonName(user.firstName, user.lastName)} /></div></TableCell>
                     )}
                     {selectedColumns.includes('role') && <TableCell className="overflow-hidden">{getRoleTag(user.role)}</TableCell>}
                     {selectedColumns.includes('mobile') && <TableCell><Ellipsis value={user.mobile} /></TableCell>}
@@ -953,6 +953,7 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <EmployeePhotoMenuItems employeeId={user.id} onAction={intent => setPhotoTarget({ id: user.id, name: formatPersonName(user.firstName, user.lastName), intent })} />
                             <DropdownMenuItem onClick={() => handleGoToEdit(user.id)}>
                               Edit
                             </DropdownMenuItem>
@@ -1099,6 +1100,8 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {photoTarget && <EmployeeProfilePhotoDialog key={`${photoTarget.id}:${photoTarget.intent}`} employeeId={photoTarget.id} name={photoTarget.name} intent={photoTarget.intent} onClose={() => setPhotoTarget(null)} />}
 
       {/* Archived Employees Modal */}
       <Dialog open={isArchivedModalOpen} onOpenChange={setIsArchivedModalOpen}>

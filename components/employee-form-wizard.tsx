@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useId, useEffect } from "react";
+import React, { useState, useId, useEffect, useRef } from "react";
+import { EmployeePhotoPicker } from '@/components/employee-photo-picker';
+import { EmployeeProfilePhotoDialog, invalidateEmployeePhoto } from '@/components/employee-profile-photo';
+import { employeePhotoApi, createdEmployeeId } from '@/lib/employee-photo-api';
 import { format } from "date-fns";
 import { cn } from "@/lib/utils"; 
 
@@ -142,6 +145,13 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const primaryActionLabel = isEditMode ? "Update Employee" : "Create Employee";
   
   // State
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoValidating, setPhotoValidating] = useState(false);
+  const [photoValidationError, setPhotoValidationError] = useState<string | null>(null);
+  const [createdPhotoTarget, setCreatedPhotoTarget] = useState<{ id: number | null } | null>(null);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+  const submitLock = useRef(false);
   const [newEmployee, setNewEmployee] = useState<NewEmployeeState>(initialNewEmployeeState);
   const [baselineEmployee, setBaselineEmployee] = useState<NewEmployeeState>(initialNewEmployeeState);
   const [showPassword, setShowPassword] = useState(false);
@@ -163,7 +173,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [rolesRetry, setRolesRetry] = useState(0);
 
   const employeeFormIsDirty = isFormReady && (
-    JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee) ||
+    photoFile !== null || photoValidating || (!createdPhotoTarget && JSON.stringify(newEmployee) !== JSON.stringify(baselineEmployee)) ||
     JSON.stringify(selectedAssignedCities) !== JSON.stringify(baselineAssignedCities)
   );
   const { markSaved } = useUnsavedChanges(employeeFormIsDirty);
@@ -481,6 +491,8 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   };
 
   const handleSubmit = async () => {
+    if (submitLock.current || photoValidating || photoValidationError || createdPhotoTarget) return;
+    submitLock.current = true;
     try {
       setIsSubmitting(true);
       
@@ -551,7 +563,19 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         }
 
         const created = await createRes.json().catch(() => null) as Record<string, unknown> | null;
-        const createdId = (created?.id ?? created?.employeeId) as number | string | undefined;
+        const createdId = createdEmployeeId(created);
+        if (photoFile) {
+          try {
+            if (!createdId) throw new Error('The server did not return the new employee ID. Open Employees to add the picture.');
+            await employeePhotoApi.save(createdId, token, photoFile, 'add');
+            invalidateEmployeePhoto(createdId);
+          } catch (photoError) {
+            setCreatedPhotoTarget({ id: createdId });
+            setPhotoUploadError(photoError instanceof Error ? photoError.message : 'Unable to upload the profile picture.');
+            toast.warning('Employee created, but the profile picture was not saved.');
+            return;
+          }
+        }
         toast.success("Employee created", { duration: 3000 });
         markSaved();
         router.push(createdId ? `/dashboard/employees/${createdId}` : '/dashboard/employees');
@@ -588,8 +612,29 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
       console.error('Error saving employee:', error);
       toast.error(error instanceof Error ? error.message : 'Could not save employee', { duration: 3000 });
     } finally {
+      submitLock.current = false;
       setIsSubmitting(false);
     }
+  };
+
+  const finishCreatedEmployee = () => {
+    markSaved();
+    const id = createdPhotoTarget?.id;
+    router.push(id ? `/dashboard/employees/${id}` : '/dashboard/employees');
+  };
+
+  const retryPhotoUpload = async () => {
+    if (!createdPhotoTarget?.id || !photoFile || !token || submitLock.current || photoValidating || photoValidationError) return;
+    submitLock.current = true; setIsSubmitting(true); setPhotoUploadError(null);
+    try {
+      // The first upload could have reached the server even if its response was
+      // interrupted. Pick POST/PUT using the actual saved-photo state.
+      const existing = await employeePhotoApi.get(createdPhotoTarget.id, token);
+      await employeePhotoApi.save(createdPhotoTarget.id, token, photoFile, existing ? 'replace' : 'add');
+      invalidateEmployeePhoto(createdPhotoTarget.id);
+      toast.success('Profile picture saved.'); finishCreatedEmployee();
+    } catch (error) { setPhotoUploadError(error instanceof Error ? error.message : 'Unable to save the profile picture.'); }
+    finally { submitLock.current = false; setIsSubmitting(false); }
   };
 
   const cityAssignmentOptions = Array.from(
@@ -606,6 +651,14 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   )
     .filter((city) => city.toLowerCase().includes(citySearch.trim().toLowerCase()))
     .sort((a, b) => a.localeCompare(b));
+
+  if (createdPhotoTarget) {
+    return <Card className="mx-auto max-w-xl"><CardHeader><CardTitle>Employee created</CardTitle><CardDescription>The employee account is saved. The profile picture still needs to be uploaded.</CardDescription></CardHeader><CardContent className="space-y-4">
+      {photoUploadError && <p role="alert" className="text-sm text-destructive">{photoUploadError}</p>}
+      {createdPhotoTarget.id && <EmployeePhotoPicker file={photoFile} onChange={setPhotoFile} disabled={isSubmitting} onValidatingChange={setPhotoValidating} onErrorChange={setPhotoValidationError} />}
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={isSubmitting || photoValidating} onClick={finishCreatedEmployee}>Continue without picture</Button>{createdPhotoTarget.id && <Button disabled={isSubmitting || photoValidating || !!photoValidationError || !photoFile} onClick={() => void retryPhotoUpload()}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Retry picture upload</Button>}</div>
+    </CardContent></Card>;
+  }
 
   if (isEditMode && loadError) {
     return (
@@ -645,6 +698,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                 
                 <CardContent className={cn("flex-1", isEditMode ? "p-4" : "px-5 pb-5 pt-4")}>
                     <div className="space-y-5">
+                      <section className="space-y-3 rounded-lg border bg-muted/10 p-4" aria-label="Employee profile picture">
+                        <h2 className="text-sm font-semibold">Profile picture</h2>
+                        {isEditMode && employeeId ? <Button type="button" variant="outline" onClick={() => setPhotoDialogOpen(true)}>View / edit profile picture</Button> : <EmployeePhotoPicker file={photoFile} onChange={setPhotoFile} disabled={isSubmitting} onValidatingChange={setPhotoValidating} onErrorChange={setPhotoValidationError} />}
+                      </section>
                             {/* STEP 1: PERSONAL */}
                             {(
                                 <div className="grid gap-4">
@@ -1002,7 +1059,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                           </Button>
                               <Button 
                                   onClick={handleSubmit} 
-                                  disabled={!formIsValid || isSubmitting}
+                                  disabled={!formIsValid || isSubmitting || photoValidating || !!photoValidationError}
                               className="min-w-[140px]"
                               size="sm"
                               >
@@ -1020,6 +1077,8 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                     </div>
                 </CardContent>
             </Card>
+
+      {photoDialogOpen && employeeId && <EmployeeProfilePhotoDialog employeeId={employeeId} name={`${newEmployee.firstName} ${newEmployee.lastName}`.trim()} intent="view" onClose={() => setPhotoDialogOpen(false)} />}
 
       {/* Back Confirmation Dialog */}
       <Dialog open={showBackConfirmDialog} onOpenChange={setShowBackConfirmDialog}>
