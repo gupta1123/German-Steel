@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { authService, hasFieldOfficerPrivileges, UserRoleResponse, CurrentUserDto } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
+import { scheduleSessionExpiry } from '@/lib/session-expiry';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -28,7 +29,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUserDto | null>(null);
   const [teamId, setTeamId] = useState<number | null>(null);
   const [correctedRoleFlags, setCorrectedRoleFlags] = useState<{ isManager: boolean; isFieldOfficer: boolean } | null>(null);
-  const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
 
   // Decode JWT payload and return exp (in seconds) or null
@@ -152,37 +152,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // When token changes, (re)start a timer to auto-logout at expiration
   useEffect(() => {
-    // Clear any existing timer
-    if (logoutTimerRef.current) {
-      clearTimeout(logoutTimerRef.current);
-      logoutTimerRef.current = null;
-    }
-
     if (!token) return;
-
     const exp = getTokenExpiry(token);
-    if (!exp) return; // Can't determine expiry; skip timer
-
-    const nowMs = Date.now();
-    const expMs = exp * 1000;
-    const delay = expMs - nowMs;
-
-    if (delay <= 0) {
-      // Already expired; logout immediately
-      logout();
-      return;
-    }
-
-    logoutTimerRef.current = setTimeout(() => {
-      logout();
-    }, delay);
-
-    return () => {
-      if (logoutTimerRef.current) {
-        clearTimeout(logoutTimerRef.current);
-        logoutTimerRef.current = null;
-      }
-    };
+    if (!exp) return;
+    return scheduleSessionExpiry(exp * 1000, () => { void logout(); });
   }, [token]);
 
   return (

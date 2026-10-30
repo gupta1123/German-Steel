@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -11,7 +10,6 @@ import { FIELD_OFFICER_WEB_ACCESS_MESSAGE } from "@/lib/auth";
 import Image from "next/image";
 
 export default function LoginPage() {
-  const router = useRouter();
   const { login, isLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,8 +22,9 @@ export default function LoginPage() {
     
     try {
       await login(email, password);
-      // Login successful, redirect to dashboard
-      router.push("/dashboard");
+      // Authentication changes the cookie read by the route proxy. A fresh
+      // document request avoids reusing a pre-login redirect in the router cache.
+      window.location.replace("/dashboard");
     } catch (error) {
       console.error('Login failed:', error);
       setError(error instanceof Error ? error.message : 'Login failed. Please try again.');
