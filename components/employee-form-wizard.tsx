@@ -2,7 +2,7 @@
 
 import React, { useState, useId, useEffect, useRef } from "react";
 import { EmployeePhotoPicker } from '@/components/employee-photo-picker';
-import { EmployeeProfilePhotoDialog, invalidateEmployeePhoto } from '@/components/employee-profile-photo';
+import { EmployeeProfilePhotoEditor, invalidateEmployeePhoto } from '@/components/employee-profile-photo';
 import { employeePhotoApi, createdEmployeeId } from '@/lib/employee-photo-api';
 import { format } from "date-fns";
 import { cn } from "@/lib/utils"; 
@@ -150,7 +150,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   const [photoValidationError, setPhotoValidationError] = useState<string | null>(null);
   const [createdPhotoTarget, setCreatedPhotoTarget] = useState<{ id: number | null } | null>(null);
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
-  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const submitLock = useRef(false);
   const [newEmployee, setNewEmployee] = useState<NewEmployeeState>(initialNewEmployeeState);
   const [baselineEmployee, setBaselineEmployee] = useState<NewEmployeeState>(initialNewEmployeeState);
@@ -491,7 +491,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   };
 
   const handleSubmit = async () => {
-    if (submitLock.current || photoValidating || photoValidationError || createdPhotoTarget) return;
+    if (submitLock.current || photoBusy || photoValidating || photoValidationError || createdPhotoTarget) return;
     submitLock.current = true;
     try {
       setIsSubmitting(true);
@@ -624,7 +624,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
   };
 
   const retryPhotoUpload = async () => {
-    if (!createdPhotoTarget?.id || !photoFile || !token || submitLock.current || photoValidating || photoValidationError) return;
+    if (!createdPhotoTarget?.id || !photoFile || !token || submitLock.current || photoBusy || photoValidating || photoValidationError) return;
     submitLock.current = true; setIsSubmitting(true); setPhotoUploadError(null);
     try {
       // The first upload could have reached the server even if its response was
@@ -700,7 +700,7 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                     <div className="space-y-5">
                       <section className="space-y-3 rounded-lg border bg-muted/10 p-4" aria-label="Employee profile picture">
                         <h2 className="text-sm font-semibold">Profile picture</h2>
-                        {isEditMode && employeeId ? <Button type="button" variant="outline" onClick={() => setPhotoDialogOpen(true)}>View / edit profile picture</Button> : <EmployeePhotoPicker file={photoFile} onChange={setPhotoFile} disabled={isSubmitting} onValidatingChange={setPhotoValidating} onErrorChange={setPhotoValidationError} />}
+                        {isEditMode && employeeId ? <EmployeeProfilePhotoEditor key={employeeId} employeeId={employeeId} name={`${newEmployee.firstName} ${newEmployee.lastName}`.trim()} disabled={isSubmitting} onBusyChange={setPhotoBusy} /> : <EmployeePhotoPicker file={photoFile} onChange={setPhotoFile} disabled={isSubmitting} onValidatingChange={setPhotoValidating} onErrorChange={setPhotoValidationError} />}
                       </section>
                             {/* STEP 1: PERSONAL */}
                             {(
@@ -1052,14 +1052,14 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                           <Button
                               variant="ghost"
                               onClick={handleBackClick}
-                              disabled={isSubmitting}
+                              disabled={isSubmitting || photoBusy}
                               className="text-muted-foreground hover:text-foreground"
                           >
                               Cancel
                           </Button>
                               <Button 
                                   onClick={handleSubmit} 
-                                  disabled={!formIsValid || isSubmitting || photoValidating || !!photoValidationError}
+                                  disabled={!formIsValid || isSubmitting || photoBusy || photoValidating || !!photoValidationError}
                               className="min-w-[140px]"
                               size="sm"
                               >
@@ -1077,8 +1077,6 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
                     </div>
                 </CardContent>
             </Card>
-
-      {photoDialogOpen && employeeId && <EmployeeProfilePhotoDialog employeeId={employeeId} name={`${newEmployee.firstName} ${newEmployee.lastName}`.trim()} intent="view" onClose={() => setPhotoDialogOpen(false)} />}
 
       {/* Back Confirmation Dialog */}
       <Dialog open={showBackConfirmDialog} onOpenChange={setShowBackConfirmDialog}>

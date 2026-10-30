@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Eye, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth-provider';
 import { employeePhotoApi } from '@/lib/employee-photo-api';
@@ -9,9 +9,8 @@ import { EmployeePhotoPicker } from '@/components/employee-photo-picker';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { useUnsavedChanges } from '@/components/unsaved-changes-provider';
 
-type PhotoIntent = 'view' | 'add' | 'replace' | 'remove';
 const cache = new Map<string, { until: number; promise: Promise<Blob | null> }>();
 const photoEvent = 'employee-profile-photo-changed';
 
@@ -51,73 +50,64 @@ function useEmployeePhoto(employeeId: number) {
   return { url, loading, error, refresh: () => invalidateEmployeePhoto(employeeId) };
 }
 
-export function EmployeePhotoAvatar({ employeeId, name, initials }: { employeeId: number; name: string; initials: string }) {
+export function EmployeePhotoAvatar({ employeeId, name, initials, className = 'h-9 w-9' }: { employeeId: number; name: string; initials: string; className?: string }) {
   const photo = useEmployeePhoto(employeeId);
-  return <Avatar className="h-9 w-9 shrink-0" title={photo.error || name}>
+  return <Avatar className={`shrink-0 ${className}`} title={photo.error || name}>
     {photo.url && <AvatarImage src={photo.url} alt={`${name}'s profile picture`} className="object-cover" />}
     <AvatarFallback className="bg-muted text-xs font-semibold">{initials}</AvatarFallback>
   </Avatar>;
 }
 
-export function EmployeePhotoMenuItems({ employeeId, onAction }: { employeeId: number; onAction: (intent: PhotoIntent) => void }) {
-  const photo = useEmployeePhoto(employeeId);
-  return <>
-    <DropdownMenuSeparator />
-    {photo.error ? <DropdownMenuItem onClick={() => onAction('view')}><Camera className="mr-2 h-4 w-4" />Manage profile picture</DropdownMenuItem> : <>
-      {!photo.url && <DropdownMenuItem disabled={photo.loading} onClick={() => onAction('add')}><Camera className="mr-2 h-4 w-4" />{photo.loading ? 'Loading profile picture…' : 'Add profile picture'}</DropdownMenuItem>}
-      {photo.url && <>
-        <DropdownMenuItem onClick={() => onAction('view')}><Eye className="mr-2 h-4 w-4" />View profile picture</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onAction('replace')}><Pencil className="mr-2 h-4 w-4" />Edit profile picture</DropdownMenuItem>
-        <DropdownMenuItem className="text-destructive" onClick={() => onAction('remove')}><Trash2 className="mr-2 h-4 w-4" />Delete profile picture</DropdownMenuItem>
-      </>}
-    </>}
-  </>;
-}
-
-export function EmployeeProfilePhotoDialog({ employeeId, name, intent, onClose }: { employeeId: number; name: string; intent: PhotoIntent; onClose: () => void }) {
+export function EmployeeProfilePhotoEditor({ employeeId, name, disabled, onBusyChange }: {
+  employeeId: number; name: string; disabled?: boolean; onBusyChange: (busy: boolean) => void;
+}) {
   const { token } = useAuth();
   const photo = useEmployeePhoto(employeeId);
-  const [mode, setMode] = useState(intent);
   const [file, setFile] = useState<File | null>(null);
   const [validating, setValidating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lock = useRef(false);
+  const { markSaved } = useUnsavedChanges(file !== null || validating);
+  const pending = busy || validating;
+  useEffect(() => { onBusyChange(pending); return () => onBusyChange(false); }, [pending, onBusyChange]);
   const save = async () => {
-    if (!token || !file || lock.current || photo.loading || photo.error || validating) return;
+    if (!token || !file || lock.current || disabled || photo.loading || photo.error || validating) return;
     lock.current = true; setBusy(true); setError(null);
     try {
       await employeePhotoApi.save(employeeId, token, file, photo.url ? 'replace' : 'add');
-      invalidateEmployeePhoto(employeeId); toast.success('Profile picture saved.'); onClose();
+      setFile(null); markSaved(); invalidateEmployeePhoto(employeeId);
+      toast.success('Profile picture saved.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to save the profile picture.'); }
     finally { lock.current = false; setBusy(false); }
   };
   const remove = async () => {
-    if (!token || !photo.url || lock.current) return;
+    if (!token || !photo.url || lock.current || disabled) return;
     lock.current = true; setBusy(true); setError(null);
     try {
       await employeePhotoApi.remove(employeeId, token);
-      invalidateEmployeePhoto(employeeId); toast.success('Profile picture deleted.'); onClose();
+      setFile(null); markSaved(); invalidateEmployeePhoto(employeeId);
+      setConfirmDelete(false); toast.success('Profile picture deleted.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to delete the profile picture.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  const editing = mode === 'add' || mode === 'replace';
-  return <Dialog open onOpenChange={open => { if (!open && !busy && !validating) onClose(); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
-    <DialogHeader><DialogTitle>{mode === 'remove' ? 'Delete profile picture?' : editing ? photo.url ? 'Edit profile picture' : 'Add profile picture' : 'Profile picture'}</DialogTitle><DialogDescription>{name}{mode === 'remove' ? '. Only the picture will be removed. The employee record will stay unchanged.' : ''}</DialogDescription></DialogHeader>
-    {photo.loading ? <p role="status" className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Loading profile picture…</p> : photo.error ? <div className="space-y-2"><p role="alert" className="text-sm text-destructive">{photo.error}</p><Button variant="outline" onClick={photo.refresh}>Try again</Button></div> : <>
-      {photo.url ? <div className="flex justify-center rounded-lg bg-muted/30 p-3">
+  return <div className="space-y-4">
+    {photo.loading ? <p role="status" className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Loading profile picture…</p> : photo.error ? <div className="space-y-2"><p role="alert" className="text-sm text-destructive">{photo.error}</p><Button type="button" variant="outline" onClick={photo.refresh}>Try again</Button></div> : <>
+      {photo.url && <div className="flex flex-wrap items-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={photo.url} alt={`${name}'s profile picture`} className="max-h-64 max-w-full rounded-lg object-contain" />
-      </div> : <p className="text-sm text-muted-foreground">No profile picture added.</p>}
-      {editing && <EmployeePhotoPicker file={file} onChange={setFile} disabled={busy} onValidatingChange={setValidating} />}
+        <img src={photo.url} alt={`${name}'s profile picture`} className="h-28 w-28 rounded-full border object-cover" />
+        <Button type="button" variant="outline" disabled={disabled || pending} onClick={() => { setError(null); setConfirmDelete(true); }}><Trash2 className="mr-2 h-4 w-4" />Delete profile picture</Button>
+      </div>}
+      <p className="text-sm font-medium">{photo.url ? 'Replace profile picture' : 'Add profile picture'}</p>
+      <EmployeePhotoPicker file={file} onChange={setFile} disabled={disabled || busy} onValidatingChange={setValidating} />
+      {file && <Button type="button" disabled={disabled || pending} onClick={() => void save()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save picture</Button>}
     </>}
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <DialogFooter>
-      <Button variant="outline" disabled={busy || validating} onClick={onClose}>{mode === 'remove' ? 'Keep picture' : 'Close'}</Button>
-      {mode === 'view' && !photo.error && !photo.loading && <Button onClick={() => setMode(photo.url ? 'replace' : 'add')}>{photo.url ? 'Edit profile picture' : 'Add profile picture'}</Button>}
-      {mode === 'view' && photo.url && !photo.error && <Button variant="destructive" onClick={() => setMode('remove')}>Delete profile picture</Button>}
-      {editing && <Button disabled={busy || validating || !file || photo.loading || !!photo.error} onClick={() => void save()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save picture</Button>}
-      {mode === 'remove' && <Button variant="destructive" disabled={busy || !photo.url || !!photo.error} onClick={() => void remove()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete picture</Button>}
-    </DialogFooter>
-  </DialogContent></Dialog>;
+    {error && !confirmDelete && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    <Dialog open={confirmDelete} onOpenChange={open => { if (!busy) setConfirmDelete(open); }}><DialogContent className="sm:max-w-md">
+      <DialogHeader><DialogTitle>Delete profile picture?</DialogTitle><DialogDescription>Only {name}&apos;s picture will be removed. The employee record will stay unchanged.</DialogDescription></DialogHeader>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setConfirmDelete(false)}>Keep picture</Button><Button type="button" variant="destructive" disabled={busy || disabled || !photo.url} onClick={() => void remove()}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete picture</Button></DialogFooter>
+    </DialogContent></Dialog>
+  </div>;
 }

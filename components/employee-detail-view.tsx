@@ -1,5 +1,8 @@
 "use client";
 
+import { EmployeePhotoAvatar } from "@/components/employee-profile-photo";
+import { initials } from "@/components/detail-ui";
+
 import Link from "next/link";
 import {
   ArrowRight,
@@ -109,6 +112,7 @@ export function EmployeeDetailView({ employee, managerName, teamName, regionName
     <div className="detail-page space-y-4 font-poppins text-xs">
       <DetailHero
         name={fullName}
+        avatar={<EmployeePhotoAvatar employeeId={employee.id} name={fullName} initials={initials(fullName)} className="h-12 w-12" />}
         onBack={onBack}
         backLabel="Back to employees"
         badges={<>

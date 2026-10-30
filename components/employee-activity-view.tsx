@@ -1,5 +1,8 @@
 "use client";
 
+import { EmployeePhotoAvatar } from "@/components/employee-profile-photo";
+import { initials } from "@/components/detail-ui";
+
 import {
   BatteryMedium,
   Building2,
@@ -152,6 +155,7 @@ export function EmployeeActivityView(props: EmployeeActivityViewProps) {
     <div className="detail-page space-y-4 font-poppins text-xs">
       <DetailHero
         name={employee?.name ?? "Loading employee…"}
+        avatar={employee ? <EmployeePhotoAvatar employeeId={employee.id} name={employee.name} initials={initials(employee.name)} className="h-12 w-12" /> : undefined}
         onBack={onBack}
         backLabel="Back"
         badges={employee ? <><Pill tone="info">{employee.roleLabel}</Pill><Pill>Full activity</Pill></> : undefined}

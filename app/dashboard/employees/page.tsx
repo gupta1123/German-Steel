@@ -1,7 +1,7 @@
 "use client";
 
 import { useAdminRemovalAccess } from '@/components/admin-removal-action';
-import { EmployeePhotoAvatar, EmployeePhotoMenuItems, EmployeeProfilePhotoDialog } from '@/components/employee-profile-photo';
+import { EmployeePhotoAvatar } from '@/components/employee-profile-photo';
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -109,7 +109,6 @@ function EmployeeList() {
   const searchParamsString = searchParams.toString();
 
   const [users, setUsers] = useState<User[]>([]);
-  const [photoTarget, setPhotoTarget] = useState<{ id: number; name: string; intent: 'view' | 'add' | 'replace' | 'remove' } | null>(null);
   const [regionMap, setRegionMap] = useState<Map<number, string>>(new Map());
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
@@ -835,7 +834,6 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="More employee actions"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <EmployeePhotoMenuItems employeeId={user.id} onAction={intent => setPhotoTarget({ id: user.id, name: formatPersonName(user.firstName, user.lastName), intent })} />
                         <DropdownMenuItem onClick={() => handleEditUsername(user.id, user.userName ?? '')}>Edit Username</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>Reset Password</DropdownMenuItem>
                         {canRemove && <DropdownMenuItem onClick={() => setDeleteCandidate(user)}>Archive</DropdownMenuItem>}
@@ -953,7 +951,6 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <EmployeePhotoMenuItems employeeId={user.id} onAction={intent => setPhotoTarget({ id: user.id, name: formatPersonName(user.firstName, user.lastName), intent })} />
                             <DropdownMenuItem onClick={() => handleGoToEdit(user.id)}>
                               Edit
                             </DropdownMenuItem>
@@ -1101,7 +1098,6 @@ const [isDeletingUser, setIsDeletingUser] = useState(false);
         </DialogContent>
       </Dialog>
 
-      {photoTarget && <EmployeeProfilePhotoDialog key={`${photoTarget.id}:${photoTarget.intent}`} employeeId={photoTarget.id} name={photoTarget.name} intent={photoTarget.intent} onClose={() => setPhotoTarget(null)} />}
 
       {/* Archived Employees Modal */}
       <Dialog open={isArchivedModalOpen} onOpenChange={setIsArchivedModalOpen}>
