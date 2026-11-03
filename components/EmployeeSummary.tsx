@@ -70,6 +70,8 @@ const getFullMonthError = (startDate: string, endDate: string) => {
     return null;
 };
 
+const summaryFilterPrompt = "Select a month and click Apply.";
+
 const EmployeeSummary: React.FC = () => {
     const { token } = useAuth();
     const defaultDateRange = useMemo(getDefaultSummaryDateRange, []);
@@ -695,8 +697,8 @@ const EmployeeSummary: React.FC = () => {
                                                 ))}
                                             </div>
                                         ) : summaryData.length === 0 ? (
-                                            <div className="text-center py-12 text-muted-foreground text-2xl">
-                                                No summary data available
+                                            <div className="text-center py-8 text-sm text-muted-foreground">
+                                                {summaryFilterPrompt}
                                             </div>
                                         ) : (
                                             <div className="space-y-5">
@@ -821,7 +823,7 @@ const EmployeeSummary: React.FC = () => {
                                             </div>
                                         ) : filteredSummaryData.length === 0 ? (
                                             <div className="text-center py-8 text-muted-foreground">
-                                                {summaryData.length === 0 ? 'No summary data available' : 'No employees found matching your search'}
+                                                {summaryData.length === 0 ? summaryFilterPrompt : 'No employees found matching your search'}
                                             </div>
                                         ) : (
                                             <Table>
