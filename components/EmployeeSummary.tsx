@@ -70,7 +70,7 @@ const getFullMonthError = (startDate: string, endDate: string) => {
     return null;
 };
 
-const summaryFilterPrompt = "Select a month and click Apply.";
+const summaryFilterPrompt = "Choose your filters and click Apply.";
 
 const EmployeeSummary: React.FC = () => {
     const { token } = useAuth();
