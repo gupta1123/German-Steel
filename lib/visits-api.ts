@@ -56,6 +56,11 @@ export type CommonVisitRow = {
 };
 
 export interface CommonVisitsParams {
+  q?: string;
+  outcome?: VisitOutcome;
+  clientAccountId?: number;
+  institutionId?: number;
+  projectId?: number;
   page: number;
   size: number;
   visitType?: VisitType;
@@ -250,6 +255,11 @@ export const visitsApi = {
       from: params.from,
       to: params.to,
     });
+    if (params.q?.trim()) search.set('q', params.q.trim());
+    if (params.outcome) search.set('outcome', params.outcome);
+    for (const key of ['clientAccountId', 'institutionId', 'projectId'] as const) {
+      if (params[key] != null) search.set(key, String(params[key]));
+    }
     if (params.visitType) search.set('visitType', params.visitType);
     if (params.assignedEmployeeId != null) search.set('assignedEmployeeId', String(params.assignedEmployeeId));
 

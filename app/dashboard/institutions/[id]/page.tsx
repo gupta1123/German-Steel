@@ -356,7 +356,7 @@ export default function InstitutionDetailPage() {
         InstitutionsAPI.getTasks(institutionId, found.assignedEmployeeId || userData?.employeeId || 0, token),
         RetailAPI.getEmployees(token),
         // Visits are independent parallel activities — fetch does not mutate business status
-        visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType:
+        visitsApi.getCommonVisits(token, { page: 0, size: 50, institutionId, visitType:
  'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
         InstitutionsAPI.getDocuments(institutionId, token),
       ]);
@@ -434,7 +434,7 @@ export default function InstitutionDetailPage() {
   const reloadVisits = useCallback(async () => {
     if (!token || !Number.isFinite(institutionId)) return;
     try {
-      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
+      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, institutionId, visitType: 'INSTITUTIONAL_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
       const raw = page as unknown as { content: CommonVisitRow[] } | CommonVisitRow[];
       const list = Array.isArray(raw) ? raw : raw.content || [];
       setVisits(list.filter((v) => v.institutionId === institutionId));

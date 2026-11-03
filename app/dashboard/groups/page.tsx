@@ -1,7 +1,7 @@
 'use client';
 
 import { useAdminRemovalAccess } from '@/components/admin-removal-action';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -45,7 +45,7 @@ const emptyForm = { groupName: '', groupType: 'STANDALONE' as RetailClientGroupT
 export default function GroupsPage() {
   const { token } = useAuth();
   const canRemove = useAdminRemovalAccess();
-  const [allGroups, setAllGroups] = useState<RetailClientGroup[]>([]);
+  const [pageContent, setPageContent] = useState<RetailClientGroup[]>([]);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [hasUserChosenPageSize, setHasUserChosenPageSize] = useState(false);
@@ -65,7 +65,7 @@ export default function GroupsPage() {
       else if (byHeight >= 10) target = Math.max(target, 12);
       target = Math.min(100, Math.max(5, target));
       const snap = target <= 10 ? 10 : target <= 12 ? 12 : target <= 15 ? 15 : target <= 20 ? 20 : 25;
-      setPageSize((prev) => (prev === snap ? prev : snap));
+      setPageSize(snap);
     };
     calc();
     window.addEventListener('resize', calc);
@@ -88,49 +88,58 @@ export default function GroupsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const nextQuery = queryInput.trim();
+    if (nextQuery === query) return;
     const timer = window.setTimeout(() => {
       setPage(0);
-      setQuery(queryInput.trim());
+      setQuery(nextQuery);
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [queryInput]);
+  }, [queryInput, query]);
 
-  const loadGroups = useCallback(async () => {
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalGroups, setTotalGroups] = useState(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const filters = useMemo(() => ({
+    q: query,
+    groupType: groupType === 'ALL' ? undefined : groupType,
+    active: activeFilter === 'ALL' ? undefined : activeFilter === 'ACTIVE',
+  }), [query, groupType, activeFilter]);
+
+  useEffect(() => {
     if (!token) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      setAllGroups(await RetailAPI.getClientGroups(token));
-    } catch (err) {
-      setAllGroups([]);
-      const msg = getErrorMessage(err, 'Unable to load client groups.');
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token]);
+    const controller = new AbortController();
+    const loadGroups = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await RetailAPI.getClientGroupsPage(token, { ...filters, page, size: pageSize }, controller.signal);
+        if (controller.signal.aborted) return;
+        const pages = Math.max(1, result.totalPages);
+        setTotalPages(pages);
+        setTotalGroups(result.totalElements);
+        if (page >= pages) {
+          setPage(pages - 1);
+        } else {
+          setPageContent(result.content);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setPageContent([]);
+        setTotalGroups(0);
+        setTotalPages(1);
+        const message = getErrorMessage(err, 'Unable to load client groups.');
+        setError(message);
+        toast.error(message);
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
+      }
+    };
+    void loadGroups();
+    return () => controller.abort();
+  }, [token, filters, page, pageSize, refreshVersion]);
 
-  useEffect(() => { void loadGroups(); }, [loadGroups]);
-
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return allGroups.filter((g) => {
-      if (groupType !== 'ALL' && (g.groupType ?? '') !== groupType) return false;
-      if (activeFilter === 'ACTIVE' && g.active === false) return false;
-      if (activeFilter === 'INACTIVE' && g.active !== false) return false;
-      if (!q) return true;
-      return (
-        g.groupName.toLowerCase().includes(q) ||
-        (g.groupType ?? '').toLowerCase().includes(q) ||
-        (g.notes ?? '').toLowerCase().includes(q)
-      );
-    });
-  }, [allGroups, query, groupType, activeFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / Math.max(1, pageSize)));
   const safePage = Math.min(page, totalPages - 1);
-  const pageContent = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
 
   const openCreate = () => {
     setEditing(null);
@@ -171,7 +180,7 @@ export default function GroupsPage() {
         toast.success('Client group created. It can now be selected while creating a retail account.');
       }
       setDialogOpen(false);
-      await loadGroups();
+      setRefreshVersion((version) => version + 1);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Could not save the client group.'));
     } finally {
@@ -186,7 +195,7 @@ export default function GroupsPage() {
       await RetailAPI.deactivateClientGroup(deleteTarget.id, token);
       toast.success(`${deleteTarget.groupName} deactivated.`);
       setDeleteTarget(null);
-      await loadGroups();
+      setRefreshVersion((version) => version + 1);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Unable to deactivate group.'));
     } finally {
@@ -195,15 +204,22 @@ export default function GroupsPage() {
   };
 
   const exportGroups = async () => {
-    if (filtered.length > 2000) {
-      toast.error('Too many records to export — narrow the filters first.');
-      return;
-    }
+    if (!token) return;
     setIsExporting(true);
     try {
+      const first = await RetailAPI.getClientGroupsPage(token, { ...filters, page: 0, size: 100 });
+      if (first.totalElements > 2000) {
+        toast.error('Too many records to export — narrow the filters first.');
+        return;
+      }
+      const groups = [...first.content];
+      for (let page = 1; page < first.totalPages; page++) {
+        const next = await RetailAPI.getClientGroupsPage(token, { ...filters, page, size: first.size });
+        groups.push(...next.content);
+      }
       const rows = [
         ['Group Name', 'Group Type', 'Notes', 'Status'],
-        ...filtered.map((g) => [g.groupName, humanize(g.groupType), g.notes ?? '', g.active === false ? 'Inactive' : 'Active']),
+        ...groups.map((g) => [g.groupName, humanize(g.groupType), g.notes ?? '', g.active === false ? 'Inactive' : 'Active']),
       ];
       const blob = new Blob([rows.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -214,7 +230,7 @@ export default function GroupsPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Exported ${filtered.length} groups.`);
+      toast.success(`Exported ${groups.length} groups.`);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Unable to export groups.'));
     } finally {
@@ -278,7 +294,7 @@ export default function GroupsPage() {
               </Select>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <span className="hidden text-xs text-muted-foreground xl:inline">{filtered.length} groups</span>
+              <span className="hidden text-xs text-muted-foreground xl:inline">{totalGroups} groups</span>
               <Button variant="outline" size="icon" className="h-8 w-8 shadow-none" onClick={() => setAreFiltersVisible(false)} aria-label="Hide filters" title="Hide filters">
                 <Filter className="h-4 w-4" />
               </Button>

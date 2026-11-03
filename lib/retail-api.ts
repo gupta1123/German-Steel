@@ -253,9 +253,19 @@ const normalizeBrandUsage = (value: unknown): RetailBrandUsage | null => {
 const normalizeGeneric = <T>(value: unknown, builder: (item: Record<string, unknown>, id: number) => T): T | null => { const item = recordOf(value); if (!item) return null; const id = numberOf(item.id); return id == null ? null : builder(item, id) };
 
 export const RetailAPI = {
+  async getClientGroupsPage(token: string, filters: { page: number; size: number; q?: string; groupType?: string; active?: boolean }, signal?: AbortSignal): Promise<ApiPage<RetailClientGroup>> {
+    const response = await request(`/api/retail/groups${queryString(filters)}`, token, { signal });
+    const content = pageItems(response).flatMap((value) => { const item = recordOf(value); const id = numberOf(item?.id, item?.clientGroupId, item?.groupId); const groupName = stringOf(item?.groupName, item?.name); return id == null || !groupName ? [] : [{ id, groupName, groupType: stringOf(item?.groupType, item?.type) || null, notes: stringOf(item?.notes) || null, active: typeof item?.active === 'boolean' ? item.active : undefined }] });
+    return pageOf(response, content, filters.page, filters.size);
+  },
   async getClientGroups(token: string): Promise<RetailClientGroup[]> {
-    const response = await request('/api/retail/groups?page=0&size=200', token);
-    return pageItems(response).flatMap((value) => { const item = recordOf(value); const id = numberOf(item?.id, item?.clientGroupId, item?.groupId); const groupName = stringOf(item?.groupName, item?.name); return id == null || !groupName ? [] : [{ id, groupName, groupType: stringOf(item?.groupType, item?.type) || null, notes: stringOf(item?.notes) || null, active: typeof item?.active === 'boolean' ? item.active : undefined }] });
+    const first = await RetailAPI.getClientGroupsPage(token, { page: 0, size: 100 });
+    const groups = [...first.content];
+    for (let page = 1; page < first.totalPages; page++) {
+      const next = await RetailAPI.getClientGroupsPage(token, { page, size: first.size });
+      groups.push(...next.content);
+    }
+    return groups;
   },
   async createClientGroup(payload: RetailClientGroupPayload, token: string): Promise<number> {
     return extractCreatedId(await request('/api/retail/groups', token, json('POST', payload)), ['id', 'groupId', 'clientGroupId']);

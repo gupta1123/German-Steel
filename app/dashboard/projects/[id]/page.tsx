@@ -225,7 +225,7 @@ export default function ProjectDetailPage() {
           const arr = Array.isArray(j) ? j : Array.isArray((j as any).content) ? (j as any).content : Array.isArray((j as any).data) ? (j as any).data : [];
           return arr;
         }).catch(() => []),
-        visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
+        visitsApi.getCommonVisits(token, { page: 0, size: 50, projectId, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) }).catch(() => ({ content: [] as CommonVisitRow[] } as unknown as { content: CommonVisitRow[] })),
         ProjectsAPI.getProjectSales(projectId, token),
       ]);
       if (stageActionsResult.status === 'fulfilled') setStageActions(stageActionsResult.value.allowedActions);
@@ -350,7 +350,7 @@ export default function ProjectDetailPage() {
   const reloadVisits = useCallback(async () => {
     if (!token || !Number.isFinite(projectId)) return;
     try {
-      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
+      const page = await visitsApi.getCommonVisits(token, { page: 0, size: 50, projectId, visitType: 'PROJECT_SITE_VISIT', from: '2000-01-01', to: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) });
       const raw = page as unknown as { content: CommonVisitRow[] } | CommonVisitRow[];
       const list = Array.isArray(raw) ? raw : raw.content || [];
       setVisits(list.filter((v) => v.projectId === projectId));

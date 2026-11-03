@@ -163,6 +163,8 @@ export default function VisitsTable() {
   const [selectedPurpose, setSelectedPurpose] = useState<string>("all");
   const [selectedVisitType, setSelectedVisitType] = useState<string>("all");
   const [selectedExecutive, setSelectedExecutive] = useState<string>("all");
+  const [visitQuery, setVisitQuery] = useState("");
+  const [outcome, setOutcome] = useState("all");
   const [customerName, setCustomerName] = useState<string>("");
   const [rows, setRows] = useState<Row[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -273,6 +275,7 @@ export default function VisitsTable() {
 
         if (typeof parsed.customerName === "string") {
           setCustomerName(parsed.customerName);
+          setVisitQuery(parsed.customerName.trim());
         }
 
         if (typeof parsed.currentPage === "number") {
@@ -506,6 +509,16 @@ export default function VisitsTable() {
   }, [isManager, effectiveTeamId, userData?.employeeId, token]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (customerName.trim() !== visitQuery) {
+        setCurrentPage(0);
+        setVisitQuery(customerName.trim());
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [customerName, visitQuery]);
+
+  useEffect(() => {
     if (!isStateHydrated) return;
     if (!token) return;
     if (!startDate || !endDate || dateRangeInvalid) return;
@@ -513,6 +526,7 @@ export default function VisitsTable() {
     const startStr = formatDate(startDate, 'yyyy-MM-dd');
     const endStr = formatDate(endDate, 'yyyy-MM-dd');
 
+    const controller = new AbortController();
     const run = async () => {
       setIsLoading(true);
       setError(null);
@@ -527,7 +541,10 @@ export default function VisitsTable() {
           from: startStr,
           to: endStr,
           assignedEmployeeId,
-        });
+          q: visitQuery,
+          outcome: outcome === "all" ? undefined : outcome,
+        }, controller.signal);
+        if (controller.signal.aborted) return;
 
         const mapped: Row[] = response.content.map((v: unknown) => {
           const anyV = v as Record<string, unknown>;
@@ -597,13 +614,14 @@ export default function VisitsTable() {
           }
         }
       } catch (err) {
-        setError((err as Error)?.message || 'Failed to load visits');
+        if (!controller.signal.aborted) setError((err as Error)?.message || 'Failed to load visits');
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     };
-    run();
-  }, [isStateHydrated, token, startDate, endDate, dateRangeInvalid, selectedVisitType, selectedExecutive, currentPage, pageSize, removalVersion]);
+    void run();
+    return () => controller.abort();
+  }, [isStateHydrated, token, startDate, endDate, dateRangeInvalid, selectedVisitType, selectedExecutive, currentPage, pageSize, removalVersion, visitQuery, outcome]);
 
   // Reset to first page when filters change — server-side filters use new endpoint
   useEffect(() => {
@@ -613,15 +631,7 @@ export default function VisitsTable() {
       return;
     }
     setCurrentPage(0);
-  }, [isStateHydrated, startDate, endDate, selectedVisitType, selectedExecutive, customerName]);
-
-  const filteredVisits = rows.filter(visit => {
-    if (customerName.trim() !== '' && !visit.customerName.toLowerCase().includes(customerName.trim().toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
-
+  }, [isStateHydrated, startDate, endDate, selectedVisitType, selectedExecutive, pageSize]);
 
   const csvEscape = (val: string | number | null | undefined): string => {
     if (val === null || val === undefined) return '';
@@ -685,7 +695,7 @@ export default function VisitsTable() {
 
       // Use new combined endpoint for export — paginated, not fetching every page for table render
       const size = 200;
-      const first = await visitsApi.getCommonVisits(token, { page: 0, size, visitType, from: startStr, to: endStr, assignedEmployeeId });
+      const first = await visitsApi.getCommonVisits(token, { page: 0, size, visitType, from: startStr, to: endStr, assignedEmployeeId, q: visitQuery, outcome: outcome === "all" ? undefined : outcome });
       let allRows: Row[] = first.content.map((v: unknown) => {
         const anyV = v as Record<string, unknown>;
         const isNew = 'scheduledVisitDate' in anyV;
@@ -742,7 +752,7 @@ export default function VisitsTable() {
       });
 
       for (let page = 1; page < first.totalPages; page++) {
-        const res = await visitsApi.getCommonVisits(token, { page, size, visitType, from: startStr, to: endStr, assignedEmployeeId });
+        const res = await visitsApi.getCommonVisits(token, { page, size, visitType, from: startStr, to: endStr, assignedEmployeeId, q: visitQuery, outcome: outcome === "all" ? undefined : outcome });
         const mapped = res.content.map((v: unknown) => {
           const anyV = v as Record<string, unknown>;
           const isNew = 'scheduledVisitDate' in anyV;
@@ -800,13 +810,7 @@ export default function VisitsTable() {
         allRows = allRows.concat(mapped);
       }
 
-      // Client-side search filter for customer name (server does not support storeName)
-      const rowsForCsv = allRows.filter((visit) => {
-        if (customerName.trim() !== '' && !visit.customerName.toLowerCase().includes(customerName.trim().toLowerCase())) return false;
-        return true;
-      });
-
-      buildCsvAndDownload(rowsForCsv);
+      buildCsvAndDownload(allRows);
     } catch {
       alert('Failed to export CSV');
     } finally {
@@ -894,17 +898,31 @@ export default function VisitsTable() {
             </div>
 
             <div className="min-w-0 flex-1">
-              <Label htmlFor="visit-customer-filter" className="sr-only">Customer Name</Label>
+              <Label htmlFor="visit-customer-filter" className="sr-only">Search visits</Label>
               <Input
                 id="visit-customer-filter"
                 type="search"
                 autoComplete="off"
-                placeholder="Customer name"
+                placeholder="Search visits"
                 value={customerName}
                 onChange={(event) => setCustomerName(event.target.value)}
                 className="h-8 bg-background text-xs shadow-none"
               />
             </div>
+
+            <Select value={outcome} onValueChange={(value) => { setOutcome(value); setCurrentPage(0); }}>
+              <SelectTrigger aria-label="Visit outcome" className="h-8 w-full text-xs sm:w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All outcomes</SelectItem>
+                <SelectItem value="ORDER_BOOKED">Order booked</SelectItem>
+                <SelectItem value="SAMPLE_GIVEN">Sample given</SelectItem>
+                <SelectItem value="CREDENTIAL_SUBMITTED">Credential submitted</SelectItem>
+                <SelectItem value="NC_DISCUSSED">NC discussed</SelectItem>
+                <SelectItem value="APPROVAL_RECEIVED">Approval received</SelectItem>
+                <SelectItem value="FOLLOW_UP_REQUIRED">Follow-up required</SelectItem>
+                <SelectItem value="NO_PROGRESS">No progress</SelectItem>
+              </SelectContent>
+            </Select>
 
             <div className="min-w-0 flex-1">
               <Label className="sr-only">Employee</Label>
@@ -996,8 +1014,8 @@ export default function VisitsTable() {
               Array.from({ length: 3 }, (_, index) => (
                 <TableRow key={`visit-skeleton-${index}`}>{Array.from({ length: 10 }, (_, cell) => <TableCell key={cell}><Skeleton className="h-4 w-full max-w-24" /></TableCell>)}</TableRow>
               ))
-            ) : filteredVisits.length > 0 ? (
-              filteredVisits.map((visit) => (
+            ) : rows.length > 0 ? (
+              rows.map((visit) => (
                 <TableRow key={visit.id}>
                   <TableCell className="font-medium"><Ellipsis value={visit.customerName} /></TableCell>
                   <TableCell>
@@ -1040,8 +1058,8 @@ export default function VisitsTable() {
           <div className="py-10 text-center text-sm text-muted-foreground">Select both dates to view visits</div>
         ) : isLoading ? (
           Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-36 w-full rounded-xl" />)
-        ) : filteredVisits.length > 0 ? (
-          filteredVisits.map((visit) => (
+        ) : rows.length > 0 ? (
+          rows.map((visit) => (
             <Card key={visit.id} className="overflow-hidden shadow-none">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -1091,11 +1109,11 @@ export default function VisitsTable() {
             </Select>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0}>
+            <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentPage(Math.max(0, currentPage - 1))} disabled={isLoading || currentPage === 0}>
               <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Previous</span>
             </Button>
-            <span className="text-xs text-muted-foreground">Page {currentPage + 1} of {Math.max(totalPages, 1)}</span>
-            <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))} disabled={currentPage >= totalPages - 1}>
+            <span className="text-xs text-muted-foreground">Page {currentPage + 1} of {Math.max(totalPages, 1)} · {totalElements} visits</span>
+            <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))} disabled={isLoading || currentPage >= totalPages - 1}>
               <span className="hidden sm:inline">Next</span><ChevronRight className="h-4 w-4" />
             </Button>
           </div>
