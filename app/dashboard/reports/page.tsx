@@ -155,7 +155,6 @@ const ReportsPage: React.FC = () => {
     const [reportContext, setReportContext] = useState<{ employeeName: string; from: string; to: string } | null>(null);
     const [selectedCustomerTypeForDetails, setSelectedCustomerTypeForDetails] = useState<VisitReportCategory | null>(null);
     const visitDetails = useMemo(() => reportVisits.filter(visit => visit.category === selectedCustomerTypeForDetails), [reportVisits, selectedCustomerTypeForDetails]);
-    const [dateRangeError, setDateRangeError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchAllEmployeeData = async () => {
@@ -225,19 +224,9 @@ const ReportsPage: React.FC = () => {
     }, [rangeSelect]);
 
     const handleGenerateReport = async () => {
-        if (!rangeSelect) {
-            setDateRangeError('Please select a Date Range.');
+        if (dateRangeInvalid || !selectedEmployeeId || !startDate || !endDate) {
             return;
         }
-        if (dateRangeInvalid) {
-            return;
-        }
-        if (!selectedEmployeeId || !startDate || !endDate) {
-            setDateRangeError(null);
-            alert('Select an officer and both dates.');
-        return;
-    }
-        setDateRangeError(null);
         // Prevent duplicate in-flight report generation
         if (reportLoading) return;
         setReportLoading(true); setReportError(null); setShowReport(false);
@@ -361,7 +350,6 @@ const ReportsPage: React.FC = () => {
                             <Label htmlFor="rangeSelectTrigger" className="text-xs font-medium text-foreground">Date range</Label>
                             <Select value={rangeSelect} onValueChange={(value) => { 
                                 setRangeSelect(value); 
-                                setDateRangeError(null);
                                 if (value === 'custom') {
                                     setStartDate('');
                                     setEndDate('');
@@ -455,12 +443,6 @@ const ReportsPage: React.FC = () => {
               </Button>
             </div>
           </div>
-
-                    {dateRangeError && (
-                        <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
-                            {dateRangeError}
-                        </div>
-                    )}
 
                     {reportLoading && (
                         <div className="flex justify-center items-center py-12">
