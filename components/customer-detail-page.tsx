@@ -944,7 +944,22 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
           <FormField label="End time"><Input type="time" value={visitForm.endTime} onChange={(event) => setVisitForm({ ...visitForm, endTime: event.target.value })} /></FormField>
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
-          <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Purpose" required>
+            <Select
+              value={VISIT_PURPOSES.find((option) => option.label === visitForm.purpose)?.value ?? ''}
+              onValueChange={(value) => {
+                const purpose = VISIT_PURPOSES.find((option) => option.value === value);
+                if (purpose) setVisitForm((previous) => ({ ...previous, purpose: purpose.label }));
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger>
+              <SelectContent>
+                {VISIT_PURPOSES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
           <FormField label="Instructions" hint="Optional instructions for the assigned employee."><Textarea rows={3} value={visitForm.description} onChange={(event) => setVisitForm({ ...visitForm, description: event.target.value })} placeholder="e.g. Collect the cheque and photograph the display" /></FormField>
           <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
         </FormGroup>
@@ -1008,7 +1023,7 @@ export default function CustomerDetailPage({ accountId }: CustomerDetailPageProp
         </FormGroup>
       </FormSheet>
 
-      <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}><DialogContent><DialogHeader><DialogTitle>Deactivate this customer?</DialogTitle><DialogDescription>The new DELETE endpoint performs a soft delete, preserving account history.</DialogDescription></DialogHeader><div className="rounded-lg border bg-muted/40 p-3 font-medium">{account.accountName}</div><DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</Button><Button variant="destructive" onClick={() => void deactivateAccount()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Deactivate</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}><DialogContent><DialogHeader><DialogTitle>Deactivate this customer?</DialogTitle><DialogDescription>This will archive the customer. Its historical records will be kept.</DialogDescription></DialogHeader><div className="rounded-lg border bg-muted/40 p-3 font-medium">{account.accountName}</div><DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</Button><Button variant="destructive" onClick={() => void deactivateAccount()} disabled={busy}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Deactivate</Button></DialogFooter></DialogContent></Dialog>
 
       <FormSheet
         open={networkOpen}

@@ -1355,7 +1355,22 @@ export default function InstitutionDetailPage() {
           <FormField label="End time"><Input type="time" value={visitForm.endTime} onChange={(e) => setVisitForm({ ...visitForm, endTime: e.target.value })} /></FormField>
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
-          <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Purpose" required>
+            <Select
+              value={VISIT_PURPOSES.find((option) => option.label === visitForm.purpose)?.value ?? ''}
+              onValueChange={(value) => {
+                const purpose = VISIT_PURPOSES.find((option) => option.value === value);
+                if (purpose) setVisitForm((previous) => ({ ...previous, purpose: purpose.label }));
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger>
+              <SelectContent>
+                {VISIT_PURPOSES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
           <FormField label="Instructions" hint="Optional instructions for the assigned employee."><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="e.g. Carry the empanelment letter copy for verification" /></FormField>
           <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
         </FormGroup>
@@ -1449,7 +1464,7 @@ export default function InstitutionDetailPage() {
       {/* Delete Dialog */}
       <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Deactivate this institution?</DialogTitle><DialogDescription>The DELETE endpoint performs a soft delete, preserving history.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Deactivate this institution?</DialogTitle><DialogDescription>This will archive the institution. Its historical records will be kept.</DialogDescription></DialogHeader>
           <div className="rounded-lg border bg-muted/40 p-3 font-medium">{institution.institutionName}</div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</Button>

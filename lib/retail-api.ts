@@ -283,6 +283,13 @@ export const RetailAPI = {
   async assignAccountGroup(accountId: number, clientGroupId: number, token: string): Promise<void> {
     await request(`/api/retail/accounts/${accountId}/group`, token, json('POST', { clientGroupId }));
   },
+  async getStates(token: string): Promise<string[]> {
+    const response = await request('/api/common/states', token);
+    if (!Array.isArray(response) || !response.every((state) => typeof state === 'string')) {
+      throw new Error('Invalid states response');
+    }
+    return response;
+  },
   async getSalesRegions(token: string): Promise<RetailSalesRegion[]> {
     const response = await getWithDocumentedFallback(['/api/common/regions?page=0&size=200', '/api/common/sales-regions'], token);
     const values = [...pageItems(response)];

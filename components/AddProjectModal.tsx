@@ -109,8 +109,12 @@ const createEmptyDraft = (): ProjectDraft => ({
   contractors: createEmptyContractors(),
 });
 
+const assignedEmployeeError = 'Select an assigned employee.';
+
 const validateDraft = (draft: ProjectDraft): string[] => {
   const errors: string[] = [];
+  const assignedEmployeeId = Number(draft.assignedEmployeeId);
+  if (!Number.isSafeInteger(assignedEmployeeId) || assignedEmployeeId <= 0) errors.push(assignedEmployeeError);
   if (!draft.projectName.trim()) errors.push('Project name is required.');
   if (!draft.locationText.trim()) errors.push('Location is required.');
   if (!draft.state.trim()) errors.push('State is required.');
@@ -300,7 +304,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
         completionDate: draft.completionDate || null,
         sourceApprovalStatus: draft.sourceApprovalStatus,
         approvalLetterReference: draft.approvalLetterReference.trim() || null,
-        assignedEmployeeId: draft.assignedEmployeeId ? Number(draft.assignedEmployeeId) : null,
+        assignedEmployeeId: Number(draft.assignedEmployeeId),
         active: true,
       };
 
@@ -483,13 +487,18 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Assigned Employee</Label>
-                  <Select value={draft.assignedEmployeeId} onValueChange={(v) => updateDraft('assignedEmployeeId', v)}>
-                    <SelectTrigger className="h-9">
+                  <Label htmlFor="project-assigned-employee">Assigned Employee <span className="text-destructive" aria-hidden="true">*</span></Label>
+                  <Select value={draft.assignedEmployeeId} onValueChange={(v) => updateDraft('assignedEmployeeId', v)} required>
+                    <SelectTrigger id="project-assigned-employee" className="h-9"
+                      aria-invalid={submitErrors.includes(assignedEmployeeError)}
+                      aria-describedby={submitErrors.includes(assignedEmployeeError) ? "project-assigned-employee-error" : undefined}>
                       <SelectValue placeholder={isLoadingMasters ? 'Loading…' : masterLoadError || 'Select owner'} />
                     </SelectTrigger>
                     <SelectContent>{employeeOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
+                  {submitErrors.includes(assignedEmployeeError) && (
+                    <p id="project-assigned-employee-error" className="text-xs text-destructive">{assignedEmployeeError}</p>
+                  )}
                 </div>
               </div>
             </section>

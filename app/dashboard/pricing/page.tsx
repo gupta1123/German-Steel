@@ -2,7 +2,7 @@
 
 import { AdminRemovalAction } from '@/components/admin-removal-action';
 import { adminRemovalPaths } from '@/lib/admin-removals-api';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, CalendarIcon, ChevronLeft, ChevronRight, Edit3, Loader2, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -42,6 +42,9 @@ export default function PricingPage() {
   const [cities, setCities] = useState<string[]>([]);
   const [page, setPage] = useState(0); const [totalPages, setTotalPages] = useState(1); const [totalElements, setTotalElements] = useState(0);
   const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false); const [editing, setEditing] = useState<RetailPricing | null>(null); const [form, setForm] = useState<RetailPricingPayload>(emptyForm());
   const [districtMasters, setDistrictMasters] = useState<RetailDistrict[]>([]); const [pinCodeMasters, setPinCodeMasters] = useState<RetailPinCode[]>([]); const [stateMasters, setStateMasters] = useState<RetailSalesRegion[]>([]);
   // null = unrestricted (admins, or no regional assignment found — fails open).
@@ -62,8 +65,8 @@ export default function PricingPage() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setPage(0); }, [selectedDate, selectedCity, employeeId]);
 
-  const openCreate = () => { setEditing(null); setForm({ ...emptyForm(), competitorBrandId: brands[0]?.id || 0 }); setSheetOpen(true); };
-  const openEdit = (row: RetailPricing) => { setEditing(row); setForm({ competitorBrandId: row.competitorBrandId, pricePerTon: row.pricePerTon, city: row.city, district: row.district || '', state: row.state, pinCode: row.pinCode, observationDate: row.observationDate, remarks: row.remarks }); setSheetOpen(true); };
+  const openCreate = () => { setSaveError(null); setSaveSuccess(null); setEditing(null); setForm({ ...emptyForm(), competitorBrandId: brands[0]?.id || 0 }); setSheetOpen(true); };
+  const openEdit = (row: RetailPricing) => { setSaveError(null); setSaveSuccess(null); setEditing(row); setForm({ competitorBrandId: row.competitorBrandId, pricePerTon: row.pricePerTon, city: row.city, district: row.district || '', state: row.state, pinCode: row.pinCode, observationDate: row.observationDate, remarks: row.remarks }); setSheetOpen(true); };
   const isPinValid = form.pinCode === '' || /^\d{6}$/.test(form.pinCode);
   const pricingStateOptions = useMemo(() => stateMasters.map((r) => ({ value: r.name, label: r.name })).sort((a, b) => a.label.localeCompare(b.label)), [stateMasters]);
   const useStateDropdown = stateMasters.length > 0 && (form.state === '' || pricingStateOptions.some((o) => o.value === form.state));
@@ -115,19 +118,51 @@ export default function PricingPage() {
   const hidePinField = usePinDropdown && !!selectedPricingRegion && form.pinCode === '' && regionPinCount === 0;
   const isOutOfScope = (regionId: number | null | undefined): boolean =>
     regionId != null && permittedRegionIds != null && !permittedRegionIds.includes(regionId);
-  const isFormValid = Boolean(form.competitorBrandId) && form.pricePerTon > 0 && form.city.trim() !== '' && form.state.trim() !== '' && isPinValid && form.observationDate !== '' && form.observationDate <= today();
   const save = async () => {
-    if (!token) return;
-    if (!form.competitorBrandId || form.pricePerTon <= 0 || !form.city.trim() || !form.state.trim() || !form.observationDate) { toast.error('Brand, positive price, city, state and date are required.'); return; }
-    if (form.pinCode !== '' && !/^\d{6}$/.test(form.pinCode)) { toast.error('PIN code must be 6 digits, or leave it empty.'); return; }
-    if (form.observationDate > today()) { toast.error('Observation date cannot be in the future.'); return; }
+    if (savingRef.current) return;
+    setSaveError(null);
+
+    const errors: string[] = [];
+    if (!token) {
+      setSaveError('Your session has expired. Sign in again to save the price.');
+      return;
+    }
+    if (!form.competitorBrandId) errors.push('Select a competitor brand.');
+    if (!Number.isFinite(form.pricePerTon) || form.pricePerTon < 0.01) {
+      errors.push('Enter a price of at least ₹0.01 per MT.');
+    } else if (Math.abs(form.pricePerTon * 100 - Math.round(form.pricePerTon * 100)) > 0.000001) {
+      errors.push('Enter a price with no more than two decimal places.');
+    }
+    if (!form.city.trim()) errors.push('Enter a city.');
+    if (!form.state.trim()) errors.push('Select or enter a state.');
+    if (!form.observationDate) errors.push('Choose an observation date.');
+    else if (form.observationDate > today()) errors.push('Choose today or an earlier observation date.');
+    if (!isPinValid) errors.push('Enter a six-digit PIN code or leave it blank.');
+
     const districtRegion = districtMasters.find((d) => d.name === form.district.trim())?.regionId;
     const pinRegion = pinCodeMasters.find((p) => p.pinCode === form.pinCode)?.regionId;
-    if (isOutOfScope(districtRegion) || isOutOfScope(pinRegion)) { toast.error('The selected market is outside your permitted sales regions.'); return; }
+    if (isOutOfScope(districtRegion) || isOutOfScope(pinRegion)) {
+      errors.push('Choose a market within your permitted sales regions.');
+    }
+    if (errors.length) {
+      setSaveError(errors.join(' '));
+      return;
+    }
+
+    savingRef.current = true;
     setSaving(true);
-    try { if (editing) await RetailAPI.updatePricing(editing.id, form, token); else await RetailAPI.createPricing(form, token); toast.success(editing ? 'Pricing updated.' : 'Pricing recorded.'); setSheetOpen(false); await load(); }
-    catch (error) { toast.error(getErrorMessage(error, 'Unable to save pricing.')); }
-    finally { setSaving(false); }
+    try {
+      if (editing) await RetailAPI.updatePricing(editing.id, form, token);
+      else await RetailAPI.createPricing(form, token);
+      setSaveSuccess(editing ? 'Price updated successfully.' : 'Price recorded successfully.');
+      setSheetOpen(false);
+      void load();
+    } catch (error) {
+      setSaveError(getErrorMessage(error, 'Unable to save the price. Please try again.'));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   return <div className="space-y-4 py-4">
@@ -138,13 +173,15 @@ export default function PricingPage() {
       <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Record price</Button>
     </div>
 
+    {saveSuccess && <p role="status" className="rounded-md border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm">{saveSuccess}</p>}
+
     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,36rem),1fr))] items-start gap-4">
       <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none"><CardHeader className="border-b px-4 py-3"><CardTitle className="text-sm font-semibold">Recorded prices</CardTitle><p className="text-xs text-muted-foreground">{totalElements} prices for the selected day and market.</p></CardHeader><CardContent className="p-0"><div className="max-h-[420px] overflow-auto"><Table className="table-fixed text-xs"><TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur"><TableRow><TableHead className="w-[28%]">Brand</TableHead><TableHead className="w-[22%] text-right">Price/ton</TableHead><TableHead className="w-[20%]">City</TableHead><TableHead className="w-[22%]">Field officer</TableHead><TableHead className="w-[16%]">Actions</TableHead></TableRow></TableHeader><TableBody>{loading ? Array.from({ length: 5 }, (_, index) => <TableRow key={index}><TableCell colSpan={5}><Skeleton className="h-4 w-full" /></TableCell></TableRow>) : pricingRows.length === 0 ? <TableRow><TableCell colSpan={5} className="h-48 text-center text-muted-foreground">No pricing observations for this selection.</TableCell></TableRow> : pricingRows.map((row) => <TableRow key={row.id}><TableCell className="font-medium">{row.brandName}</TableCell><TableCell className="text-right font-semibold">{money(row.pricePerTon)}</TableCell><TableCell>{row.city}</TableCell><TableCell className="whitespace-normal break-words" title={row.officerName}>{row.officerName}</TableCell><TableCell><div className="flex items-center"><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(row)} aria-label={`Edit price ${row.id}`}><Edit3 className="h-3.5 w-3.5" /></Button><AdminRemovalAction endpoint={adminRemovalPaths.pricing(row.id)} label="Remove price" name={`${row.brandName} · ${money(row.pricePerTon)} · ${row.city}`} description="Remove this price entry from active lists and price summaries. Its history will be kept." onRemoved={() => { if (page > 0) setPage(0); else return load(); }} /></div></TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card>
       <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none"><CardHeader className="border-b px-4 py-3"><CardTitle className="text-sm font-semibold">Price comparison by brand</CardTitle><p className="text-xs text-muted-foreground">Average and range per ton.</p></CardHeader><CardContent className="p-4"><div className="space-y-4">{summary.length ? summary.map((item) => { const ceiling = Math.max(...summary.map((entry) => entry.maxPrice), 1); return <div key={`${item.competitorBrandId}-${item.city || ''}`}><div className="mb-1.5 flex items-end justify-between gap-3"><div><p className="text-sm font-medium">{item.brandName}</p><p className="text-xs text-muted-foreground">{item.count} observation{item.count === 1 ? '' : 's'} · {money(item.minPrice)}–{money(item.maxPrice)}</p></div><p className="text-sm font-semibold">{money(item.avgPrice)}</p></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (item.avgPrice / ceiling) * 100)}%` }} /></div></div>; }) : <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground"><BarChart3 className="h-7 w-7 stroke-[1.5]" /><span className="text-sm font-medium text-foreground">Nothing to compare yet</span><span className="text-xs">No summary data for the selected day and market.</span></div>}</div></CardContent></Card>
     </div>
     <div className="flex items-center justify-end gap-2"><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" />Previous</Button><span className="text-xs text-muted-foreground">Page {page + 1} of {totalPages}</span><Button variant="outline" size="sm" disabled={page + 1 >= totalPages || loading} onClick={() => setPage((value) => value + 1)}>Next<ChevronRight className="h-4 w-4" /></Button></div>
 
-    <Sheet open={sheetOpen} onOpenChange={(open) => !saving && setSheetOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-xl"><SheetHeader className="border-b pb-4"><SheetTitle>{editing ? 'Edit pricing observation' : 'Record pricing observation'}</SheetTitle><SheetDescription>{editing ? 'Update the competitor price observation details.' : 'Fill in the brand, price, market and date to record a new competitor price observation.'}</SheetDescription></SheetHeader><form onSubmit={(e) => { e.preventDefault(); void save(); }} className="flex min-h-0 flex-1 flex-col"><div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto py-4 sm:grid-cols-2">
+    <Sheet open={sheetOpen} onOpenChange={(open) => !saving && setSheetOpen(open)}><SheetContent className="flex w-full flex-col sm:max-w-xl"><SheetHeader className="border-b pb-4"><SheetTitle>{editing ? 'Edit pricing observation' : 'Record pricing observation'}</SheetTitle><SheetDescription>{editing ? 'Update the competitor price observation details.' : 'Fill in the brand, price, market and date to record a new competitor price observation.'}</SheetDescription></SheetHeader><form noValidate onSubmit={(e) => { e.preventDefault(); void save(); }} className="flex min-h-0 flex-1 flex-col"><div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto py-4 sm:grid-cols-2">
       <div className="sm:col-span-2"><Label htmlFor="pricing-brand">Competitor brand *</Label><Select value={form.competitorBrandId ? String(form.competitorBrandId) : ''} onValueChange={(value) => setForm({ ...form, competitorBrandId: Number(value) })}><SelectTrigger id="pricing-brand" aria-required="true" aria-invalid={!form.competitorBrandId} className={`mt-1${!form.competitorBrandId ? ' border-destructive' : ''}`}><SelectValue placeholder="Select brand" /></SelectTrigger><SelectContent>{brands.map((brand) => <SelectItem key={brand.id} value={String(brand.id)}>{brand.name}</SelectItem>)}</SelectContent></Select></div>
       <div><Label htmlFor="pricing-price">Price per MT *</Label><Input id="pricing-price" type="number" min="0.01" step="0.01" required aria-invalid={form.pricePerTon <= 0} value={form.pricePerTon || ''} onChange={(e) => setForm({ ...form, pricePerTon: Number(e.target.value) })} className="mt-1" /></div><div><Label htmlFor="pricing-date">Observation date *</Label><Input id="pricing-date" type="date" max={today()} required aria-invalid={!form.observationDate} value={form.observationDate} onChange={(e) => setForm({ ...form, observationDate: e.target.value })} className="mt-1" /></div>
       <div><Label htmlFor="pricing-city">City *</Label><Input id="pricing-city" required aria-invalid={!form.city.trim()} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="mt-1" /></div><div><Label htmlFor="pricing-state">State *</Label>{useStateDropdown ? <SearchableSelect value={form.state || undefined} options={pricingStateOptions} onSelect={(option) => {
@@ -157,6 +194,8 @@ export default function PricingPage() {
                       });
                     }} placeholder="Select state" searchPlaceholder="Search states..." emptyMessage="No matching state" required triggerClassName="mt-1 w-full" contentClassName="w-[var(--radix-popover-trigger-width)]" /> : <Input id="pricing-state" required aria-invalid={!form.state.trim()} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="mt-1" />}</div><div><Label htmlFor="pricing-district">District</Label>{useDistrictDropdown ? <SearchableSelect value={form.district || undefined} options={pricingDistrictOptions} onSelect={(option) => setForm({ ...form, district: option?.value ?? '' })} disabled={!hasStateSelected} placeholder={!hasStateSelected ? 'Select state first' : 'Select district'} searchPlaceholder="Search districts..." emptyMessage="No matching district" triggerClassName="mt-1 w-full" contentClassName="w-[var(--radix-popover-trigger-width)]" /> : <Input id="pricing-district" value={form.district} disabled={!hasStateSelected} onChange={(e) => setForm({ ...form, district: e.target.value })} className="mt-1" placeholder={!hasStateSelected ? 'Select state first' : undefined} />}</div>{hidePinField ? null : <div><Label htmlFor="pricing-pin">PIN code</Label>{usePinDropdown ? <SearchableSelect value={form.pinCode || undefined} options={pricingPinOptions} onSelect={(option) => setForm({ ...form, pinCode: option?.value ?? '' })} disabled={!hasStateSelected} placeholder={!hasStateSelected ? 'Select state first' : 'Select PIN code'} searchPlaceholder="Search PIN codes..." emptyMessage="No matching PIN code" triggerClassName="mt-1 w-full" contentClassName="w-[var(--radix-popover-trigger-width)]" /> : <Input id="pricing-pin" inputMode="numeric" maxLength={6} aria-invalid={!isPinValid} value={form.pinCode} disabled={!hasStateSelected} onChange={(e) => setForm({ ...form, pinCode: e.target.value.replace(/\D/g, '').slice(0, 6) })} className="mt-1" placeholder={!hasStateSelected ? 'Select state first' : 'Optional'} />}</div>}
       <div className="sm:col-span-2"><Label htmlFor="pricing-remarks">Remarks</Label><Textarea id="pricing-remarks" value={form.remarks || ''} onChange={(e) => setForm({ ...form, remarks: e.target.value || null })} className="mt-1" /></div>
-    </div><SheetFooter className="border-t pt-4"><Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="submit" disabled={saving || !isFormValid} title={!isFormValid ? 'Fill all mandatory fields to enable saving' : undefined}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Save changes' : 'Record price'}</Button></SheetFooter></form></SheetContent></Sheet>
+    </div>
+    {saveError && <p role="alert" className="max-h-32 overflow-y-auto rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{saveError}</p>}
+    <SheetFooter className="border-t pt-4"><Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{saving ? 'Saving…' : editing ? 'Save changes' : 'Record price'}</Button></SheetFooter></form></SheetContent></Sheet>
   </div>;
 }

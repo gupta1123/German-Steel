@@ -82,16 +82,6 @@ const TAB_LABELS: Record<TabId, string> = {
   review: 'Review',
 };
 
-const INDIAN_STATES = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
-  'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
-  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana',
-  'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh',
-  'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
-] as const;
-
-const fallbackStateOptions: SearchableOption[] = INDIAN_STATES.map((s) => ({ value: s, label: s }));
-
 // Restricted users only see their permitted regions (null permitted = unrestricted;
 // entries with unknown region are always kept since they cannot be excluded).
 const inPermittedRegion = (regionId: number | null | undefined, permitted: number[] | null): boolean =>
@@ -189,6 +179,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [isCreatingBrand, setIsCreatingBrand] = useState(false);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
   const [groups, setGroups] = useState<RetailClientGroup[]>([]);
+  const [states, setStates] = useState<string[]>([]);
   const [regions, setRegions] = useState<RetailSalesRegion[]>([]);
   const [pinCodes, setPinCodes] = useState<RetailPinCode[]>([]);
   const [districts, setDistricts] = useState<RetailDistrict[]>([]);
@@ -260,7 +251,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
         return RetailAPI.getEmployees(token);
       };
 
-      const [employeeResult, groupResult, regionResult, pinResult, districtResult, permittedResult] = await Promise.allSettled([
+      const [employeeResult, groupResult, regionResult, pinResult, districtResult, permittedResult, stateResult] = await Promise.allSettled([
         employeeRequest(),
         RetailAPI.getClientGroups(token),
         RetailAPI.getSalesRegions(token),
@@ -270,10 +261,17 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
           employeeId: Number.isFinite(Number(userData?.employeeId ?? employeeId)) ? Number(userData?.employeeId ?? employeeId) : null,
           isManager: isManagerRoleValue(userRole),
         }),
+        RetailAPI.getStates(token),
       ]);
 
       if (cancelled) return;
       const warnings: string[] = [];
+
+      if (stateResult.status === 'fulfilled') setStates(stateResult.value);
+      else {
+        setStates([]);
+        warnings.push('States could not be loaded.');
+      }
 
       if (employeeResult.status === 'fulfilled') setEmployees(employeeResult.value);
       else warnings.push('Salesperson list could not be loaded.');
@@ -420,15 +418,9 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     }))
     .sort((left, right) => left.label.localeCompare(right.label)), [groups]);
 
-  // State dropdown is sourced from backend sales regions (GET /api/common/regions),
-  // falling back to the built-in catalogue when regions fail to load.
-  const stateOptions: SearchableOption[] = useMemo(() => {
-    if (regions.length > 0) {
-      return regions.map((region) => ({ value: region.name, label: region.name }))
-        .sort((left, right) => left.label.localeCompare(right.label));
-    }
-    return fallbackStateOptions;
-  }, [regions]);
+  const stateOptions = useMemo<SearchableOption[]>(() =>
+    states.map((state) => ({ value: state, label: state }))
+      .sort((left, right) => left.label.localeCompare(right.label)), [states]);
 
   const updateContact = (key: string, field: keyof Omit<ContactDraft, 'key'>, value: string | boolean) => {
     touch();

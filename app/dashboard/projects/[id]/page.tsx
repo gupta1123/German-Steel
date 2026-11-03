@@ -1242,7 +1242,22 @@ export default function ProjectDetailPage() {
           {visitTimeError && <p id="project-visit-time-error" role="alert" className="text-xs text-destructive sm:col-span-2">{visitTimeError}</p>}
         </FormGroup>
         <FormGroup title="Purpose" columns={1}>
-          <FormField label="Purpose" required><Select value={VISIT_PURPOSES.some(o=>o.value===visitForm.purpose || o.label===visitForm.purpose) ? (VISIT_PURPOSES.find(o=>o.value===visitForm.purpose || o.label===visitForm.purpose)?.value || 'ROUTINE_VISIT') : visitForm.purpose} onValueChange={(v) => setVisitForm({ ...visitForm, purpose: v === 'OTHER' ? visitForm.purpose : VISIT_PURPOSES.find(o=>o.value===v)?.label || v })}><SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger><SelectContent>{VISIT_PURPOSES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></FormField>
+          <FormField label="Purpose" required>
+            <Select
+              value={VISIT_PURPOSES.find((option) => option.label === visitForm.purpose)?.value ?? ''}
+              onValueChange={(value) => {
+                const purpose = VISIT_PURPOSES.find((option) => option.value === value);
+                if (purpose) setVisitForm((previous) => ({ ...previous, purpose: purpose.label }));
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger>
+              <SelectContent>
+                {VISIT_PURPOSES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
           <FormField label="Instructions" hint="Optional instructions for the assigned employee."><Textarea rows={3} value={visitForm.description} onChange={(e) => setVisitForm({ ...visitForm, description: e.target.value })} placeholder="e.g. Photograph site progress and note material stock" /></FormField>
           <FormCheck checked={visitForm.selfGenerated} onCheckedChange={(checked) => setVisitForm({ ...visitForm, selfGenerated: checked })} label="Self-generated visit" description="Planned by the field employee rather than assigned by a manager." />
         </FormGroup>
@@ -1320,7 +1335,7 @@ export default function ProjectDetailPage() {
 
       <Dialog open={deleteOpen} onOpenChange={(open) => !busy && setDeleteOpen(open)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Deactivate this project?</DialogTitle><DialogDescription>The DELETE endpoint performs a soft delete, preserving history.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Deactivate this project?</DialogTitle><DialogDescription>This will archive the project. Its historical records will be kept.</DialogDescription></DialogHeader>
           <div className="rounded-lg border bg-muted/40 p-3 font-medium">{project.projectName}</div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>Cancel</Button>

@@ -52,14 +52,6 @@ const INSTITUTION_TYPES: { value: InstitutionType; label: string }[] = [
   { value: 'AUTONOMOUS_BODY', label: 'Autonomous Body' },
 ];
 
-const INDIAN_STATES = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
-  'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
-  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana',
-  'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh',
-  'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
-] as const;
-
 const createEmptyDraft = (): InstitutionDraft => ({
   institutionName: '',
   institutionType: 'GOVERNMENT_DEPARTMENT',
@@ -96,6 +88,7 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
   const router = useRouter();
   const [draft, setDraft] = useState<InstitutionDraft>(createEmptyDraft);
   const [employees, setEmployees] = useState<RetailEmployee[]>([]);
+  const [states, setStates] = useState<string[]>([]);
   const [regions, setRegions] = useState<{ id: number; name: string }[]>([]);
   const [parents, setParents] = useState<{ id: number; institutionName: string }[]>([]);
   // null = unrestricted (admins, or no regional assignment found — fails open).
@@ -143,6 +136,16 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
         if (!cancelled) setEmployees(list);
       } catch { if (!cancelled) warnings.push('Salesperson list could not be loaded.'); }
       try {
+        const { RetailAPI } = await import('@/lib/retail-api');
+        const list = await RetailAPI.getStates(token);
+        if (!cancelled) setStates(list);
+      } catch {
+        if (!cancelled) {
+          setStates([]);
+          warnings.push('States could not be loaded.');
+        }
+      }
+      try {
         const regs = await InstitutionsAPI.getRegions(token);
         if (!cancelled) setRegions(regs.map((r) => ({ id: r.id, name: r.name })));
       } catch { if (!cancelled) warnings.push('Sales regions could not be loaded.'); }
@@ -182,12 +185,9 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({ isOpen, onClo
     parents.map((p) => ({ value: String(p.id), label: p.institutionName })).sort((a, b) => a.label.localeCompare(b.label)),
     [parents]);
 
-  // State dropdown is sourced from backend sales regions (GET /api/common/regions
-  // via InstitutionsAPI.getRegions), falling back to the built-in catalogue.
   const stateOptions = useMemo<SearchableOption[]>(() =>
-    regions.length > 0
-      ? regions.map((r) => ({ value: r.name, label: r.name })).sort((a, b) => a.label.localeCompare(b.label))
-      : INDIAN_STATES.map((s) => ({ value: s, label: s })), [regions]);
+    states.map((state) => ({ value: state, label: state }))
+      .sort((left, right) => left.label.localeCompare(right.label)), [states]);
 
   const handleSubmit = async () => {
     const errors = validateDraft(draft);

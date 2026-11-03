@@ -1,7 +1,7 @@
 'use client';
 
 import { AdminRemovalAction } from '@/components/admin-removal-action';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, DownloadIcon, Filter, Loader2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -97,6 +97,9 @@ export default function ProjectsPage() {
   const [stage, setStage] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [ownerFilter, setOwnerFilter] = useState('ALL');
+  const [recordStatus, setRecordStatus] = useState('ALL');
+  const active = recordStatus === 'ALL' ? undefined : recordStatus === 'ACTIVE';
+  const latestLoad = useRef(0);
   const [areFiltersVisible, setAreFiltersVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -151,22 +154,24 @@ export default function ProjectsPage() {
 
   const load = useCallback(async () => {
     if (!token) return;
+    const requestId = ++latestLoad.current;
     setIsLoading(true); setError(null);
     try {
       const res = await ProjectsAPI.getProjects(token, {
-        page, size: pageSize,
+        page, size: pageSize, active,
         q: query || undefined,
         status: stage === 'ALL' ? undefined : stage,
         projectType: typeFilter === 'ALL' ? undefined : typeFilter,
         assignedEmployeeId: ownerFilter === 'ALL' ? undefined : Number(ownerFilter),
       });
-      setPageData(res);
+      if (requestId === latestLoad.current) setPageData(res);
     } catch (err) {
+      if (requestId !== latestLoad.current) return;
       setPageData(emptyPage);
       const msg = getErrorMessage(err, 'Unable to load projects.');
       setError(msg); toast.error(msg);
-    } finally { setIsLoading(false); }
-  }, [token, page, pageSize, query, stage, typeFilter, ownerFilter]);
+    } finally { if (requestId === latestLoad.current) setIsLoading(false); }
+  }, [token, page, pageSize, query, stage, typeFilter, ownerFilter, active]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -175,16 +180,16 @@ export default function ProjectsPage() {
     if (pageData.totalElements > 2000) { toast.error('Too many records to export — narrow the filters first.'); return; }
     setIsExporting(true);
     try {
-      const first = await ProjectsAPI.getProjects(token, { page: 0, size: 500, q: query || undefined, status: stage === 'ALL' ? undefined : stage, projectType: typeFilter === 'ALL' ? undefined : typeFilter, assignedEmployeeId: ownerFilter === 'ALL' ? undefined : Number(ownerFilter) });
+      const first = await ProjectsAPI.getProjects(token, { page: 0, size: 500, active, q: query || undefined, status: stage === 'ALL' ? undefined : stage, projectType: typeFilter === 'ALL' ? undefined : typeFilter, assignedEmployeeId: ownerFilter === 'ALL' ? undefined : Number(ownerFilter) });
       const all = [...first.content];
       for (let i = 1; i < first.totalPages; i += 1) {
-        const next = await ProjectsAPI.getProjects(token, { page: i, size: first.size, q: query || undefined, status: stage === 'ALL' ? undefined : stage, projectType: typeFilter === 'ALL' ? undefined : typeFilter, assignedEmployeeId: ownerFilter === 'ALL' ? undefined : Number(ownerFilter) });
+        const next = await ProjectsAPI.getProjects(token, { page: i, size: first.size, active, q: query || undefined, status: stage === 'ALL' ? undefined : stage, projectType: typeFilter === 'ALL' ? undefined : typeFilter, assignedEmployeeId: ownerFilter === 'ALL' ? undefined : Number(ownerFilter) });
         all.push(...next.content);
       }
       const csvCell = (v: unknown) => `"${String(v ?? '').replaceAll('"', '""')}"`;
       const rows = [
-        ['Project', 'Location', 'Stage', 'Type', 'Owner', 'Start Date', 'Est. TMT (MT)'],
-        ...all.map((p) => [p.projectName, humanize(p.locationText), humanize(p.sourceApprovalStatus), humanize(p.projectType), resolveOwnerName(p), p.startDate ?? '', p.estimatedTmtMt ?? '']),
+        ['Project', 'Record Status', 'Location', 'Stage', 'Type', 'Owner', 'Start Date', 'Est. TMT (MT)'],
+        ...all.map((p) => [p.projectName, p.active ? 'Active' : 'Inactive', humanize(p.locationText), humanize(p.sourceApprovalStatus), humanize(p.projectType), resolveOwnerName(p), p.startDate ?? '', p.estimatedTmtMt ?? '']),
       ];
       const blob = new Blob([rows.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'projects.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -228,6 +233,16 @@ export default function ProjectsPage() {
                 <SelectContent>
                   <SelectItem value="ALL">All Owners</SelectItem>
                   {employees.slice(0, 80).map((e) => <SelectItem key={e.id} value={String(e.id)}>{[e.firstName, e.lastName].filter(Boolean).join(' ') || `Employee #${e.id}`}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0 flex-1">
+              <Select value={recordStatus} onValueChange={(value) => { setPage(0); setRecordStatus(value); }}>
+                <SelectTrigger aria-label="Project record status" className="h-8 w-full bg-background text-xs shadow-none"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All statuses</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -290,7 +305,14 @@ export default function ProjectsPage() {
             ) : (
               pageData.content.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="font-medium"><Ellipsis value={p.projectName} /></TableCell>
+                  <TableCell className="font-medium">
+                    <Ellipsis value={p.projectName} />
+                    <span className={p.active
+                      ? 'mt-1 inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300'
+                      : 'mt-1 inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground'}>
+                      {p.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <Ellipsis value={humanize(p.locationText)} />
                     <span className="block truncate text-[11px] text-muted-foreground" title={resolveRegionName(p)}>{resolveRegionName(p)}</span>
