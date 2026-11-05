@@ -482,7 +482,7 @@ const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClose, toke
             {/* Section: Assignment */}
             <section className="space-y-3 rounded-lg border bg-card p-4">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold leading-none">Assignment</h3>
+                <h3 className="text-sm font-semibold leading-none">Assignment <span className="text-destructive">*</span></h3>
                 <p className="text-xs text-muted-foreground">Owner responsible for delivery</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
