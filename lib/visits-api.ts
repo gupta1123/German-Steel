@@ -14,6 +14,7 @@ export type VisitOutcome = 'SUCCESS' | 'INTERESTED' | 'NO_PROGRESS' | 'FOLLOW_UP
 
 export type CommonVisitRow = {
   id: number;
+  active?: boolean;
   visitType: VisitType;
   clientAccountId: number | null;
   institutionId: number | null;

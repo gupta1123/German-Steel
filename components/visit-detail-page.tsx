@@ -560,6 +560,7 @@ export default function VisitDetailPage() {
   const [notes, setNotes] = useState<ApiNote[]>([]);
   const [storeVisits, setStoreVisits] = useState<VisitDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCancelled, setIsCancelled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkinImages, setCheckinImages] = useState<string[]>([]);
   const [giftImage, setGiftImage] = useState<string | null>(null);
@@ -897,9 +898,15 @@ export default function VisitDetailPage() {
     try {
       setIsLoading(true);
       setError(null);
+      setIsCancelled(false);
       const { visitsApi, resolveVisitClient } = await import('@/lib/visits-api');
       const visitData = await visitsApi.getVisitById(token, Number(visitId));
       if (cancelled) return;
+      if (visitData.active === false) {
+        setIsCancelled(true);
+        setIsLoading(false);
+        return;
+      }
       const api = new API();
       const legacy = visitData as unknown as VisitDto & Record<string, unknown>;
       const client = resolveVisitClient(visitData);
@@ -1724,6 +1731,17 @@ export default function VisitDetailPage() {
   };
 
   if (isLoading) return <DetailSkeleton />;
+  if (isCancelled) return (
+    <div className="detail-page space-y-4">
+      <DetailHero
+        name={`Visit #${visitId}`}
+        onBack={handleBack}
+        backLabel="Back"
+        badges={<Pill>Cancelled</Pill>}
+        description="This visit has been cancelled."
+      />
+    </div>
+  );
 
   const fmtTime = (time?: string | null) => {
     if (!time) return '';
