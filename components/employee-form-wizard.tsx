@@ -584,7 +584,10 @@ export default function EmployeeFormWizard({ mode, employeeId }: EmployeeFormWiz
         if (!employeeId) throw new Error("Invalid employee id");
 
         // Profile update only — documented PUT /api/common/employees/{id} (partial, no credentials)
-        const profilePayload: Record<string, unknown> = { ...employeePayload };
+        const profilePayload: Record<string, unknown> = {
+          ...employeePayload,
+          regionIds: selectedRegionIds,
+        };
         const res = await fetch(`${baseUrl}/api/common/employees/${employeeId}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
